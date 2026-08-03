@@ -1,75 +1,129 @@
-# cc-spex Integration Guide
+# spec-kit Integration Guide
 
-How cc-review works with [cc-spex](https://github.com/rhuss/cc-spex).
+How cc-review integrates with [cc-spex](https://github.com/rhuss/cc-spex) and the spec-kit workflow.
 
-## How Delegation Works
+## Overview
 
-When cc-spex's `spex-deep-review` extension runs (triggered by the `review-code` quality gate), it checks for cc-review:
+cc-spex includes a built-in `review-code` gate in the `spex-gates` extension. When cc-review is installed as a spec-kit extension, it replaces the built-in review with a more thorough multi-agent review that includes external tool integration, autonomous fix loops, and PR comment triage.
 
-1. **spec-kit extension registry**: checks `.specify/extensions/.registry` for `cc-review.enabled == true`
-2. **Filesystem probe**: checks `.cc-review/core/commands/review.md` and `~/.cc-review/core/commands/review.md`
+The delegation is transparent: cc-spex detects cc-review at runtime and delegates to it. If cc-review is not installed, cc-spex falls back to its built-in review behavior.
 
-If found, cc-spex delegates the full review to cc-review with `--spec`, `--hints`, and `--output` flags. If not found, cc-spex runs its simplified built-in review (same 6 agents, same fix loop, but no external tool integration).
+## Installation
 
-## Install as spec-kit Extension
+### As a spec-kit extension
 
 ```bash
-# From cc-review directory
-./adapters/speckit/install.sh
-
-# Or manually
-specify extension add ./adapters/speckit --dev
+specify extension add /path/to/cc-review/adapters/speckit
 ```
 
-Verify:
+Or symlink into the extensions directory:
+
 ```bash
-jq '.extensions["cc-review"]' .specify/extensions/.registry
+ln -s /path/to/cc-review/adapters/speckit ~/.specify/extensions/cc-review
 ```
 
-## What Changes
+The extension registers two commands:
+- `speckit.cc-review.review` (replaces the built-in `review-code` gate)
+- `speckit.cc-review.triage` (adds PR comment triage to the ship pipeline)
 
-| Feature | Without cc-review | With cc-review |
-|---------|-------------------|----------------|
-| Review agents | 6 agents (built-in prompts) | 6 agents (cc-review prompts) |
-| External tools | Skipped | CodeRabbit, Copilot, Codex |
-| PR triage | Not available | Full triage workflow |
-| Fix loop | 3 rounds | 3 rounds (configurable) |
-| Spec compliance | From review-code gate | From review-code gate + cc-review |
+### Core access
+
+The spec-kit adapter resolves cc-review core by checking:
+1. `.cc-review/core` in the project root
+2. `~/.cc-review/core` in the home directory
+
+Ensure the core is accessible at one of these paths. The simplest approach:
+
+```bash
+ln -s /path/to/cc-review/core ~/.cc-review/core
+```
+
+## How cc-spex Delegates to cc-review
+
+### Review
+
+During the ship pipeline, cc-spex runs the `review-code` gate. When cc-review is installed, this gate delegates to `speckit.cc-review.review`, which:
+
+1. Checks that the pipeline is in `ship` mode (skips otherwise)
+2. Resolves the active spec path via `scripts/check-prerequisites.sh`
+3. Updates flow state to `current_step: review`, `review_status: in_progress`
+4. Reads and executes `core/commands/review.md` with these arguments:
+   - `--spec <resolved-spec-path>` (automatic, from the active spec)
+   - `--hints .specify/memory/constitution.md` (if the constitution exists)
+   - `--output .specify/reports/review-report.md`
+   - Any user-provided flags
+5. Updates flow state to `review_status: completed`
+
+### Triage
+
+After pushing a PR and receiving review comments, run:
+
+```
+/speckit.cc-review.triage
+```
+
+The triage command:
+
+1. Checks ship mode
+2. Resolves the active spec path
+3. Passes the constitution as review hints (for assessing whether suggestions align with architectural principles)
+4. Captures out-of-scope ideas to `brainstorm/idea-inbox.md`
+5. Delegates to `core/commands/triage.md`
 
 ## Spec-Aware Review
 
-When cc-spex delegates, it automatically passes the feature spec:
+When cc-review receives a `--spec` path, all 6 review agents gain spec awareness:
 
-```
---spec specs/<feature>/spec.md
---hints .specify/review-hints.md
---output specs/<feature>/review-findings.md
-```
+- **Correctness**: verifies implementation matches spec boundaries exactly (e.g., "retry on 502/503/504" means exactly those codes, not all 5xx)
+- **Architecture**: checks for YAGNI violations against spec scope
+- **Security**: validates that security-related requirements are implemented
+- **Production Readiness**: confirms observability and metrics the spec requires are exposed
+- **Test Quality**: cross-references tests against spec requirements (FR-NNN items) to identify gaps
+- **Goal Alignment**: builds a goal delivery table from spec requirements, PR description, and linked issues; verifies each FR is DELIVERED, PARTIAL, or NOT DELIVERED
 
-Review agents cross-check implementation against FR-NNN requirements from the spec.
+After the fix loop completes, if code was removed, a post-fix spec compliance check verifies that all functional requirements are still implemented. Dropped requirements generate Critical findings.
 
-## Triage with spec-kit
+## Constitution as Review Hints
 
-The spec-kit triage adapter adds:
-- **Ship pipeline guard**: skips triage in autonomous ship mode
-- **Constitution principles**: extracts principles from `.specify/memory/constitution.md` as review context
-- **Idea inbox**: captures deferred findings to `brainstorm/idea-inbox.md`
+The spec-kit constitution (`.specify/memory/constitution.md`) contains project-level architectural principles and design decisions. When passed as `--hints`, these principles inform all review agents through the preamble's project review hints mechanism.
+
+This means review agents can flag code that violates constitutional principles, not just generic best practices.
+
+## Triage with Constitution Principles
+
+When triage receives the constitution as hints, it uses the architectural principles to assess whether bot suggestions align with the project's design decisions. A bot suggestion that contradicts a constitutional principle is deprioritized; a suggestion that reinforces one gets higher confidence.
 
 ## Simplified Fallback
 
-When cc-review is NOT installed, cc-spex's built-in deep-review runs:
-- Same 6 agent perspectives and prompts
-- Same fix loop (up to 3 rounds)
-- Same finding schema and deduplication
-- Same gate logic (Critical + Important = 0 for PASS)
-- Skips external tool integration (Steps 2 and 4)
-- No triage capability
+When cc-review is not installed, cc-spex's built-in `review-code` gate runs instead. The built-in review:
 
-## Migration
+- Reads the spec and changed files
+- Performs a single-pass review (no specialized agents)
+- Does not integrate external tools
+- Does not run an autonomous fix loop
+- Produces a simpler pass/fail gate result
 
-If you were using cc-spex's built-in deep-review and triage:
+The built-in review is functional but less thorough. It exists so the ship pipeline works without cc-review as a dependency.
 
-1. Install cc-review: `./adapters/speckit/install.sh`
-2. Move review hints: `cp .specify/review-hints.md .cc-review/review-hints.md` (optional, cc-spex adapter checks both locations)
-3. Move config: create `.cc-review/config.yml` from `config/config-template.yml` if you had custom `deep-review-config.yml` settings
-4. Triage: use `/review` (cc-review) instead of `/speckit-spex-collab-triage` (removed from spex-collab)
+## Migration from Built-in Deep Review
+
+If your project uses the `spex-deep-review` extension (the older multi-agent review built into cc-spex), migrating to cc-review:
+
+1. Install cc-review as described above
+2. The `speckit.cc-review.review` command takes precedence over `spex-deep-review` when both are installed
+3. cc-review uses the same 6 agent roles but with updated prompts, external tool integration, and triage support
+4. Review hints replace the older review context mechanism; move any project-specific patterns from your deep-review config to `.cc-review/review-hints.md`
+5. The output format is compatible: both produce a findings report with severity levels and a gate outcome
+
+Key differences from `spex-deep-review`:
+
+| Capability | spex-deep-review | cc-review |
+|------------|-----------------|-----------|
+| Agent count | 5 | 6 (adds Goal Alignment) |
+| External tools | None | CodeRabbit, Copilot, Codex |
+| PR comment triage | Separate `triage` command in spex-collab | Integrated `/triage` command |
+| Fix loop | Built-in | Built-in with post-fix spec compliance check |
+| Harness support | cc-spex only | Claude Code, spec-kit, Codex, OpenCode |
+| Configuration | In-memory | `.cc-review/config.yml` with project/user levels |
+| Review hints | None | `.cc-review/review-hints.md` |
+| Triage state | None | Persistent `.cc-review/.triage-state.json` |
