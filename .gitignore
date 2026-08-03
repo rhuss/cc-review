@@ -7,3 +7,15 @@ Thumbs.db
 .idea/
 .env*
 .cc-review/.triage-state.json
+.claude/settings.local.json
+.claude/worktrees/
+.mcp.json
+
+# spex: generated/local files (only constitution is committed)
+**/.claude/
+**/.agents/
+**/.codex/
+**/.specify/**
+!**/.specify/spex.json
+!**/.specify/memory/
+!**/.specify/memory/constitution.md
