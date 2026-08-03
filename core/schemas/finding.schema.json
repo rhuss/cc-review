@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cc-review Finding",
+  "description": "A specific issue discovered by a review agent or external tool",
+  "type": "object",
+  "required": [
+    "id",
+    "severity",
+    "confidence",
+    "file",
+    "line_start",
+    "category",
+    "description",
+    "rationale",
+    "fix",
+    "source_agent",
+    "resolution",
+    "round_found"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^FINDING-[0-9]+$",
+      "description": "Sequential ID (FINDING-1, FINDING-2, ...)"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["Critical", "Important", "Minor", "Notable"],
+      "description": "Severity level, ordered: Critical > Important > Minor > Notable"
+    },
+    "confidence": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Confidence score. Minimum 70 to report (50 for Critical)"
+    },
+    "file": {
+      "type": "string",
+      "description": "Relative file path"
+    },
+    "line_start": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Starting line number"
+    },
+    "line_end": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Ending line number (defaults to line_start)"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "correctness",
+        "architecture",
+        "security",
+        "production-readiness",
+        "test-quality",
+        "goal-alignment",
+        "external",
+        "regression"
+      ],
+      "description": "Finding category matching the source agent's domain"
+    },
+    "description": {
+      "type": "string",
+      "description": "What is wrong"
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Why it matters"
+    },
+    "fix": {
+      "type": "string",
+      "description": "Concrete fix suggestion"
+    },
+    "source_agent": {
+      "type": "string",
+      "description": "Agent name that found this"
+    },
+    "also_reported_by": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Other agents that reported same issue (after dedup)"
+    },
+    "external_rationale": {
+      "type": "string",
+      "description": "Full rationale from external tool (CodeRabbit/Copilot)"
+    },
+    "resolution": {
+      "type": "string",
+      "enum": ["pending", "fixed", "unresolved"],
+      "description": "Current resolution status"
+    },
+    "round_found": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Fix loop round when discovered (1 = initial review)"
+    }
+  },
+  "additionalProperties": false
+}
