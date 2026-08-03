@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+*.log
+.vscode/
+.idea/
+.env*
+.cc-review/.triage-state.json

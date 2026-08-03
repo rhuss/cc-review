@@ -1,0 +1,27 @@
+schema_version: "1.0"
+extension:
+  id: cc-review
+  name: "cc-review"
+  version: "1.0.0"
+  description: "Multi-agent code review with autonomous fix loop and PR comment triage"
+  author: cc-review
+  license: MIT
+
+provides:
+  commands:
+    - name: speckit.cc-review.review
+      file: commands/speckit.cc-review.review.md
+      description: "Enhanced multi-agent code review with external tools"
+    - name: speckit.cc-review.triage
+      file: commands/speckit.cc-review.triage.md
+      description: "PR comment triage with bot handling and human review"
+
+hooks:
+  after_implement:
+    command: speckit.cc-review.review
+    optional: true
+    description: "Run enhanced code review after implementation"
+
+tags:
+  - review
+  - triage
