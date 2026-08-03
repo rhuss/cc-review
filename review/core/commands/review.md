@@ -122,9 +122,11 @@ For each linked issue, fetch title and body. Build a `DECLARED_GOALS` block from
 
 If no PR is found: log "Goal alignment: skipped (no PR found)" and skip Agent 6.
 
-## Step 3: Dispatch Review Agents
+## Step 3: Dispatch Review Agents and External Tools
 
-Dispatch each review agent sequentially (or in parallel if `--parallel` is passed). Each agent gets:
+Dispatch all review agents and external tools together. In sequential mode (default), run them one after another. In parallel mode (`--parallel`), dispatch all of them concurrently.
+
+Each internal agent gets:
 - The Common Preamble from `core/agents/preamble.md`
 - Its specific prompt from `core/agents/<name>.md`
 - The list of changed files and their contents
@@ -134,22 +136,26 @@ Dispatch each review agent sequentially (or in parallel if `--parallel` is passe
 
 If `REVIEW_HINTS` is non-empty, include item 11 in the preamble with the contents of the review hints file between the delimiters. If empty, omit item 11.
 
-**Agent dispatch order:**
+**Dispatch list:**
 1. Correctness (`core/agents/correctness.md`)
 2. Architecture & Idioms (`core/agents/architecture.md`)
 3. Security (`core/agents/security.md`)
 4. Production Readiness (`core/agents/production.md`)
 5. Test Quality (`core/agents/test-quality.md`)
 6. Goal Alignment (`core/agents/goal-alignment.md`) - skip if `GOALS_AVAILABLE` is false
+7. CodeRabbit (external) - skip if not `CODERABBIT_AVAILABLE`
+8. Copilot CLI (external) - skip if not `COPILOT_AVAILABLE`
+9. Codex CLI (external) - skip if not `CODEX_AVAILABLE`
 
-Report progress after each agent:
+Report progress after each completes:
 ```
-Agent 1/6: Correctness... done, N findings
-Agent 2/6: Architecture & Idioms... done, N findings
+Agent 1/N: Correctness... done, N findings
+Agent 2/N: Architecture & Idioms... done, N findings
 ...
+Agent 7/N: CodeRabbit (external)... done, N findings
 ```
 
-## Step 4: Dispatch External Tools (if available)
+### External Tool Invocations
 
 **CodeRabbit** (if `CODERABBIT_AVAILABLE`):
 ```bash
@@ -175,7 +181,7 @@ Parse output: extract file/line/severity/description/rationale. Set category="ex
 
 **Error handling**: If a tool times out, crashes, or errors, log the failure and continue. External tool failures do not block the review.
 
-## Step 5: Merge and Deduplicate Findings
+## Step 4: Merge and Deduplicate Findings
 
 1. Collect all findings from internal agents and external tools
 2. Normalize to the Finding schema (see `core/schemas/finding.schema.json`)
@@ -184,14 +190,14 @@ Parse output: extract file/line/severity/description/rationale. Set category="ex
 5. Exception: `goal-alignment` findings do NOT dedup against other categories
 6. Assign sequential IDs (FINDING-1, FINDING-2, ...)
 
-## Step 6: Gate Check
+## Step 5: Gate Check
 
 - Count Critical and Important findings
 - If Critical + Important = 0: **GATE PASS**
 - If Critical + Important > 0: proceed to fix loop (or fail if `--no-fix` or max rounds reached)
 - Notable findings are excluded from the gate check
 
-## Step 7: Autonomous Fix Loop
+## Step 6: Autonomous Fix Loop
 
 Maximum rounds from config (default 3). Skip if `--no-fix` is passed.
 
@@ -207,7 +213,7 @@ For each round:
 7. Merge new findings with existing Minor findings
 8. Gate check: if Critical + Important = 0, GATE PASS and exit loop
 
-### Step 7b: Post-Fix Spec Compliance Check
+### Step 6b: Post-Fix Spec Compliance Check
 
 After fix loop completes, if code was removed AND `--spec` was provided:
 1. Read spec functional requirements
@@ -215,7 +221,7 @@ After fix loop completes, if code was removed AND `--spec` was provided:
 3. Add Critical findings for dropped requirements
 4. Re-run fix loop if rounds remain
 
-## Step 8: Write Findings Report
+## Step 7: Write Findings Report
 
 Write `review-findings.md` at the output path:
 
@@ -274,7 +280,7 @@ Write `review-findings.md` at the output path:
 [Unresolved Critical/Important findings, if gate failed]
 ```
 
-## Step 9: Console Summary
+## Step 8: Console Summary
 
 ```
 Review completed.
