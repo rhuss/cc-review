@@ -1,0 +1,24 @@
+{
+  "name": "cc-review-plugin-development",
+  "owner": {
+    "name": "Roland Huss",
+    "email": "rhuss@redhat.com"
+  },
+  "metadata": {
+    "description": "Local development marketplace for the cc-review plugin."
+  },
+  "plugins": [
+    {
+      "name": "cc-review",
+      "version": "1.1.0",
+      "description": "Multi-agent code review with autonomous fix loop for Claude Code",
+      "author": {
+        "name": "Roland Huss",
+        "email": "rhuss@redhat.com"
+      },
+      "source": "./review",
+      "homepage": "https://github.com/rhuss/cc-review",
+      "repository": "https://github.com/rhuss/cc-review.git"
+    }
+  ]
+}

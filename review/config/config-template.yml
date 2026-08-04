@@ -1,0 +1,37 @@
+# cc-review default configuration
+# Copy to .cc-review/config.yml in your project root (project-level)
+# or to ~/.cc-review/config.yml (user-level) to customize.
+#
+# Resolution order: CLI flags > project config > user config > these defaults
+
+external_tools:
+  coderabbit: true
+  copilot: false
+  codex: true
+
+test_command: ""  # auto-detect from Makefile/go.mod/package.json/pyproject.toml
+test_timeout_seconds: 300
+
+triage:
+  bot_profiles:
+    - login: "coderabbitai[bot]"
+      self_resolves: true
+      auto_resolve: false
+    - login: "copilot[bot]"
+      self_resolves: false
+      auto_resolve: true
+    - login: "devin-ai-integration[bot]"
+      self_resolves: false
+      auto_resolve: true
+  codecov:
+    patch_threshold: 80
+    auto_remediate: true
+
+pr_posting:
+  enabled: true
+  max_inline_comments: 50
+  voice_profile: "reviewer"
+  recovery_dir: ".cc-review"
+
+max_fix_rounds: 3
+output_dir: "."
