@@ -1,0 +1,26 @@
+# Thorough profile: all agents, all tools, strict thresholds, 5 fix rounds
+agents:
+  correctness: true
+  architecture: true
+  security: true
+  production: true
+  test_quality: true
+  goal_alignment: true
+
+external_tools:
+  coderabbit: true
+  copilot: true
+  codex: true
+
+severity:
+  min_confidence: 80
+  request_changes_severities:
+    - Critical
+    - Important
+    - Minor
+  auto_fix: true
+
+output:
+  verbosity: "normal"
+
+max_fix_rounds: 5

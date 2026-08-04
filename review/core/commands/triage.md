@@ -1,7 +1,7 @@
 ---
 name: triage
 description: PR comment triage - classify and handle bot review comments, interactively review human comments
-argument-hint: "[--pr <number>] [--spec <path>] [--no-coverage-fix] [--idea-inbox <path>]"
+argument-hint: "[--pr <number>] [--spec <path>] [--config <path>] [--profile <name>] [--no-coverage-fix] [--idea-inbox <path>]"
 ---
 
 # PR Review Comment Triage
@@ -20,6 +20,15 @@ PLATFORM="core/scripts/platform.sh"
 
 ```bash
 source "$(dirname "$0")/../scripts/resolve-config.sh"
+```
+
+Initialize the merged config from all layers. `--config` and `--profile` are parsed from command arguments:
+
+```bash
+if ! resolve_config_init ${CONFIG_FLAG:+--config "$CONFIG_FLAG"} ${PROFILE_FLAG:+--profile "$PROFILE_FLAG"}; then
+  exit 1
+fi
+resolve_config_validate_types
 ```
 
 ## Step 1: Resolve PR Context
@@ -287,13 +296,18 @@ For each bot thread, match the bot author against known profiles.
 | `copilot[bot]` | No | Yes |
 | `devin-ai-integration[bot]` | No | Yes |
 
-**Config overrides**: Check if `.cc-review/config.yml` exists. If so, read bot profile overrides:
+**Config overrides**: Read bot profile overrides from the merged config (which respects --config, --profile, and the full resolution chain):
 
 ```bash
-CONFIG_FILE=$(resolve_config_file)
-if [ -n "$CONFIG_FILE" ]; then
-  CUSTOM_PROFILES=$(yq -o=json '.triage.bot_profiles // []' "$CONFIG_FILE")
-  OVERRIDES=$(yq -o=json '.triage.overrides // {}' "$CONFIG_FILE")
+if [ -n "$CC_REVIEW_MERGED_CONFIG" ] && [ -f "$CC_REVIEW_MERGED_CONFIG" ]; then
+  CUSTOM_PROFILES=$(yq -o=json '.triage.bot_profiles // []' "$CC_REVIEW_MERGED_CONFIG")
+  OVERRIDES=$(yq -o=json '.triage.overrides // {}' "$CC_REVIEW_MERGED_CONFIG")
+else
+  CONFIG_FILE=$(resolve_config_file)
+  if [ -n "$CONFIG_FILE" ]; then
+    CUSTOM_PROFILES=$(yq -o=json '.triage.bot_profiles // []' "$CONFIG_FILE")
+    OVERRIDES=$(yq -o=json '.triage.overrides // {}' "$CONFIG_FILE")
+  fi
 fi
 ```
 

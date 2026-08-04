@@ -11,14 +11,6 @@ Ideas captured from code reviews for future brainstorming.
 
 > CodeRabbit flagged that FR-003 lists goal-alignment as a required perspective, while the no-PR flow has no defined behavior for it. The downstream artifacts (research.md, plan, tasks) already handle this correctly by skipping goal-alignment without PR context. Consider adding an explicit note to the spec's acceptance scenarios or FR-003 stating that goal-alignment is skipped gracefully when no PR body/issue metadata is available.
 
-### platform-abstraction
-
-- **Source**: triage
-- **Date**: 2026-08-03
-- **Reference**: PR rhuss/cc-spex#51 (051-extract-cc-review)
-- **Summary**: The triage command and review command have unimplemented extensibility points for GitLab platform support and parallel agent dispatch. Both are scaffolded but not wired end-to-end.
-
-> Two related findings: (1) Triage operations use `gh` directly instead of routing through `core/scripts/platform.sh`, making the GitLab stubs in T035b unreachable from the triage flow. (2) The `--parallel` flag is accepted by the review command but only sequential dispatch is implemented; the parallel execution path needs definition for isolation and merge behavior. Both represent follow-up work for post-MVP iterations.
 
 ### spec-completeness
 

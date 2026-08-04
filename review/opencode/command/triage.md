@@ -19,5 +19,7 @@ Read and execute `core/commands/triage.md` from the resolved core path.
 Pass through all arguments from the user's invocation:
 - `--pr <number>`: Target PR number
 - `--spec <path>`: Specification file path
+- `--config <path>`: Explicit config file path
+- `--profile <name>`: Profile preset name (ci, thorough, quick)
 - `--no-coverage-fix`: Skip automatic coverage fixes
 - `--idea-inbox <path>`: File path for capturing out-of-scope ideas

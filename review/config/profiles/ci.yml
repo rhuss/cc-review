@@ -1,0 +1,30 @@
+# CI profile: all agents, all tools, verbose output, no interactive prompts
+agents:
+  correctness: true
+  architecture: true
+  security: true
+  production: true
+  test_quality: true
+  goal_alignment: true
+
+external_tools:
+  coderabbit: true
+  copilot: true
+  codex: true
+
+severity:
+  min_confidence: 70
+  request_changes_severities:
+    - Critical
+    - Important
+  auto_fix: true
+
+pr_posting:
+  enabled: false
+
+output:
+  verbosity: "verbose"
+
+interactive: false
+
+max_fix_rounds: 3
