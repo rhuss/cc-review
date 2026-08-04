@@ -15,55 +15,55 @@ cc-review dispatches 6 specialized review agents against your code changes, merg
 
 ## Installation
 
+cc-review ships as a single plugin directory (`review/`) with native manifests for Claude Code, Codex, and OpenCode. Each harness reads its own manifest and ignores the others.
+
 ### Claude Code
 
-Run the install script to symlink commands into your Claude Code commands directory:
+Install via the Claude Code plugin system:
 
 ```bash
-# Project-local install
-./adapters/claude-code/install.sh
+# From a local clone
+claude plugin marketplace add /path/to/cc-review
+claude plugin install cc-review@cc-review-plugin-development
 
-# Global install (available in all projects)
-./adapters/claude-code/install.sh --global
-
-# Install for a specific project
-./adapters/claude-code/install.sh --project-dir /path/to/project
+# Or use the Makefile shortcut
+make install
 ```
 
-This creates symlinks in `.claude/commands/` (or `~/.claude/commands/` for global) pointing to the adapter's SKILL.md files. The adapter resolves the cc-review core at runtime.
+This registers the local marketplace and installs the plugin. The `/review` and `/triage` commands become available immediately.
 
-### spec-kit
+### Codex
 
-Install as a spec-kit extension:
+Install via the Codex plugin system:
 
 ```bash
-specify extension add /path/to/cc-review/adapters/speckit
+# From a local clone (register as local marketplace)
+codex plugin marketplace add /path/to/cc-review
+codex plugin install cc-review@cc-review-plugin-development
 ```
 
-Or symlink manually:
+The `review` and `triage` skills are discovered from `review/skills/`.
+
+### OpenCode
+
+Install the OpenCode commands into your project:
 
 ```bash
-ln -s /path/to/cc-review/adapters/speckit ~/.specify/extensions/cc-review
+# From a local clone
+/path/to/cc-review/review/opencode/install.sh --project-dir .
+```
+
+This copies cc-review commands to `.opencode/plugins/cc-review/` in your project.
+
+### spec-kit (optional)
+
+Install as a spec-kit extension for projects using cc-spex:
+
+```bash
+specify extension add /path/to/cc-review/speckit
 ```
 
 The spec-kit adapter automatically passes spec paths, constitution hints, and output locations during the ship pipeline.
-
-### Codex / OpenCode (AGENTS.md)
-
-Run the install script to append the cc-review agent fragment to your AGENTS.md:
-
-```bash
-# Project-local
-./adapters/agents-md/install.sh
-
-# Global
-./adapters/agents-md/install.sh --global
-
-# Specific project
-./adapters/agents-md/install.sh --project-dir /path/to/project
-```
-
-If AGENTS.md already exists and contains the cc-review section, the script exits without modification.
 
 ## Usage
 
@@ -146,11 +146,11 @@ Copy the template to your project or home directory:
 ```bash
 # Project-level (takes precedence)
 mkdir -p .cc-review
-cp config/config-template.yml .cc-review/config.yml
+cp review/config/config-template.yml .cc-review/config.yml
 
 # User-level (fallback)
 mkdir -p ~/.cc-review
-cp config/config-template.yml ~/.cc-review/config.yml
+cp review/config/config-template.yml ~/.cc-review/config.yml
 ```
 
 Resolution order: CLI flags > project config (`.cc-review/config.yml`) > user config (`~/.cc-review/config.yml`) > built-in defaults.
@@ -188,24 +188,26 @@ Create `.cc-review/review-hints.md` in your project root to provide project-spec
 
 ## Architecture
 
-cc-review separates portable review logic from harness-specific wiring:
+cc-review separates portable review logic from harness-specific wiring. The `review/` directory is a single distributable plugin that contains native manifests for all three major AI coding agent harnesses:
 
 ```
-core/               Harness-agnostic review engine
-  agents/            6 review agent prompts + shared preamble
-  commands/          Command definitions (review.md, triage.md)
-  scripts/           Shell utilities (config resolution, platform detection, triage state)
-  schemas/           Finding schema (JSON Schema)
+review/                  Plugin directory (distributable)
+  .claude-plugin/        Claude Code plugin manifest
+  .codex-plugin/         Codex plugin manifest
+  .claude/commands/      Claude Code command shims
+  skills/                Codex skill shims
+  opencode/              OpenCode commands + install script
+  core/                  Harness-agnostic review engine
+    agents/              6 review agent prompts + shared preamble
+    commands/            Command definitions (review.md, triage.md)
+    scripts/             Shell utilities (config resolution, platform detection)
+    schemas/             Finding schema (JSON Schema)
+  config/                Default configuration template
 
-adapters/            Thin wrappers (< 50 lines each)
-  claude-code/       SKILL.md files + install script
-  speckit/           extension.yml + spec-kit command wrappers
-  agents-md/         AGENTS.md fragment + install script
-
-config/              Default configuration template
+speckit/                 Optional spec-kit extension (separate distribution)
 ```
 
-Each adapter resolves the core directory at runtime and delegates to the core command files. Adapters add no review logic; they translate between the harness's command format and the core's interface. The adapter contract: resolve core path, pass through arguments, stay under 50 lines.
+Each harness reads its own manifest and command directory. Command shims resolve the core directory at runtime and delegate to the core command files. Shims add no review logic; they translate between the harness's discovery mechanism and the core's interface.
 
 ### Review Agents
 

@@ -1,0 +1,20 @@
+{
+  "name": "cc-review",
+  "version": "1.1.0",
+  "description": "Multi-agent code review with autonomous fix loop for AI coding agents",
+  "author": {
+    "name": "Roland Huss",
+    "email": "rhuss@redhat.com"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/rhuss/cc-review",
+  "homepage": "https://github.com/rhuss/cc-review",
+  "keywords": [
+    "claude-code",
+    "plugin",
+    "code-review",
+    "multi-agent",
+    "autonomous-fix",
+    "triage"
+  ]
+}
