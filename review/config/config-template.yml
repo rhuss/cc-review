@@ -27,5 +27,11 @@ triage:
     patch_threshold: 80
     auto_remediate: true
 
+pr_posting:
+  enabled: true
+  max_inline_comments: 50
+  voice_profile: "reviewer"
+  recovery_dir: ".cc-review"
+
 max_fix_rounds: 3
 output_dir: "."

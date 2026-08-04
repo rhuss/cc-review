@@ -83,6 +83,37 @@ no meaningful commit messages), do NOT skip the review. Instead:
 4. Add a finding recommending that the PR include a description of its
    goals, so reviewers can properly assess alignment.
 
+PASS 3 - WHAT WENT WELL (PR MODE ONLY):
+
+When reviewing a PR (the review command was invoked with `--pr`), perform a
+third pass identifying genuinely positive patterns in the code changes.
+If no PR context is available, skip this pass entirely.
+
+Look for these positive signals:
+- Solid error handling: proper error propagation, meaningful error messages,
+  graceful degradation, recovery paths
+- Clean abstractions: well-named functions, clear interfaces, appropriate
+  encapsulation, single responsibility
+- Good test coverage: tests that verify behavior (not just lines), edge
+  case coverage, clear test names, appropriate use of mocks vs integration
+- Defensive coding: input validation, boundary checks, nil/null guards
+- Clear documentation: meaningful comments that explain WHY, accurate
+  doc strings, helpful inline notes
+- Consistent patterns: following established codebase conventions,
+  idiomatic use of the language
+
+Produce a "What Went Well" section with 2-5 bullet points highlighting
+specific positive observations. Each bullet must reference a concrete
+code location (file and function/line). Do not fabricate praise; if
+nothing stands out, produce fewer bullets or state "No notable positive
+patterns identified in this diff."
+
+Do NOT include generic praise ("good job", "nice work"). Every bullet
+must cite a specific pattern and why it benefits the codebase.
+
+Output this section with the heading "What Went Well:" so the review
+command can extract and include it in the PR review summary body.
+
 SUMMARY TABLE FORMAT:
 
 At the end of your review, produce two summary tables:
