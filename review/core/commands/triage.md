@@ -13,6 +13,7 @@ Triage all review comments on a PR: autonomously handle bot comments (assess, ap
 ```bash
 TRIAGE_STATE="core/scripts/triage-state.sh"
 SANITIZE_JSON="core/scripts/sanitize-gh-json.py"
+PLATFORM="core/scripts/platform.sh"
 ```
 
 ## Config Resolution
@@ -584,6 +585,89 @@ When `--spec <path>` is provided, read the spec file at the given path and use i
 When rejecting a suggestion that conflicts with a spec requirement, reference the specific requirement ID (e.g., FR-003) in the rejection reply.
 
 If `--spec` is not provided, fall back to code-only analysis. This is not an error.
+
+## Step 11b: cc-review Thread Management
+
+After processing bot and spec-aware assessments, handle threads that were posted by cc-review itself. These are identified by the source footer pattern in the first comment's body.
+
+### 11b-1: Detect cc-review Threads
+
+From the full thread list (fetched in Step 3), identify cc-review threads by checking if the first comment's body contains:
+- `_Source: ` followed by a known agent name and ` agent_` (e.g., `_Source: correctness agent_`)
+- `_Source: coderabbit` or other external tool attribution
+- `<!-- cc-review:run-id:` marker in any review body
+
+A thread is a cc-review thread if any of these patterns match. Collect these into a separate `cc_review_threads` list. Skip threads already resolved or already handled in the state file.
+
+### 11b-2: Check for Replies
+
+For each cc-review thread, check if there are replies after the initial cc-review comment. Look at the thread's comments list (from the GraphQL response) for comments posted after the first comment that are NOT from the cc-review bot.
+
+If no replies exist, skip the thread (nothing to assess).
+
+### 11b-3: Assess Reply Intent
+
+For each cc-review thread with replies, parse the most recent reply to determine intent:
+
+- **Fixed**: Reply contains phrases like "fixed", "resolved", "addressed", "done", "applied", or references a commit SHA (e.g., "fixed in abc123")
+- **Won't fix**: Reply contains phrases like "won't fix", "intentional", "by design", "not a bug", "working as intended", "accepted risk"
+- **Deferred**: Reply contains phrases like "later", "follow-up", "next sprint", "tracked", "backlog"
+- **Unclear**: Reply does not match any of the above patterns
+
+### 11b-4: Verify Fix Claims
+
+For replies claiming a fix:
+
+1. Read the file at the path referenced by the thread (`thread.path`)
+2. Check the line range around the original finding's location
+3. Determine if the code has changed in a way that addresses the original finding's description
+4. If the fix is confirmed: mark for resolution
+5. If the fix is NOT confirmed (code unchanged or issue persists): leave the thread open
+
+### 11b-5: Handle Assessed Threads
+
+Based on the assessment:
+
+- **Fixed (confirmed)**: Post a reply and resolve the thread:
+  ```
+  Resolved: fix confirmed in the current code.
+  <!-- cc-review-triage -->
+  ```
+  Then resolve via the platform abstraction (source `$PLATFORM` if not already sourced):
+  ```bash
+  resolve_thread "$THREAD_NODE_ID"
+  ```
+
+- **Won't fix (acknowledged)**: If the rejection reasoning is sound (the reply explains why the flagged pattern is intentional), post a reply and resolve:
+  ```
+  Acknowledged: marking as intentional per author's explanation.
+  <!-- cc-review-triage -->
+  ```
+  Then resolve the thread.
+
+- **Won't fix (disagreed)**: If the rejection reasoning does not hold up (the original finding identifies a real issue that the reply dismisses without adequate justification), leave the thread open. Do not post a reply.
+
+- **Deferred**: Leave the thread open. No action needed.
+
+- **Unclear**: Leave the thread open. No action needed.
+
+Update the state file for each assessed thread:
+```bash
+"$TRIAGE_STATE" set "$PR_NUM" "$COMMENT_DB_ID" "<action>" "$REPLY_ID"
+```
+
+### 11b-6: Report
+
+Include cc-review thread results in the Step 13 summary:
+
+```
+**cc-review threads**:
+- Resolved (fix confirmed): N
+- Resolved (acknowledged rejection): N
+- Left open (unconfirmed fix): N
+- Left open (deferred/unclear): N
+- No replies: N
+```
 
 ## Step 12: Human Comment Interactive Review
 
