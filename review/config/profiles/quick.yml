@@ -1,0 +1,24 @@
+# Quick profile: correctness + security only, no external tools, 1 fix round
+agents:
+  correctness: true
+  architecture: false
+  security: true
+  production: false
+  test_quality: false
+  goal_alignment: false
+
+external_tools:
+  coderabbit: false
+  copilot: false
+  codex: false
+
+severity:
+  min_confidence: 70
+  request_changes_severities:
+    - Critical
+  auto_fix: true
+
+output:
+  verbosity: "quiet"
+
+max_fix_rounds: 1

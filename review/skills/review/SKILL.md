@@ -1,7 +1,7 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--no-fix] [--no-external] [--parallel] [--sequential]"
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--parallel] [--sequential]"
 ---
 
 # Review
@@ -27,7 +27,10 @@ Pass through all arguments from the user's invocation:
 - `--spec <path>`: Specification file path
 - `--hints <path>`: Review hints file
 - `--output <path>`: Output report path
+- `--config <path>`: Explicit config file path
+- `--profile <name>`: Profile preset name (ci, thorough, quick)
 - `--no-fix`: Skip autonomous fix loop
 - `--no-external`: Skip external tool integration
+- `--no-coderabbit` / `--no-copilot` / `--no-codex`: Disable individual tools
 - `--parallel`: Run review agents in parallel
 - `--sequential`: Run review agents sequentially
