@@ -1,7 +1,7 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop. Dispatches 6 specialized review agents, merges findings, auto-fixes Critical/Important issues.
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--no-fix] [--max-rounds <n>] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--parallel] [--sequential]"
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--parallel] [--sequential]"
 ---
 
 # Code Review
@@ -12,6 +12,33 @@ argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path
 
 ```bash
 source "$(dirname "$0")/../scripts/resolve-config.sh"
+```
+
+Initialize the merged config from all layers. `--config` and `--profile` are parsed from command arguments:
+
+```bash
+if ! resolve_config_init ${CONFIG_FLAG:+--config "$CONFIG_FLAG"} ${PROFILE_FLAG:+--profile "$PROFILE_FLAG"}; then
+  exit 1
+fi
+```
+
+Apply CLI flag overrides on top of the merged config:
+
+```bash
+CLI_OVERRIDES=()
+[ "$NO_CODERABBIT" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=false")
+[ "$NO_COPILOT" = "true" ] && CLI_OVERRIDES+=("external_tools.copilot=false")
+[ "$NO_CODEX" = "true" ] && CLI_OVERRIDES+=("external_tools.codex=false")
+[ "$NO_EXTERNAL" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=false" "external_tools.copilot=false" "external_tools.codex=false")
+[ "$USE_EXTERNAL" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=true" "external_tools.copilot=true" "external_tools.codex=true")
+[ -n "$MAX_ROUNDS_FLAG" ] && CLI_OVERRIDES+=("max_fix_rounds=$MAX_ROUNDS_FLAG")
+[ ${#CLI_OVERRIDES[@]} -gt 0 ] && resolve_config_apply_cli_overrides "${CLI_OVERRIDES[@]}"
+```
+
+Validate config types after merge and overrides:
+
+```bash
+resolve_config_validate_types
 ```
 
 ### Review Hints
@@ -42,17 +69,36 @@ CLI overrides (applied only if explicitly passed):
 - `--no-external` sets all to false
 - `--no-coderabbit` / `--no-copilot` / `--no-codex` disable individual tools
 
-### Output Path
+### Output Settings
 
 ```bash
-OUTPUT_DIR=$(resolve_config "output_dir" ".")
-OUTPUT_PATH="${OUTPUT_FLAG:-$OUTPUT_DIR/review-findings.md}"
+OUTPUT_DIR=$(resolve_config "output.dir" ".")
+FINDINGS_FILENAME=$(resolve_config "output.findings_filename" "review-findings.md")
+VERBOSITY=$(resolve_config "output.verbosity" "normal")
+OUTPUT_PATH="${OUTPUT_FLAG:-$OUTPUT_DIR/$FINDINGS_FILENAME}"
 ```
+
+Verbosity controls agent progress reporting:
+- `quiet`: Only final summary and errors
+- `normal`: Agent completion status and finding counts
+- `verbose`: Agent progress, timing, intermediate results, and debug info
 
 ## Step 1: Determine Changed Files
 
 ```bash
 MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+```
+
+### Auto-Detect PR
+
+When no `--pr` flag is provided, check config for auto-detection:
+
+```bash
+AUTO_DETECT_PR=$(resolve_config "pr_posting.auto_detect_pr" "false")
+if [ -z "$PR_NUMBER" ] && [ "$AUTO_DETECT_PR" = "true" ]; then
+  CURRENT_BRANCH=$(git branch --show-current)
+  PR_NUMBER=$(gh pr view "$CURRENT_BRANCH" --json number --jq '.number' 2>/dev/null || echo "")
+fi
 ```
 
 When `--pr <number>` is provided, use the PR's diff against its base branch:
@@ -89,8 +135,8 @@ Check for external review CLIs, respecting config settings:
 ### Test Command Auto-Detection
 
 ```bash
-TEST_CMD=$(resolve_config "test_command" "")
-TEST_TIMEOUT=$(resolve_config "test_timeout_seconds" "300")
+TEST_CMD=$(resolve_config "test.command" "")
+TEST_TIMEOUT=$(resolve_config "test.timeout_seconds" "300")
 
 [ -z "$TEST_CMD" ] && grep -q '^test:' Makefile 2>/dev/null && TEST_CMD="make test"
 [ -z "$TEST_CMD" ] && [ -f go.mod ] && TEST_CMD="go test ./..."
@@ -136,13 +182,26 @@ Each internal agent gets:
 
 If `REVIEW_HINTS` is non-empty, include item 11 in the preamble with the contents of the review hints file between the delimiters. If empty, omit item 11.
 
+### Agent Selection
+
+Read agent toggles from config. Disabled agents are skipped entirely:
+
+```bash
+AGENT_CORRECTNESS=$(resolve_config "agents.correctness" "true")
+AGENT_ARCHITECTURE=$(resolve_config "agents.architecture" "true")
+AGENT_SECURITY=$(resolve_config "agents.security" "true")
+AGENT_PRODUCTION=$(resolve_config "agents.production" "true")
+AGENT_TEST_QUALITY=$(resolve_config "agents.test_quality" "true")
+AGENT_GOAL_ALIGNMENT=$(resolve_config "agents.goal_alignment" "true")
+```
+
 **Dispatch list:**
-1. Correctness (`core/agents/correctness.md`)
-2. Architecture & Idioms (`core/agents/architecture.md`)
-3. Security (`core/agents/security.md`)
-4. Production Readiness (`core/agents/production.md`)
-5. Test Quality (`core/agents/test-quality.md`)
-6. Goal Alignment (`core/agents/goal-alignment.md`) - skip if `GOALS_AVAILABLE` is false
+1. Correctness (`core/agents/correctness.md`) - skip if `AGENT_CORRECTNESS` is "false"
+2. Architecture & Idioms (`core/agents/architecture.md`) - skip if `AGENT_ARCHITECTURE` is "false"
+3. Security (`core/agents/security.md`) - skip if `AGENT_SECURITY` is "false"
+4. Production Readiness (`core/agents/production.md`) - skip if `AGENT_PRODUCTION` is "false"
+5. Test Quality (`core/agents/test-quality.md`) - skip if `AGENT_TEST_QUALITY` is "false"
+6. Goal Alignment (`core/agents/goal-alignment.md`) - skip if `AGENT_GOAL_ALIGNMENT` is "false" OR `GOALS_AVAILABLE` is false
 7. CodeRabbit (external) - skip if not `CODERABBIT_AVAILABLE`
 8. Copilot CLI (external) - skip if not `COPILOT_AVAILABLE`
 9. Codex CLI (external) - skip if not `CODEX_AVAILABLE`
@@ -181,6 +240,18 @@ Parse output: extract file/line/severity/description/rationale. Set category="ex
 
 **Error handling**: If a tool times out, crashes, or errors, log the failure and continue. External tool failures do not block the review.
 
+### Severity Filtering
+
+Read severity settings from config and filter findings:
+
+```bash
+MIN_CONFIDENCE=$(resolve_config "severity.min_confidence" "70")
+REQUEST_CHANGES_SEVERITIES=$(resolve_config "severity.request_changes_severities" "Critical,Important")
+AUTO_FIX=$(resolve_config "severity.auto_fix" "true")
+```
+
+After each agent completes, filter findings where `confidence < MIN_CONFIDENCE`. These filtered findings are excluded from the report entirely.
+
 ## Step 4: Merge and Deduplicate Findings
 
 1. Collect all findings from internal agents and external tools
@@ -192,14 +263,20 @@ Parse output: extract file/line/severity/description/rationale. Set category="ex
 
 ## Step 5: Gate Check
 
-- Count Critical and Important findings
-- If Critical + Important = 0: **GATE PASS**
-- If Critical + Important > 0: proceed to fix loop (or fail if `--no-fix` or max rounds reached)
+Use `REQUEST_CHANGES_SEVERITIES` from config to determine which severities trigger a gate failure:
+
+- Count findings whose severity is in `REQUEST_CHANGES_SEVERITIES` (default: Critical, Important)
+- If count = 0: **GATE PASS**
+- If count > 0: proceed to fix loop (or fail if `--no-fix`, `AUTO_FIX` is "false", or max rounds reached)
 - Notable findings are excluded from the gate check
 
 ## Step 6: Autonomous Fix Loop
 
-Maximum rounds from config (default 3). Skip if `--no-fix` is passed.
+```bash
+MAX_FIX_ROUNDS=$(resolve_config "max_fix_rounds" "3")
+```
+
+Maximum rounds from config (default 3). Skip if `--no-fix` is passed or `AUTO_FIX` is "false".
 
 For each round:
 1. Collect all Critical and Important findings, sorted by file
