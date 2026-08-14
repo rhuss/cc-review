@@ -33,14 +33,21 @@ resolve_config_validate_types
 
 ## Step 1: Resolve PR Context
 
-Determine the PR number. If `--pr <number>` is provided in arguments, use that. Otherwise, detect the open PR for the current branch:
+Determine the PR number using this resolution order:
 
-```bash
-BRANCH=$(git branch --show-current)
-PR_NUM=$(gh pr view "$BRANCH" --json number --jq '.number' 2>/dev/null)
-```
-
-If no PR is found, report "No open PR found for branch `$BRANCH`" and stop.
+1. **Explicit argument**: If `--pr <number>` is provided, use that directly.
+2. **Current branch**: Detect the open PR for the current branch:
+   ```bash
+   BRANCH=$(git branch --show-current)
+   PR_NUM=$(gh pr view "$BRANCH" --json number --jq '.number' 2>/dev/null)
+   ```
+3. **Recent PRs by author**: If the current branch has no associated PR, list recent open PRs authored by the current user:
+   ```bash
+   gh pr list --author "@me" --state open --limit 10 --json number,title,headRefName
+   ```
+   - If exactly **one** PR is found, use it and inform the user: "No PR on current branch `$BRANCH`, using PR #N (`title`)".
+   - If **multiple** PRs are found, present the list to the user and ask which one to triage. Do not proceed until the user selects one.
+   - If **no** PRs are found, report "No open PR found for branch `$BRANCH` and no open PRs by you in this repo" and stop.
 
 Verify `gh` authentication by checking the exit code. If it fails, report "gh CLI not authenticated, run `gh auth login`" and stop without partial processing.
 
@@ -613,11 +620,40 @@ From the full thread list (fetched in Step 3), identify cc-review threads by che
 
 A thread is a cc-review thread if any of these patterns match. Collect these into a separate `cc_review_threads` list. Skip threads already resolved or already handled in the state file.
 
-### 11b-2: Check for Replies
+### 11b-2: Check for Replies and Proactive Verification
 
 For each cc-review thread, check if there are replies after the initial cc-review comment. Look at the thread's comments list (from the GraphQL response) for comments posted after the first comment that are NOT from the cc-review bot.
 
-If no replies exist, skip the thread (nothing to assess).
+Split into two groups:
+- **Replied threads**: Have human replies. Proceed to Step 11b-3 (assess reply intent).
+- **Unreplied threads**: No replies yet. Proceed to Step 11b-2b (proactive verification).
+
+### 11b-2b: Proactive Verification of Unreplied Threads
+
+For each unreplied cc-review thread, check whether the original finding has been addressed in the current code:
+
+1. Read the file at `thread.path` at the line range referenced by the original comment.
+2. Parse the original finding's description and suggested fix from the comment body.
+3. Determine if the code has changed since the finding was posted (compare against the finding's context).
+4. If the issue is resolved in the current code: mark for resolution and post a reply:
+   ```
+   Resolved: the issue flagged here has been addressed in the current code.
+   <!-- cc-review-triage -->
+   ```
+   Then resolve the thread.
+5. If the file was deleted or the relevant code was removed entirely: mark for resolution:
+   ```
+   Resolved: the file or code section no longer exists.
+   <!-- cc-review-triage -->
+   ```
+6. If the issue still exists: leave the thread open. No action needed.
+
+Update the state file for each resolved thread. Include results in the Step 11b-6 report under a separate line:
+```
+- Resolved (proactive, code fixed): N
+- Resolved (proactive, code removed): N
+- Still open (issue persists): N
+```
 
 ### 11b-3: Assess Reply Intent
 
@@ -678,9 +714,11 @@ Include cc-review thread results in the Step 13 summary:
 **cc-review threads**:
 - Resolved (fix confirmed): N
 - Resolved (acknowledged rejection): N
+- Resolved (proactive, code fixed): N
+- Resolved (proactive, code removed): N
 - Left open (unconfirmed fix): N
 - Left open (deferred/unclear): N
-- No replies: N
+- Left open (issue persists): N
 ```
 
 ## Step 12: Human Comment Interactive Review

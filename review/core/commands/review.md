@@ -1,7 +1,7 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop. Dispatches 6 specialized review agents, merges findings, auto-fixes Critical/Important issues.
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--parallel] [--sequential]"
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--sequential]"
 ---
 
 # Code Review
@@ -170,15 +170,21 @@ If no PR is found: log "Goal alignment: skipped (no PR found)" and skip Agent 6.
 
 ## Step 3: Dispatch Review Agents and External Tools
 
-Dispatch all review agents and external tools together. In sequential mode (default), run them one after another. In parallel mode (`--parallel`), dispatch all of them concurrently.
+**Critical: use subagents, not inline execution.** Each internal review agent MUST be dispatched as a separate subagent using the Agent tool (or equivalent in the executing harness). This ensures:
+1. Each agent runs with a **fresh context**, not polluted by other agents' findings or the orchestrator's state.
+2. Agents run **in parallel** by default (dispatch all Agent tool calls in a single response). Only use sequential dispatch if `--sequential` is explicitly passed.
+3. The orchestrator's context stays small, containing only the merged findings, not the full file contents each agent read.
 
-Each internal agent gets:
+Each subagent prompt must include:
 - The Common Preamble from `core/agents/preamble.md`
 - Its specific prompt from `core/agents/<name>.md`
-- The list of changed files and their contents
+- The list of changed files (paths only; the subagent reads file contents itself)
 - The spec text (if `--spec` provided)
 - Review hints (if detected)
 - For Agent 6 only: the DECLARED_GOALS block
+- Instruction to call `ReportFindings` with its results (this is how findings are returned to the orchestrator)
+
+The subagent's final text output is its summary. The structured findings come back via the `ReportFindings` tool call. The orchestrator collects findings from all completed agents before proceeding to Step 4.
 
 If `REVIEW_HINTS` is non-empty, include item 11 in the preamble with the contents of the review hints file between the delimiters. If empty, omit item 11.
 
@@ -195,18 +201,26 @@ AGENT_TEST_QUALITY=$(resolve_config "agents.test_quality" "true")
 AGENT_GOAL_ALIGNMENT=$(resolve_config "agents.goal_alignment" "true")
 ```
 
-**Dispatch list:**
+### Dispatch
+
+Build the list of enabled agents, then dispatch ALL of them in a single response (one Agent tool call per agent). Do NOT dispatch one, wait for it, then dispatch the next.
+
+**Internal agents** (dispatch as subagents):
 1. Correctness (`core/agents/correctness.md`) - skip if `AGENT_CORRECTNESS` is "false"
 2. Architecture & Idioms (`core/agents/architecture.md`) - skip if `AGENT_ARCHITECTURE` is "false"
 3. Security (`core/agents/security.md`) - skip if `AGENT_SECURITY` is "false"
 4. Production Readiness (`core/agents/production.md`) - skip if `AGENT_PRODUCTION` is "false"
 5. Test Quality (`core/agents/test-quality.md`) - skip if `AGENT_TEST_QUALITY` is "false"
 6. Goal Alignment (`core/agents/goal-alignment.md`) - skip if `AGENT_GOAL_ALIGNMENT` is "false" OR `GOALS_AVAILABLE` is false
+
+**External tools** (dispatch as subagents or inline Bash, depending on the tool):
 7. CodeRabbit (external) - skip if not `CODERABBIT_AVAILABLE`
 8. Copilot CLI (external) - skip if not `COPILOT_AVAILABLE`
 9. Codex CLI (external) - skip if not `CODEX_AVAILABLE`
 
-Report progress after each completes:
+If `--sequential` is passed, dispatch agents one at a time, waiting for each to complete before starting the next. This is slower but useful for debugging.
+
+Report progress as agents complete:
 ```
 Agent 1/N: Correctness... done, N findings
 Agent 2/N: Architecture & Idioms... done, N findings
@@ -214,12 +228,13 @@ Agent 2/N: Architecture & Idioms... done, N findings
 Agent 7/N: CodeRabbit (external)... done, N findings
 ```
 
+Wait for ALL dispatched agents to complete before proceeding to Step 4.
+
 ### External Tool Invocations
 
 **CodeRabbit** (if `CODERABBIT_AVAILABLE`):
 ```bash
-REVIEW_FILES=$(git diff --name-only "${MAIN_BRANCH}...HEAD" 2>/dev/null | grep -v -E '^(specs/|brainstorm/)' | sort -u)
-coderabbit review --agent --files $REVIEW_FILES 2>&1
+coderabbit review --agent --base "${MAIN_BRANCH}" --committed 2>&1
 ```
 
 Parse output: split on `=============` delimiters, extract file/line/severity/description/rationale. Map severity (critical->Critical, major->Important, minor->Minor). Set category="external", source_agent="coderabbit", confidence=75.
@@ -270,13 +285,34 @@ Use `REQUEST_CHANGES_SEVERITIES` from config to determine which severities trigg
 - If count > 0: proceed to fix loop (or fail if `--no-fix`, `AUTO_FIX` is "false", or max rounds reached)
 - Notable findings are excluded from the gate check
 
+### Step 5b: Action Selection (PR mode)
+
+When `PR_NUMBER` is set (explicitly via `--pr` or auto-detected) AND gate-failing findings exist, present the user with a choice before proceeding:
+
+> **Found N Critical/Important findings. How would you like to handle them?**
+>
+> 1. **Fix locally** - apply fixes in the working tree (default)
+> 2. **Comment on PR** - post findings as review comments on the PR, skip local fixes
+> 3. **Both** - fix locally first, then post remaining unresolved findings as PR comments
+
+Map the selection:
+- **Fix locally**: set `ACTION="fix"`. Run Step 6 (fix loop). Skip Step 7.5 (PR posting).
+- **Comment on PR**: set `ACTION="comment"`. Skip Step 6. Run Step 7.5.
+- **Both**: set `ACTION="both"`. Run Step 6, then run Step 7.5 for any findings that remain after the fix loop.
+
+When `--no-fix` is passed, skip this prompt and default to `ACTION="comment"` (PR posting only).
+
+When no `PR_NUMBER` is set, skip this prompt entirely and default to `ACTION="fix"` (local fix loop only, no PR posting possible).
+
+When gate check passes (zero Critical/Important findings), skip this prompt. Step 7.5 still runs if `PR_NUMBER` is set (to post Minor/Notable observations).
+
 ## Step 6: Autonomous Fix Loop
 
 ```bash
 MAX_FIX_ROUNDS=$(resolve_config "max_fix_rounds" "3")
 ```
 
-Maximum rounds from config (default 3). Skip if `--no-fix` is passed or `AUTO_FIX` is "false".
+Maximum rounds from config (default 3). Skip if `--no-fix` is passed, `AUTO_FIX` is "false", or `ACTION="comment"`.
 
 For each round:
 1. Collect all Critical and Important findings, sorted by file
@@ -359,7 +395,7 @@ Write `review-findings.md` at the output path:
 
 ## Step 7.5: PR Review Posting
 
-This step runs ONLY when `--pr <number>` was provided. If no `--pr` flag was given, skip this entire step.
+This step runs when `PR_NUMBER` is set AND `ACTION` is `"comment"` or `"both"`. Skip this entire step if no `PR_NUMBER` is set or `ACTION="fix"`.
 
 ### 7.5a: Extract PR Context
 
@@ -548,8 +584,21 @@ Build the JSON payload for the GitHub review submission API:
 <!-- cc-review:run-id:{RUN_ID} -->
 ```
 
-**Comments array**: For each accepted inline finding:
+**Comments array**: For each accepted inline finding, place the comment at the **end** of the relevant line range so the reader sees the code context before the comment. Use `start_line` + `line` for multi-line findings; for single-line findings, use `line` only.
 
+Multi-line finding (when `line_end` > `line_start` and both are within the diff hunk):
+```json
+{
+  "path": "{file}",
+  "start_line": {line_start},
+  "line": {line_end},
+  "side": "RIGHT",
+  "start_side": "RIGHT",
+  "body": "{formatted comment body from 7.5i}"
+}
+```
+
+Single-line finding (when `line_end` is absent or equals `line_start`):
 ```json
 {
   "path": "{file}",
@@ -558,6 +607,8 @@ Build the JSON payload for the GitHub review submission API:
   "body": "{formatted comment body from 7.5i}"
 }
 ```
+
+**Hunk boundary check**: If `line_end` falls outside the diff hunk range but `line_start` is within it, fall back to the single-line format using `line_start` only. Do not use a `start_line`/`line` range that extends beyond the diff hunk, as the GitHub API will reject it.
 
 Write the complete payload to a temp file:
 
