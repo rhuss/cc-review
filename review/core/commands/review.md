@@ -203,9 +203,9 @@ AGENT_GOAL_ALIGNMENT=$(resolve_config "agents.goal_alignment" "true")
 
 ### Dispatch
 
-Build the list of enabled agents, then dispatch ALL of them in a single response (one Agent tool call per agent). Do NOT dispatch one, wait for it, then dispatch the next.
+Build the list of enabled agents, then dispatch ALL of them in a **single response** (one Agent tool call per agent). Do NOT dispatch one, wait for it, then dispatch the next. Do NOT merge agents or invent ad-hoc scope splits. Each agent below is a separate Agent tool call with its own fresh context.
 
-**Internal agents** (dispatch as subagents):
+**Internal agents** (each one = one Agent tool call):
 1. Correctness (`core/agents/correctness.md`) - skip if `AGENT_CORRECTNESS` is "false"
 2. Architecture & Idioms (`core/agents/architecture.md`) - skip if `AGENT_ARCHITECTURE` is "false"
 3. Security (`core/agents/security.md`) - skip if `AGENT_SECURITY` is "false"
@@ -217,6 +217,49 @@ Build the list of enabled agents, then dispatch ALL of them in a single response
 7. CodeRabbit (external) - skip if not `CODERABBIT_AVAILABLE`
 8. Copilot CLI (external) - skip if not `COPILOT_AVAILABLE`
 9. Codex CLI (external) - skip if not `CODEX_AVAILABLE`
+
+### Prompt Construction
+
+Before dispatching, read the preamble and each agent's prompt file. Then construct each subagent prompt by concatenating them.
+
+For each enabled internal agent, read these files:
+```bash
+PREAMBLE=$(cat core/agents/preamble.md)
+AGENT_PROMPT=$(cat core/agents/<name>.md)   # e.g., correctness.md, security.md
+```
+
+Then dispatch one Agent tool call per agent. The prompt for each subagent is:
+
+```
+{PREAMBLE}
+
+{AGENT_PROMPT}
+
+## Review Target
+
+You are reviewing a PR/diff with the following changed files:
+{LIST_OF_CHANGED_FILES}
+
+For each file, read the file contents yourself using the Read tool. Focus on the changed regions but read enough surrounding context to understand the code.
+
+{IF SPEC: "## Spec\n" + SPEC_TEXT}
+{IF REVIEW_HINTS: "## Review Hints\n" + HINTS_TEXT}
+{IF GOAL ALIGNMENT AGENT: "## Declared Goals\n" + DECLARED_GOALS}
+
+## Output
+
+Report your findings using the ReportFindings tool. Each finding must include:
+- file: relative path
+- line: line number
+- summary: one-sentence description
+- failure_scenario: concrete inputs/state that trigger the issue
+- category: your agent category (e.g., "correctness", "security")
+- short_summary: under 60 chars
+
+If you find zero issues, call ReportFindings with an empty findings array.
+```
+
+**Hard rule**: You MUST dispatch exactly the agents listed above (minus disabled ones). Do NOT substitute Explore agents, fork agents, or any other agent type. Do NOT combine multiple agent roles into one agent. Do NOT split one agent's role across multiple agents. The agent prompts in `core/agents/` define the scope for each agent.
 
 If `--sequential` is passed, dispatch agents one at a time, waiting for each to complete before starting the next. This is slower but useful for debugging.
 
