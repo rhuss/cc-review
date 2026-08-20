@@ -55,6 +55,10 @@ triage:
     patch_threshold: 80
     auto_remediate: true
 
+meta_review:
+  enabled: true
+  min_findings: 5
+
 interactive: true
 
 max_fix_rounds: 3

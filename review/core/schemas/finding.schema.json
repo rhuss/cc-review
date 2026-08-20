@@ -96,6 +96,29 @@
       "type": "integer",
       "minimum": 1,
       "description": "Fix loop round when discovered (1 = initial review)"
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["confirmed", "weak", "false-positive"],
+      "description": "Skeptic's assessment of finding validity (present only when meta-review ran)"
+    },
+    "verdict_reasoning": {
+      "type": "string",
+      "description": "Skeptic's code-cited justification for non-confirmed verdicts"
+    },
+    "calibrated_severity": {
+      "type": "string",
+      "enum": ["Critical", "Important", "Minor", "Notable"],
+      "description": "Calibrator's adjusted severity (present only when changed)"
+    },
+    "calibration_reasoning": {
+      "type": "string",
+      "description": "Calibrator's justification for severity adjustment"
+    },
+    "contradiction_id": {
+      "type": "string",
+      "pattern": "^CONTRA-[0-9]+$",
+      "description": "Links contradictory findings into a pair"
     }
   },
   "additionalProperties": false

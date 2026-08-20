@@ -1,7 +1,7 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop. Dispatches 6 specialized review agents, merges findings, auto-fixes Critical/Important issues.
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--sequential]"
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--no-meta-review] [--sequential]"
 ---
 
 # Code Review
@@ -32,6 +32,7 @@ CLI_OVERRIDES=()
 [ "$NO_EXTERNAL" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=false" "external_tools.copilot=false" "external_tools.codex=false")
 [ "$USE_EXTERNAL" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=true" "external_tools.copilot=true" "external_tools.codex=true")
 [ -n "$MAX_ROUNDS_FLAG" ] && CLI_OVERRIDES+=("max_fix_rounds=$MAX_ROUNDS_FLAG")
+[ "$NO_META_REVIEW" = "true" ] && CLI_OVERRIDES+=("meta_review.enabled=false")
 [ ${#CLI_OVERRIDES[@]} -gt 0 ] && resolve_config_apply_cli_overrides "${CLI_OVERRIDES[@]}"
 ```
 
@@ -319,6 +320,127 @@ After each agent completes, filter findings where `confidence < MIN_CONFIDENCE`.
 5. Exception: `goal-alignment` findings do NOT dedup against other categories
 6. Assign sequential IDs (FINDING-1, FINDING-2, ...)
 
+## Step 4b: Meta-Review
+
+Read meta-review settings from config:
+
+```bash
+META_REVIEW_ENABLED=$(resolve_config "meta_review.enabled" "true")
+META_REVIEW_MIN_FINDINGS=$(resolve_config "meta_review.min_findings" "5")
+```
+
+### Config Gate
+
+Skip the meta-review when disabled or below the finding threshold:
+
+```bash
+if [ "$META_REVIEW_ENABLED" != "true" ]; then
+  echo "Meta-review: skipped (disabled in config)"
+fi
+```
+
+```bash
+FINDING_COUNT=<number of deduplicated findings from Step 4>
+if [ "$FINDING_COUNT" -lt "$META_REVIEW_MIN_FINDINGS" ]; then
+  echo "Meta-review: skipped ($FINDING_COUNT findings < threshold $META_REVIEW_MIN_FINDINGS)"
+fi
+```
+
+If the config gate passes (enabled and finding count >= threshold), proceed with subagent dispatch below. Otherwise skip to Step 5.
+
+### Skeptic Dispatch
+
+Read the Skeptic agent prompt and construct the subagent prompt:
+
+```bash
+SKEPTIC_PROMPT=$(cat core/agents/meta-skeptic.md)
+```
+
+Dispatch the Skeptic as a subagent using the Agent tool. The prompt includes:
+- The Skeptic prompt from `core/agents/meta-skeptic.md`
+- The full list of deduplicated findings (as JSON, including `id`, `severity`, `confidence`, `file`, `line_start`, `line_end`, `category`, `description`, `rationale`, `source_agent`)
+- The list of changed files (paths only, so the Skeptic can read referenced code)
+
+The Skeptic returns a JSON array of verdict objects:
+```json
+[
+  {"finding_id": "FINDING-1", "verdict": "confirmed", "verdict_reasoning": ""},
+  {"finding_id": "FINDING-2", "verdict": "false-positive", "verdict_reasoning": "..."}
+]
+```
+
+### Calibrator Dispatch
+
+Read the Calibrator agent prompt and construct the subagent prompt:
+
+```bash
+CALIBRATOR_PROMPT=$(cat core/agents/meta-calibrator.md)
+```
+
+Dispatch the Calibrator as a subagent using the Agent tool, **in the same response as the Skeptic** (parallel execution). The prompt includes:
+- The Calibrator prompt from `core/agents/meta-calibrator.md`
+- The full list of deduplicated findings (same JSON as the Skeptic, including `source_agent` for per-agent scoring)
+- The list of changed files (paths only)
+
+The Calibrator returns a JSON object:
+```json
+{
+  "calibrations": [{"finding_id": "...", "calibrated_severity": "...", "calibration_reasoning": "..."}],
+  "contradictions": [{"finding_id_a": "...", "finding_id_b": "...", "explanation": "..."}],
+  "agent_scores": {"agent_name": {"precision": 0.0, "signal_to_noise": 0.0, "finding_count": 0}}
+}
+```
+
+**Dispatch both Skeptic and Calibrator in a single response** so they run in parallel.
+
+### Verdict Application
+
+After both subagents complete, apply results in this order:
+
+1. **Remove false positives**: For each finding where the Skeptic's verdict is `false-positive`, remove it from the findings list. Log each removal:
+   ```
+   Meta-review: removed FINDING-N (false-positive) - {verdict_reasoning}
+   ```
+
+2. **Apply verdicts to remaining findings**: For each remaining finding, set the `verdict` and `verdict_reasoning` fields from the Skeptic's results.
+
+### Severity Calibration
+
+3. **Apply calibrated severities**: For each finding in the Calibrator's `calibrations` array:
+   - If the Skeptic marked the finding as `confirmed`, apply the Calibrator's `calibrated_severity` and `calibration_reasoning` to the finding.
+   - If the Skeptic marked the finding as `weak`, apply the Calibrator's `calibrated_severity`. If no calibrated severity exists, lower severity by one level (Critical->Important, Important->Minor), with Minor as the floor.
+   - **Conflict rule**: When the Skeptic says `confirmed` but the Calibrator downgrades, the more conservative verdict (downgrade) wins.
+   - Log each calibration:
+     ```
+     Meta-review: calibrated FINDING-N severity {original} -> {calibrated} - {calibration_reasoning}
+     ```
+
+### Contradiction Annotation
+
+4. **Annotate contradictions**: For each pair in the Calibrator's `contradictions` array, assign a sequential `contradiction_id` (pattern `CONTRA-1`, `CONTRA-2`, ...) to both findings in the pair. Log each contradiction:
+   ```
+   Meta-review: contradiction CONTRA-N between FINDING-A and FINDING-B - {explanation}
+   ```
+
+### Agent Scores
+
+Store the Calibrator's `agent_scores` object for use in Step 7 (report) and Step 8 (console summary). The scores are not applied to individual findings.
+
+### Error Handling
+
+If either the Skeptic or Calibrator subagent fails or times out:
+
+1. Log a warning:
+   ```
+   WARNING: Meta-review subagent failed ({agent_name}). Skipping meta-review, all findings pass through unchanged.
+   ```
+
+2. Skip all verdict application, calibration, and contradiction annotation.
+
+3. Pass all findings through to Step 5 unchanged.
+
+Subagent timeouts inherit from the harness defaults (same as review agents).
+
 ## Step 5: Gate Check
 
 Use `REQUEST_CHANGES_SEVERITIES` from config to determine which severities trigger a gate failure:
@@ -413,6 +535,9 @@ Write `review-findings.md` at the output path:
 - **Source:** <agent-name> (also reported by: <others>)
 - **Round found:** N
 - **Resolution:** fixed (round N)|pending|unresolved (after N rounds)|informational (Notable)
+- **Verdict:** confirmed|weak (only when meta-review ran)
+- **Calibrated Severity:** <severity> (only when calibrated, original -> calibrated)
+- **Contradiction:** CONTRA-N (only when part of a contradiction pair)
 
 **What is wrong:**
 [Description]
@@ -425,6 +550,34 @@ Write `review-findings.md` at the output path:
 
 ## Notable Observations
 [Simplified format for Notable findings, if any]
+
+## Agent Quality Scores
+
+Include this section only when the meta-review ran and produced agent scores. Omit entirely when meta-review was skipped or disabled.
+
+| Agent | Findings | Precision | Signal/Noise |
+|-------|----------|-----------|--------------|
+| {source_agent} | {finding_count} | {precision} | {signal_to_noise} |
+| ... | ... | ... | ... |
+
+**Meta-review summary:**
+- Findings removed (false positive): N
+- Findings calibrated: N
+- Contradictions detected: N
+
+## Removed Findings (Meta-Review)
+
+Include this section only when the meta-review removed findings as false positives. Omit entirely when no findings were removed or meta-review was skipped.
+
+### FINDING-N (removed as false-positive)
+- **Severity:** {original severity}
+- **File:** {file}:{line_start}-{line_end}
+- **Category:** {category}
+- **Source:** {source_agent}
+- **Verdict:** false-positive
+- **Reasoning:** {verdict_reasoning}
+
+[Repeat for each removed finding]
 
 ## Goal Alignment
 [Goal delivery table + undeclared changes, if goal agent ran]
@@ -769,6 +922,15 @@ Review Agents:
 | Total                   |     N |     N |         N |           |
 
 MVP: <agent name> (<N> findings)
+
+Meta-review: (only when meta-review ran)
+  Removed: N false positives | Calibrated: N severities | Contradictions: N
+
+  Agent Scores:
+  | Agent              | Precision | S/N  | Findings |
+  |--------------------|-----------|------|----------|
+  | {source_agent}     |     {pct} | {ratio} |    N |
+  | ...                |       ... |  ... |      ... |
 
 Key fixes applied:
   1. <description> (<agent>)
