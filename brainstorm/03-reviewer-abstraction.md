@@ -1,7 +1,7 @@
 # Brainstorm: External Reviewer Abstraction
 
 **Date:** 2026-08-04
-**Status:** active
+**Status:** superseded (by #05 reviewer-plugins)
 
 ## Problem Framing
 
