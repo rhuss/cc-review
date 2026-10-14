@@ -1,16 +1,15 @@
-# Thorough profile: all agents, all tools, strict thresholds, 5 fix rounds
-agents:
+# Thorough profile: all bundled reviewers except gator, strict thresholds, 5 fix rounds
+reviewers:
   correctness: true
   architecture: true
   security: true
   production: true
-  test_quality: true
-  goal_alignment: true
-
-external_tools:
+  test-quality: true
+  goal-alignment: true
   coderabbit: true
   copilot: true
   codex: true
+  gator: false
 
 severity:
   min_confidence: 80

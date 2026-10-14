@@ -1,16 +1,16 @@
-# Quick profile: correctness + security only, no external tools, 1 fix round
-agents:
+# Quick profile: of the bundled reviewers only correctness + security, no command reviewers, 1 fix round.
+# User and project reviewers keep their own enabled default; use --only for a strict allowlist.
+reviewers:
   correctness: true
   architecture: false
   security: true
   production: false
-  test_quality: false
-  goal_alignment: false
-
-external_tools:
+  test-quality: false
+  goal-alignment: false
   coderabbit: false
   copilot: false
   codex: false
+  gator: false
 
 severity:
   min_confidence: 70

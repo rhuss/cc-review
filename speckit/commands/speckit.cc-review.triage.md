@@ -30,6 +30,9 @@ If not found: "cc-review core not found. Install with: cc-review install"
 
 ## Execution
 
+Set `CC_REVIEW_CORE_DIR` to the absolute resolved core path (the directory
+that contains `commands/triage.md`) in every shell block of the command.
+
 Read and execute `core/commands/triage.md` from resolved core, passing:
 - `--spec <resolved-spec-path>` (if found)
 - `--idea-inbox brainstorm/idea-inbox.md`

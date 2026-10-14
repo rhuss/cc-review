@@ -1,36 +1,53 @@
 ---
 name: review
-description: Multi-agent code review with autonomous fix loop. Dispatches 6 specialized review agents, merges findings, auto-fixes Critical/Important issues.
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--no-meta-review] [--sequential]"
+description: Multi-agent code review with autonomous fix loop. Dispatches every discovered reviewer plugin, merges findings, auto-fixes Critical/Important issues.
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel]"
 ---
 
 # Code Review
 
 ## Prerequisites
 
+### Core Directory
+
+Every path below is relative to the cc-review core directory. The command shim already resolved it (the directory that contains `commands/review.md`); set `CC_REVIEW_CORE_DIR` to that absolute path at the top of every shell block of this command, since the harness may run each block in a new shell. Resolve `CORE_DIR` from it once:
+
+```bash
+# $0 names this file only when the command file itself is executed; in a
+# harness-run block it is the shell (zsh, bash), so it is a fallback only.
+if [ -n "${CC_REVIEW_CORE_DIR:-}" ] && [ -f "$CC_REVIEW_CORE_DIR/commands/review.md" ]; then
+  CORE_DIR="$CC_REVIEW_CORE_DIR"
+else
+  case "$0" in
+    */commands/review.md) CORE_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)" ;;
+    *) echo "Error: cc-review core directory unknown; set CC_REVIEW_CORE_DIR to the core path the shim resolved" >&2; exit 1 ;;
+  esac
+fi
+export CC_REVIEW_CORE_DIR="$CORE_DIR"
+```
+
+All shell snippets in this command work under bash and zsh. Pass optional values as `"${VAR:--}"` (the scripts read `-` as "not provided") or through arrays; never as an unquoted `${VAR:+--flag "$VAR"}`, which zsh keeps as one word.
+
 ### Config Resolution
 
 ```bash
-source "$(dirname "$0")/../scripts/resolve-config.sh"
+source "$CORE_DIR/scripts/resolve-config.sh"
 ```
 
-Initialize the merged config from all layers. `--config` and `--profile` are parsed from command arguments:
+Initialize the merged config from all layers. `--config` and `--profile` are parsed from command arguments (`CONFIG_FLAG`, `PROFILE_FLAG`; leave them empty when not given):
 
 ```bash
-if ! resolve_config_init ${CONFIG_FLAG:+--config "$CONFIG_FLAG"} ${PROFILE_FLAG:+--profile "$PROFILE_FLAG"}; then
+if ! resolve_config_init --config "${CONFIG_FLAG:--}" --profile "${PROFILE_FLAG:--}"; then
   exit 1
 fi
 ```
 
-Apply CLI flag overrides on top of the merged config:
+`resolve_config_init` also maps the deprecated `agents.*` and `external_tools.*` keys onto `reviewers.<name>` and prints one deprecation warning per legacy key; show those warnings to the user.
+
+Apply CLI flag overrides for non-reviewer settings on top of the merged config:
 
 ```bash
 CLI_OVERRIDES=()
-[ "$NO_CODERABBIT" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=false")
-[ "$NO_COPILOT" = "true" ] && CLI_OVERRIDES+=("external_tools.copilot=false")
-[ "$NO_CODEX" = "true" ] && CLI_OVERRIDES+=("external_tools.codex=false")
-[ "$NO_EXTERNAL" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=false" "external_tools.copilot=false" "external_tools.codex=false")
-[ "$USE_EXTERNAL" = "true" ] && CLI_OVERRIDES+=("external_tools.coderabbit=true" "external_tools.copilot=true" "external_tools.codex=true")
 [ -n "$MAX_ROUNDS_FLAG" ] && CLI_OVERRIDES+=("max_fix_rounds=$MAX_ROUNDS_FLAG")
 [ "$NO_META_REVIEW" = "true" ] && CLI_OVERRIDES+=("meta_review.enabled=false")
 [ ${#CLI_OVERRIDES[@]} -gt 0 ] && resolve_config_apply_cli_overrides "${CLI_OVERRIDES[@]}"
@@ -41,6 +58,8 @@ Validate config types after merge and overrides:
 ```bash
 resolve_config_validate_types
 ```
+
+Reviewer enablement (`reviewers.<name>` keys) and the reviewer selection flags (`--no-<name>`, `--only`, `--external`, `--no-external`) are applied in Step 2 after discovery, once the PR number and spec are known.
 
 ### Review Hints
 
@@ -55,21 +74,6 @@ if [ -f "$REVIEW_HINTS_FILE" ] && [ -s "$REVIEW_HINTS_FILE" ]; then
 fi
 ```
 
-### External Tool Settings
-
-Read config defaults, then apply CLI flag overrides:
-
-```bash
-CODERABBIT=$(resolve_config "external_tools.coderabbit" "true")
-COPILOT=$(resolve_config "external_tools.copilot" "false")
-CODEX=$(resolve_config "external_tools.codex" "true")
-```
-
-CLI overrides (applied only if explicitly passed):
-- `--external` sets all to true
-- `--no-external` sets all to false
-- `--no-coderabbit` / `--no-copilot` / `--no-codex` disable individual tools
-
 ### Output Settings
 
 ```bash
@@ -79,16 +83,19 @@ VERBOSITY=$(resolve_config "output.verbosity" "normal")
 OUTPUT_PATH="${OUTPUT_FLAG:-$OUTPUT_DIR/$FINDINGS_FILENAME}"
 ```
 
-Verbosity controls agent progress reporting:
+Verbosity controls reviewer progress reporting:
 - `quiet`: Only final summary and errors
-- `normal`: Agent completion status and finding counts
-- `verbose`: Agent progress, timing, intermediate results, and debug info
+- `normal`: Reviewer completion status and finding counts
+- `verbose`: Reviewer progress, timing, intermediate results, discovery notes, and debug info
 
 ## Step 1: Determine Changed Files
 
 ```bash
-MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+MAIN_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@')
+MAIN_BRANCH="${MAIN_BRANCH:-main}"
 ```
+
+(`origin/HEAD` is unset in some clones; the pipeline's exit status is `sed`'s, so the fallback must test the value, not the status.)
 
 ### Auto-Detect PR
 
@@ -109,29 +116,124 @@ gh pr diff "$PR_NUMBER" --name-only 2>/dev/null
 
 Otherwise use the branch diff:
 ```bash
-git diff --name-only "${MAIN_BRANCH}...HEAD" 2>/dev/null
-git diff --name-only HEAD 2>/dev/null
-git diff --name-only --cached 2>/dev/null
+git -c core.quotePath=false diff --name-only "${MAIN_BRANCH}...HEAD" 2>/dev/null
+git -c core.quotePath=false diff --name-only HEAD 2>/dev/null
+git -c core.quotePath=false diff --name-only --cached 2>/dev/null
 ```
 
-Combine into a deduplicated list. Filter to source code files (exclude binary, images, lock files). Exclude files under `specs/` and `brainstorm/`.
+Combine into a deduplicated list and keep it, unfiltered, in `ALL_CHANGED_FILES` (one path per line); Step 2 hands it to discovery, which ignores any project reviewer the change itself adds or edits. Then filter to source code files (exclude binary, images, lock files). Exclude files under `specs/` and `brainstorm/`. Keep the result in `CHANGED_FILES`, one path per line (as `git diff --name-only` prints it; `core.quotePath=false` keeps non-ASCII names unquoted), so a path containing spaces stays a single argument for command reviewers.
 
 For re-review rounds (fix loop): narrow scope to only files modified by the most recent fix round.
 
-## Step 2: Detect External Tools
+## Step 2: Discover Reviewers
 
-Check for external review CLIs, respecting config settings:
+Reviewers are plugins discovered from three layers (project `.cc-review/reviewers/`, user `~/.cc-review/reviewers/`, bundled `core/reviewers/`). The review command holds no list of reviewers; everything it dispatches comes from this discovery output. See `docs/reviewer-plugins.md` for the plugin format.
+
+Run discovery once. The `pr` precondition means PR context is available: `PR_NUMBER` from `--pr` or auto-detection, otherwise the open PR of the current branch (the same lookup that feeds the `goals` block). Every flag is always passed; `-` means "not available", so preconditions evaluate correctly under any shell. Discovery runs with `--skip-detection`: the `detect` and `auth_check` probes run later, only for command reviewers that are still enabled after config and CLI selection.
 
 ```bash
-# CodeRabbit (enabled by default)
-[ "$CODERABBIT" = "true" ] && command -v coderabbit >/dev/null 2>&1 && CODERABBIT_AVAILABLE=true
-
-# Copilot CLI
-[ "$COPILOT" = "true" ] && command -v copilot >/dev/null 2>&1 && COPILOT_AVAILABLE=true
-
-# Codex CLI
-[ "$CODEX" = "true" ] && command -v codex >/dev/null 2>&1 && CODEX_AVAILABLE=true
+PR_CONTEXT_NUMBER="${PR_NUMBER:-$(gh pr view --json number -q '.number' 2>/dev/null || true)}"
+PROJECT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+REVIEW_RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/cc-review-run.XXXXXX")
+REVIEWER_BODY_DIR="$REVIEW_RUN_DIR/bodies"
+mkdir "$REVIEWER_BODY_DIR"
+printf '%s\n' "$ALL_CHANGED_FILES" > "$REVIEW_RUN_DIR/changed-files"
+DISCOVER_VERBOSE=false
+[ "$VERBOSITY" = "verbose" ] && DISCOVER_VERBOSE=true
+if ! REVIEWERS_JSON=$(CC_REVIEW_DISCOVER_VERBOSE="$DISCOVER_VERBOSE" "$CORE_DIR/scripts/discover-reviewers.sh" \
+  --core-dir "$CORE_DIR" \
+  --project-dir "$PROJECT_DIR" \
+  --pr "${PR_CONTEXT_NUMBER:--}" \
+  --spec "${SPEC_FLAG:--}" \
+  --changed-files "$REVIEW_RUN_DIR/changed-files" \
+  --trust-file "$HOME/.cc-review/trusted-reviewers" \
+  --body-dir "$REVIEWER_BODY_DIR" \
+  --skip-detection); then
+  echo "Error: reviewer discovery failed (see the message above); the review cannot continue." >&2
+  rm -rf "$REVIEW_RUN_DIR"
+  exit 1
+fi
+echo "REVIEW_RUN_DIR=$REVIEW_RUN_DIR"
 ```
+
+Record `REVIEW_RUN_DIR`: it holds the prompt bodies (`bodies/`), the changed-file list and the command reviewer outputs, so it must survive until dispatch and parsing (do not tie it to a shell `EXIT` trap; the harness may run each block in a new shell). Remove it with `rm -rf "$REVIEW_RUN_DIR"` at the end of Step 8 and before every early stop below.
+
+A non-zero exit from discovery means a missing dependency (`jq` 1.6+, `yq` v4, `awk`) or a bad core directory; its stderr names the cause. That is different from "every reviewer file is invalid", which exits 0 and is handled next.
+
+Discovery prints one `Warning:` line per invalid reviewer (naming the file and the reason), per same-layer duplicate, and per project reviewer it ignored because the change under review adds or edits it; show those warnings to the user and continue. An invalid reviewer never aborts the review.
+
+Project-layer reviewers come from the checkout under review, so discovery guards them:
+- A project reviewer whose files are in the changed-file list does not judge the change that edits it. The next lower layer's reviewer of the same name runs instead, or the entry is `skipped (changed in the reviewed change)`.
+- A project `kind: command` reviewer runs nothing (no `detect`, `auth_check`, `invoke` or parser) until the user trusts it. It is `skipped` with the reason `untrusted project command reviewer (trust with: <name> <sha256>)`; tell the user that adding that line to `~/.cc-review/trusted-reviewers` trusts the current version, and that any edit to the reviewer file or its parser needs a new line.
+
+Stop when no valid reviewer exists (FR-012):
+
+```bash
+VALID_COUNT=$(printf '%s' "$REVIEWERS_JSON" | jq '[.[] | select(.status != "invalid")] | length')
+if [ "${VALID_COUNT:-0}" -eq 0 ]; then
+  echo "Error: no valid reviewers discovered. Check core/reviewers/ and the warnings above." >&2
+  rm -rf "$REVIEW_RUN_DIR"
+  exit 1
+fi
+```
+
+Each entry carries `name`, `kind` (`prompt` or `command`), `display_name`, `category`, `enabled`, `requires`, `severity_map`, `dedup`, `layer`, `path`, `dir`, `overrides`, `body_file`, `references`, `context`, `command`, `status` and `reason`. The status values (`ready`, `disabled`, `skipped`, `invalid`, `failed`) and which step sets each one are defined in one place, the "Status values" section of the discovery contract (`specs/004-reviewer-plugins/contracts/discovery-output.md`). Enablement from config and CLI flags moves entries between `ready` and `disabled`; `skipped` and `invalid` entries are never changed. An invalid entry may share its `name` with the valid entry it failed to override (FR-009), so every lookup or update by name below also requires `.status != "invalid"`.
+
+The helpers used below and in later steps run through the runtime script, under bash, whatever shell executes this command:
+
+```bash
+RUNTIME="$CORE_DIR/scripts/reviewer-runtime.sh"
+# "$RUNTIME" helper <apply_config_enablement|apply_cli_selection|apply_detection|substitute_invoke|run_with_timeout|map_severity> [args...]
+```
+
+### Reviewer Enablement (config)
+
+For every entry with `status: ready`, the effective enablement is `reviewers.<name>` from the merged config when that key is present, otherwise the entry's own `enabled` field (FR-013). `apply_config_enablement` applies this and leaves `skipped` and `invalid` entries untouched:
+
+```bash
+REVIEWERS_JSON=$("$RUNTIME" helper apply_config_enablement "$REVIEWERS_JSON" "$(resolve_config_reviewers_json)")
+```
+
+### Reviewer Selection (CLI flags)
+
+CLI flags take precedence over configuration. Collect the reviewer flags generically; no reviewer name is known to this command:
+
+- every `--no-<x>` where `<x>` is not `fix`, `meta-review`, or `external` goes into `NO_LIST` (comma-separated)
+- `--only <a,b,...>` goes into `ONLY_LIST`
+- `--external` sets `EXTERNAL_FLAG=on`, `--no-external` sets `EXTERNAL_FLAG=off`
+
+Then apply the selection with the helper:
+
+```bash
+if ! REVIEWERS_JSON=$("$RUNTIME" helper apply_cli_selection "$REVIEWERS_JSON" "$ONLY_LIST" "$NO_LIST" "$EXTERNAL_FLAG"); then
+  # the helper already printed the error (unknown name with the discovered names, or empty set)
+  rm -rf "$REVIEW_RUN_DIR"
+  exit 1
+fi
+```
+
+`--only` re-enables a config-disabled reviewer but never overrides a `skipped` or `invalid` status (FR-017). `--no-<x>` subtracts from the `--only` set; an empty result is an error (FR-017a), and so is an `--only` set of command reviewers only combined with `--no-external`. `--no-<x>` for an invalid reviewer prints a warning and the review continues (FR-010).
+
+### Command Reviewer Detection
+
+Now run the `detect` and `auth_check` probes, only for command reviewers that are still `ready`, so disabled reviewers cost nothing. Each probe is bounded (15 seconds by default); a failing probe moves the entry to `skipped` with a reason such as `not available`, `not authenticated: <last line the check printed>` or `detection timed out`:
+
+```bash
+REVIEWERS_JSON=$("$RUNTIME" helper apply_detection "$REVIEWERS_JSON")
+```
+
+After detection, if no entry has `status: ready`, stop with a message listing every discovered reviewer and why it will not run:
+
+```bash
+if [ "$(printf '%s' "$REVIEWERS_JSON" | jq '[.[] | select(.status == "ready")] | length')" -eq 0 ]; then
+  echo "Error: no reviewers to run:" >&2
+  printf '%s' "$REVIEWERS_JSON" | jq -r '.[] | select(.status != "invalid") | "  - \(.name): \(.status)\(if .reason then " (" + .reason + ")" else "" end)"' >&2
+  rm -rf "$REVIEW_RUN_DIR"
+  exit 1
+fi
+```
+
+`--no-fix`, `--no-meta-review`, `--sequential`, and `--max-rounds` keep their existing handling. `--parallel` is accepted and changes nothing: parallel dispatch is the default.
 
 ### Test Command Auto-Detection
 
@@ -145,15 +247,13 @@ TEST_TIMEOUT=$(resolve_config "test.timeout_seconds" "300")
 [ -z "$TEST_CMD" ] && ([ -f pyproject.toml ] || [ -f setup.py ]) && TEST_CMD="pytest"
 ```
 
-### PR Metadata and Goal Extraction (for Goal Alignment agent)
+### PR Metadata and Goal Extraction (`goals` context block)
 
 ```bash
 GOALS_AVAILABLE=false
 
-if [ -n "$PR_NUMBER" ]; then
-  PR_BODY=$(gh pr view "$PR_NUMBER" --json body -q '.body' 2>/dev/null || echo "")
-else
-  PR_BODY=$(gh pr view --json body -q '.body' 2>/dev/null || echo "")
+if [ -n "$PR_CONTEXT_NUMBER" ]; then
+  PR_BODY=$(gh pr view "$PR_CONTEXT_NUMBER" --json body -q '.body' 2>/dev/null || echo "")
 fi
 
 if [ -n "$PR_BODY" ]; then
@@ -167,74 +267,49 @@ For each linked issue, fetch title and body. Build a `DECLARED_GOALS` block from
 2. PR description: extract goals from PR body text
 3. Linked issues: issue titles and key points
 
-If no PR is found: log "Goal alignment: skipped (no PR found)" and skip Agent 6.
+`DECLARED_GOALS` is the `goals` context block. It is supplied to every prompt reviewer whose `context` list contains `goals`, and only when `GOALS_AVAILABLE` is true. Reviewers that need PR context declare `requires: [pr]` themselves and are already `skipped (requires: pr)` by discovery when no PR exists. A PR with an empty description still satisfies `requires: [pr]`: such a reviewer runs without the `goals` block and infers the goals from the change itself (the bundled reviewer that requests `goals` does this and marks them as inferred).
 
-## Step 3: Dispatch Review Agents and External Tools
+## Step 3: Dispatch Reviewers
 
-**Critical: use subagents, not inline execution.** Each internal review agent MUST be dispatched as a separate subagent using the Agent tool (or equivalent in the executing harness). This ensures:
-1. Each agent runs with a **fresh context**, not polluted by other agents' findings or the orchestrator's state.
-2. Agents run **in parallel** by default (dispatch all Agent tool calls in a single response). Only use sequential dispatch if `--sequential` is explicitly passed.
-3. The orchestrator's context stays small, containing only the merged findings, not the full file contents each agent read.
+The dispatch set is exactly the entries in `REVIEWERS_JSON` with `status: ready`, after enablement and CLI selection were applied in Step 2:
 
-Each subagent prompt must include:
-- The Common Preamble from `core/agents/preamble.md`
-- Its specific prompt from `core/agents/<name>.md`
-- The list of changed files (paths only; the subagent reads file contents itself)
-- The spec text (if `--spec` provided)
-- Review hints (if detected)
-- For Agent 6 only: the DECLARED_GOALS block
-- Instruction to call `ReportFindings` with its results (this is how findings are returned to the orchestrator)
+```bash
+READY_PROMPT=$(printf '%s' "$REVIEWERS_JSON" | jq -c '[.[] | select(.status == "ready" and .kind == "prompt")]')
+READY_COMMAND=$(printf '%s' "$REVIEWERS_JSON" | jq -c '[.[] | select(.status == "ready" and .kind == "command")]')
+```
 
-The subagent's final text output is its summary. The structured findings come back via the `ReportFindings` tool call. The orchestrator collects findings from all completed agents before proceeding to Step 4.
+**Critical: use subagents, not inline execution.** Each prompt reviewer MUST be dispatched as a separate subagent using the Agent tool (or equivalent in the executing harness). This ensures:
+1. Each reviewer runs with a **fresh context**, not polluted by other reviewers' findings or the orchestrator's state.
+2. Reviewers run **in parallel** by default (dispatch all Agent tool calls in a single response). Only use sequential dispatch if `--sequential` is explicitly passed.
+3. The orchestrator's context stays small, containing only the merged findings, not the full file contents each reviewer read.
+
+The subagent's final text output is its summary. The structured findings come back via the `ReportFindings` tool call. The orchestrator collects findings from all completed reviewers before proceeding to Step 4.
 
 If `REVIEW_HINTS` is non-empty, include item 11 in the preamble with the contents of the review hints file between the delimiters. If empty, omit item 11.
 
-### Agent Selection
+### Prompt Reviewer Dispatch
 
-Read agent toggles from config. Disabled agents are skipped entirely:
-
-```bash
-AGENT_CORRECTNESS=$(resolve_config "agents.correctness" "true")
-AGENT_ARCHITECTURE=$(resolve_config "agents.architecture" "true")
-AGENT_SECURITY=$(resolve_config "agents.security" "true")
-AGENT_PRODUCTION=$(resolve_config "agents.production" "true")
-AGENT_TEST_QUALITY=$(resolve_config "agents.test_quality" "true")
-AGENT_GOAL_ALIGNMENT=$(resolve_config "agents.goal_alignment" "true")
-```
-
-### Dispatch
-
-Build the list of enabled agents, then dispatch ALL of them in a **single response** (one Agent tool call per agent). Do NOT dispatch one, wait for it, then dispatch the next. Do NOT merge agents or invent ad-hoc scope splits. Each agent below is a separate Agent tool call with its own fresh context.
-
-**Internal agents** (each one = one Agent tool call):
-1. Correctness (`core/agents/correctness.md`) - skip if `AGENT_CORRECTNESS` is "false"
-2. Architecture & Idioms (`core/agents/architecture.md`) - skip if `AGENT_ARCHITECTURE` is "false"
-3. Security (`core/agents/security.md`) - skip if `AGENT_SECURITY` is "false"
-4. Production Readiness (`core/agents/production.md`) - skip if `AGENT_PRODUCTION` is "false"
-5. Test Quality (`core/agents/test-quality.md`) - skip if `AGENT_TEST_QUALITY` is "false"
-6. Goal Alignment (`core/agents/goal-alignment.md`) - skip if `AGENT_GOAL_ALIGNMENT` is "false" OR `GOALS_AVAILABLE` is false
-
-**External tools** (dispatch as subagents or inline Bash, depending on the tool):
-7. CodeRabbit (external) - skip if not `CODERABBIT_AVAILABLE`
-8. Copilot CLI (external) - skip if not `COPILOT_AVAILABLE`
-9. Codex CLI (external) - skip if not `CODEX_AVAILABLE`
+Dispatch ALL entries in `READY_PROMPT` in a **single response** (one Agent tool call per entry). Do NOT dispatch one, wait for it, then dispatch the next. Do NOT merge reviewers or invent ad-hoc scope splits. Each entry is a separate Agent tool call with its own fresh context.
 
 ### Prompt Construction
 
-Before dispatching, read the preamble and each agent's prompt file. Then construct each subagent prompt by concatenating them.
+For each entry in `READY_PROMPT`, read these files:
 
-For each enabled internal agent, read these files:
 ```bash
-PREAMBLE=$(cat core/agents/preamble.md)
-AGENT_PROMPT=$(cat core/agents/<name>.md)   # e.g., correctness.md, security.md
+PREAMBLE=$(cat "$CORE_DIR/agents/preamble.md")
+REVIEWER_BODY=$(cat "$(printf '%s' "$ENTRY" | jq -r '.body_file')")
+# one block per entry in .references, in order:
+#   "## Reference: <path relative to .dir>" + newline + file contents
 ```
 
-Then dispatch one Agent tool call per agent. The prompt for each subagent is:
+Then dispatch one Agent tool call per entry. The prompt for each subagent is assembled in this order (the preamble is always first; there is no opt-out):
 
 ```
 {PREAMBLE}
 
-{AGENT_PROMPT}
+{REVIEWER_BODY}
+
+{FOR EACH references ENTRY: "## Reference: " + RELATIVE_PATH + "\n" + FILE_CONTENTS}
 
 ## Review Target
 
@@ -245,7 +320,7 @@ For each file, read the file contents yourself using the Read tool. Focus on the
 
 {IF SPEC: "## Spec\n" + SPEC_TEXT}
 {IF REVIEW_HINTS: "## Review Hints\n" + HINTS_TEXT}
-{IF GOAL ALIGNMENT AGENT: "## Declared Goals\n" + DECLARED_GOALS}
+{IF .context CONTAINS "goals" AND GOALS_AVAILABLE: "## Declared Goals\n" + DECLARED_GOALS}
 
 ## Output
 
@@ -253,51 +328,80 @@ Report your findings using the ReportFindings tool. Each finding must include:
 - file: relative path
 - line: line number
 - summary: one-sentence description
-- failure_scenario: concrete inputs/state that trigger the issue
-- category: your agent category (e.g., "correctness", "security")
+- failure_scenario: concrete inputs/state that trigger the issue, plus any evidence your reviewer instructions ask for (this text is stored as the finding's rationale)
+- category: "{ENTRY.category}"
 - short_summary: under 60 chars
+- severity: one of your reviewer's severity labels (translated by the orchestrator)
+- confidence: 0-100
 
 If you find zero issues, call ReportFindings with an empty findings array.
+
+If you observed concrete positive patterns in the change, end your final text output with a section headed exactly `Positive observations:` containing 2-5 bullets, each citing a file and function or line. Omit the section when nothing stands out.
 ```
 
-**Hard rule**: You MUST dispatch exactly the agents listed above (minus disabled ones). Do NOT substitute Explore agents, fork agents, or any other agent type. Do NOT combine multiple agent roles into one agent. Do NOT split one agent's role across multiple agents. The agent prompts in `core/agents/` define the scope for each agent.
+**Hard rule**: dispatch exactly the ready prompt reviewers from discovery, nothing more and nothing less. Do NOT substitute Explore agents, fork agents, or any other agent type. Do NOT combine multiple reviewers into one agent. Do NOT split one reviewer across multiple agents. Each reviewer's body file defines its scope.
 
-If `--sequential` is passed, dispatch agents one at a time, waiting for each to complete before starting the next. This is slower but useful for debugging.
+If `--sequential` is passed, dispatch reviewers one at a time, waiting for each to complete before starting the next. This is slower but useful for debugging.
 
-Report progress as agents complete:
+**Reviewer failure (FR-022)**: a subagent that errors, times out, or returns no parseable `ReportFindings` call is recorded in `REVIEWERS_JSON` as `status: failed`, `reason: "subagent error"`. Log the failure and continue with the remaining reviewers; it never blocks the review.
+
+Report progress as reviewers complete, one line per entry in dispatch order, using `display_name`:
 ```
-Agent 1/N: Correctness... done, N findings
-Agent 2/N: Architecture & Idioms... done, N findings
+Reviewer 1/N: {display_name}... done, N findings
+Reviewer 2/N: {display_name}... done, N findings
 ...
-Agent 7/N: CodeRabbit (external)... done, N findings
+Reviewer N/N: {display_name}... failed (timeout)
 ```
 
-Wait for ALL dispatched agents to complete before proceeding to Step 4.
+Wait for ALL dispatched reviewers to complete before proceeding to Step 4.
 
-### External Tool Invocations
+### Command Reviewer Invocation
 
-**CodeRabbit** (if `CODERABBIT_AVAILABLE`):
+Start every entry of `READY_COMMAND` in the background first, then wait for all of them, so the wall time is that of the slowest tool, not the sum of all timeouts; each one stays bounded by its own `timeout_seconds`. Do this in one tool call, issued right after dispatching the prompt subagents so both run at the same time. Set that call's timeout to at least the largest `timeout_seconds` in `READY_COMMAND` plus 30 seconds; when that exceeds the harness maximum, run the call in the background and wait for it to finish instead. Skip the block when `READY_COMMAND` is empty. The call may run in a new shell: inline or re-derive the values it reads (`CORE_DIR`, `RUNTIME`, `REVIEW_RUN_DIR`, `READY_COMMAND`, `MAIN_BRANCH`, `CHANGED_FILES`, `PR_CONTEXT_NUMBER`), and keep each reviewer's resulting status in your own context rather than relying on a shell variable.
+
 ```bash
-coderabbit review --agent --base "${MAIN_BRANCH}" --committed 2>&1
+CMD_DIR="$REVIEW_RUN_DIR/commands"
+mkdir -p "$CMD_DIR"
+COUNT=$(printf '%s' "$READY_COMMAND" | jq 'length')
+I=0
+while [ "$I" -lt "$COUNT" ]; do
+  ENTRY=$(printf '%s' "$READY_COMMAND" | jq -c --argjson i "$I" '.[$i]')
+  NAME=$(printf '%s' "$ENTRY" | jq -r '.name')
+  if INVOKE=$("$RUNTIME" helper substitute_invoke "$(printf '%s' "$ENTRY" | jq -r '.command.invoke')" "$MAIN_BRANCH" "$CHANGED_FILES" "$PR_CONTEXT_NUMBER"); then
+    TIMEOUT=$(printf '%s' "$ENTRY" | jq -r '.command.timeout_seconds')
+    ( "$RUNTIME" helper run_with_timeout "$TIMEOUT" bash -c "$INVOKE" </dev/null >"$CMD_DIR/$NAME.out" 2>"$CMD_DIR/$NAME.err"
+      echo "$?" >"$CMD_DIR/$NAME.rc" ) &
+  else
+    # substitute_invoke rejected the base branch or PR number (unsafe characters)
+    echo "unsafe" >"$CMD_DIR/$NAME.rc"
+  fi
+  I=$((I + 1))
+done
+wait
+for RC_FILE in "$CMD_DIR"/*.rc; do
+  echo "$(basename "$RC_FILE" .rc): RC=$(cat "$RC_FILE")"
+done
 ```
 
-Parse output: split on `=============` delimiters, extract file/line/severity/description/rationale. Map severity (critical->Critical, major->Important, minor->Minor). Set category="external", source_agent="coderabbit", confidence=75.
+Then, for each entry, read `RC` from `$CMD_DIR/<name>.rc` and handle it as described below, with `OUT_FILE="$CMD_DIR/<name>.out"` and `ERR_FILE="$CMD_DIR/<name>.err"`. `RC` `unsafe` marks the entry `failed (unsafe invoke value)`. Status changes for an entry are applied to `REVIEWERS_JSON` with the same `.name == $n and .status != "invalid"` filter, for example:
 
-**Copilot CLI** (if `COPILOT_AVAILABLE`):
 ```bash
-copilot -s -p "Review the following git diff for bugs, security issues, and code quality problems..." 2>&1
+REVIEWERS_JSON=$(printf '%s' "$REVIEWERS_JSON" | jq --arg n "$NAME" --arg r "$REASON" 'map(if .name == $n and .status != "invalid" then .status = "failed" | .reason = $r else . end)')
 ```
 
-Parse output: split on "### FINDING" markers. Discard findings for files under `specs/`. Set category="external", source_agent="copilot", confidence=75.
+The tool runs under `bash -c` (the `{files}` quoting is bash `%q`), with stdout and stderr kept apart: only stdout is parsed, so progress spinners, update notices, and warnings on stderr cannot turn a successful run into a parse error. Never read the whole output into the orchestrator's context; work on the files and show at most 20 lines of either.
 
-**Codex CLI** (if `CODEX_AVAILABLE`):
-```bash
-codex review --base "${MAIN_BRANCH}" 2>&1
-```
+- `RC` 124: mark the entry `failed (timeout)` and continue.
+- Any other non-zero `RC`: mark the entry `failed (exit N: <reason>)` and continue, where `<reason>` is the last non-empty line of `ERR_FILE` (or of `OUT_FILE` when `ERR_FILE` is empty), cut to 200 characters, so a usage limit or login error is visible at normal verbosity; at `verbose` verbosity log the first 20 lines of `ERR_FILE`.
+- `RC` 0: parse `OUT_FILE` according to `.command.output.format`:
+  - `json`: the file must hold a JSON array of objects with `file`, `line` (or `line_start`), `severity`, `description`, `rationale`, and optional `fix`, `confidence`. Validate with `jq -e 'type == "array"' "$OUT_FILE"`; map each object to a finding.
+  - `delimited`: split the file into blocks on `.command.output.delimiter`. Inside a block, lines of the form `<Label>: <value>` map to finding fields through `.command.output.fields` (finding field to label); a value continues on following lines until the next known label. Apply the parsing notes in the reviewer's body file (`.body_file`) for tool-specific conventions, such as `path:start-end` in the file label.
+  - `parser`: run `"$(printf '%s' "$ENTRY" | jq -r '.command.output.parser_path')" < "$OUT_FILE"` (the script is executable and runs through its own shebang, so it may be written in any language) and treat its stdout as `json` format. A non-zero exit from the parser (for example a truncated or error stream) is a parse error.
+- Output that cannot be parsed per its declared format: mark the entry `failed (parse error)`; at `verbose` verbosity log the first 20 lines of `OUT_FILE`.
 
-Parse output: extract file/line/severity/description/rationale. Set category="external", source_agent="codex", confidence=75.
+For every parsed finding set `source_agent` to the entry's `name`, `category` to the entry's `category`, keep the tool's native severity as reported (Step 4 translates it exactly once through the reviewer's `severity_map`), and default `confidence` to 75 when the tool did not provide one.
 
-**Error handling**: If a tool times out, crashes, or errors, log the failure and continue. External tool failures do not block the review.
+Command reviewer failures are logged and marked in the summary; they never block the review (FR-022).
 
 ### Severity Filtering
 
@@ -309,15 +413,15 @@ REQUEST_CHANGES_SEVERITIES=$(resolve_config "severity.request_changes_severities
 AUTO_FIX=$(resolve_config "severity.auto_fix" "true")
 ```
 
-After each agent completes, filter findings where `confidence < MIN_CONFIDENCE`. These filtered findings are excluded from the report entirely.
+After each reviewer completes, filter findings where `confidence < MIN_CONFIDENCE`. These filtered findings are excluded from the report entirely.
 
 ## Step 4: Merge and Deduplicate Findings
 
-1. Collect all findings from internal agents and external tools
-2. Normalize to the Finding schema (see `core/schemas/finding.schema.json`)
+1. Collect all findings from all completed reviewers (prompt and command)
+2. Normalize to the Finding schema (see `core/schemas/finding.schema.json`). For prompt reviewers, `summary` becomes `description` and `failure_scenario` becomes `rationale`. For every finding: `source_agent` = the reviewer's `name`, `category` = the reviewer's `category`, and `severity` = `"$RUNTIME" helper map_severity "$ENTRY" "<native severity>"`. This is the only place severities are translated; apply it exactly once per finding (FR-021). A finding whose mapped severity is empty (native value not in the reviewer's `severity_map` and not a cc-review severity) is dropped with a warning naming the reviewer and the native value.
 3. Sort by file path, then line number
 4. Deduplicate: for findings with same file, overlapping line range, and same category, keep the one with the longer description. Add the other's source_agent to `also_reported_by`. Use higher severity and confidence.
-5. Exception: `goal-alignment` findings do NOT dedup against other categories
+5. Exception: findings from a reviewer with `dedup: isolated` (look up the reviewer by `source_agent` in `REVIEWERS_JSON`) do NOT dedup against other categories (FR-025)
 6. Assign sequential IDs (FINDING-1, FINDING-2, ...)
 
 ## Step 4b: Meta-Review
@@ -353,7 +457,7 @@ If the config gate passes (enabled and finding count >= threshold), proceed with
 Read the Skeptic agent prompt and construct the subagent prompt:
 
 ```bash
-SKEPTIC_PROMPT=$(cat core/agents/meta-skeptic.md)
+SKEPTIC_PROMPT=$(cat "$CORE_DIR/agents/meta-skeptic.md")
 ```
 
 Dispatch the Skeptic as a subagent using the Agent tool. The prompt includes:
@@ -374,7 +478,7 @@ The Skeptic returns a JSON array of verdict objects:
 Read the Calibrator agent prompt and construct the subagent prompt:
 
 ```bash
-CALIBRATOR_PROMPT=$(cat core/agents/meta-calibrator.md)
+CALIBRATOR_PROMPT=$(cat "$CORE_DIR/agents/meta-calibrator.md")
 ```
 
 Dispatch the Calibrator as a subagent using the Agent tool, **in the same response as the Skeptic** (parallel execution). The prompt includes:
@@ -447,29 +551,74 @@ Use `REQUEST_CHANGES_SEVERITIES` from config to determine which severities trigg
 
 - Count findings whose severity is in `REQUEST_CHANGES_SEVERITIES` (default: Critical, Important)
 - If count = 0: **GATE PASS**
-- If count > 0: proceed to fix loop (or fail if `--no-fix`, `AUTO_FIX` is "false", or max rounds reached)
+- If count > 0: **GATE FAIL** unless the fix loop (run only when chosen in Step 5b) clears them within the maximum rounds
 - Notable findings are excluded from the gate check
 
-### Step 5b: Action Selection (PR mode)
+### Step 5a: Present the Findings
 
-When `PR_NUMBER` is set (explicitly via `--pr` or auto-detected) AND gate-failing findings exist, present the user with a choice before proceeding:
+Before asking the user anything, explain what the review found. This is the part the user actually reads, so write it for a person, not for a log file.
 
-> **Found N Critical/Important findings. How would you like to handle them?**
->
-> 1. **Fix locally** - apply fixes in the working tree (default)
-> 2. **Comment on PR** - post findings as review comments on the PR, skip local fixes
-> 3. **Both** - fix locally first, then post remaining unresolved findings as PR comments
+**User-facing language.** Everywhere in this command, talk to the user in plain words. Never show GitHub API vocabulary (`COMMENT`, `REQUEST_CHANGES`, `APPROVE`, `event`), internal variable names (`ACTION`, `REVIEWERS_JSON`, `GOALS_AVAILABLE`), or finding IDs without saying what they are about. Say "post the review and ask for changes", not "submit as REQUEST_CHANGES". Explain project-specific or tool-specific terms the first time they appear.
+
+Structure the presentation in this order:
+
+1. **Verdict** (one short paragraph): whether the change is ready to merge, how many issues should be addressed first, and the one or two themes behind them. Mention reviewers that could not run (for example a tool over its usage limit) in one sentence.
+
+2. **Important issues, explained at length.** Every Critical and Important finding gets its own section with a descriptive heading (what goes wrong, not the finding ID), about half a page each, longer when the issue needs it. Each section covers:
+   - **Where and what**: the file and line, and what the code does today. Quote or paraphrase the relevant lines so the user does not have to open the file.
+   - **What goes wrong**: a concrete scenario (inputs, environment, sequence of steps) that leads to the failure, and what the user or the code's users would observe.
+   - **Why it matters**: who is affected, how likely it is, and how bad the consequence is. If the meta-review weakened or downgraded the finding, say so and give the reason in a sentence; the user should know how solid each finding is.
+   - **Suggested fix**: the concrete change, with a short code sketch when it helps, and a rough sense of the effort and of any trade-off.
+
+3. **Smaller issues, dense but readable.** Group Minor findings by theme (for example tests, documentation, robustness, code structure) under short headings. Each finding is one or two full sentences: what is wrong, where (`file:line`), and what to do. Do not compress into fragments or abbreviations; a reader who has not seen the code must still understand each item.
+
+4. **Observations** (Notable findings): a short bulleted list, one sentence each.
+
+5. **What went well**: the aggregated positive observations from the reviewers (see Step 7.5j), two to five bullets.
+
+6. **Review coverage**: one or two lines naming the reviewers that ran, and those that were disabled, skipped, or failed (with the reason in plain words).
+
+Then go to Step 5b.
+
+### Step 5b: Next Steps
+
+Read the interaction mode once:
+
+```bash
+INTERACTIVE=$(resolve_config "interactive" "true")
+```
+
+When PR context exists (`PR_NUMBER` set), find out **before offering anything** what the user may do on the PR. GitHub does not let the author of a pull request ask for changes on their own pull request, so a blocking review is only possible for someone else's PR:
+
+```bash
+PR_AUTHOR=$(gh pr view "$PR_NUMBER" --json author -q '.author.login' 2>/dev/null || echo "")
+GH_USER=$(gh api user -q '.login' 2>/dev/null || echo "")
+CAN_REQUEST_CHANGES=false
+[ -n "$PR_AUTHOR" ] && [ -n "$GH_USER" ] && [ "$PR_AUTHOR" != "$GH_USER" ] && CAN_REQUEST_CHANGES=true
+```
+
+Use `CAN_REQUEST_CHANGES` to describe the posting option correctly ("post the review and ask for changes before merge" versus "post the findings as review comments, since this is your own PR") and to pick the review type in Step 7.5k. Do not ask the user to choose the review type; decide it.
+
+Offer the next steps in plain words. Always include an option that applies **all** suggested fixes in one go, so the user does not have to approve them one at a time. Build the menu from what is possible:
+
+| Option | When offered | Sets |
+|--------|--------------|------|
+| **Apply all suggested fixes**: every finding (any severity) that has a concrete fix, in one pass | always (when at least one finding has a fix) | `ACTION="fix"`, `FIX_SCOPE="all"` |
+| **Apply the important fixes**: only Critical and Important findings | when gate-failing findings exist | `ACTION="fix"`, `FIX_SCOPE="gate"` |
+| **Post the review on the PR** (worded per `CAN_REQUEST_CHANGES`) | PR context exists | `ACTION="comment"` |
+| **Fix first, then post what remains** | PR context exists and gate-failing findings exist | `ACTION="both"`, `FIX_SCOPE="gate"` |
+
+The user can always answer "nothing for now"; then only the local report is written (Step 7).
 
 Map the selection:
-- **Fix locally**: set `ACTION="fix"`. Run Step 6 (fix loop). Skip Step 7.5 (PR posting).
-- **Comment on PR**: set `ACTION="comment"`. Skip Step 6. Run Step 7.5.
-- **Both**: set `ACTION="both"`. Run Step 6, then run Step 7.5 for any findings that remain after the fix loop.
+- `ACTION="fix"`: run Step 6 with `FIX_SCOPE`. Skip Step 7.5.
+- `ACTION="comment"`: skip Step 6. Run Step 7.5.
+- `ACTION="both"`: run Step 6, then Step 7.5 for the findings that remain.
 
-When `--no-fix` is passed, skip this prompt and default to `ACTION="comment"` (PR posting only).
-
-When no `PR_NUMBER` is set, skip this prompt entirely and default to `ACTION="fix"` (local fix loop only, no PR posting possible).
-
-When gate check passes (zero Critical/Important findings), skip this prompt. Step 7.5 still runs if `PR_NUMBER` is set (to post Minor/Notable observations).
+Defaults without asking:
+- `INTERACTIVE` is `false`: no menu. With `--no-fix` or `AUTO_FIX="false"`, `ACTION="comment"` when PR context exists, otherwise report only. Without them, `ACTION="fix"`, `FIX_SCOPE="gate"` (plus Step 7.5 when PR context exists, i.e. `ACTION="both"`).
+- `--no-fix` in interactive mode means the review never changes code on its own. Still show the menu, including the fix options: choosing one is the user's explicit consent.
+- Gate passes (zero Critical/Important): still show the menu when there are Minor findings with fixes or PR context exists, without the "important fixes" options. Step 7.5 posts Minor/Notable observations only when the user chooses to post.
 
 ## Step 6: Autonomous Fix Loop
 
@@ -477,17 +626,17 @@ When gate check passes (zero Critical/Important findings), skip this prompt. Ste
 MAX_FIX_ROUNDS=$(resolve_config "max_fix_rounds" "3")
 ```
 
-Maximum rounds from config (default 3). Skip if `--no-fix` is passed, `AUTO_FIX` is "false", or `ACTION="comment"`.
+Maximum rounds from config (default 3). Run only when Step 5b set `ACTION` to `fix` or `both`; skip otherwise. (`--no-fix` and `AUTO_FIX="false"` only prevent fixing without the user's explicit choice in Step 5b.)
 
 For each round:
-1. Collect all Critical and Important findings, sorted by file
+1. Collect the findings to fix, sorted by file: all Critical and Important findings, plus, when `FIX_SCOPE="all"`, every Minor and Notable finding that has a concrete suggested fix
 2. For each file, sort findings by line number descending (prevent line shifts)
 3. Apply each fix suggestion
 4. Stage changes
 5. Run test suite (if detected):
    - If tests pass: proceed
    - If tests fail: convert failures to Critical findings with category="regression"
-6. Re-dispatch review agents on modified files only
+6. Re-dispatch the same `READY_PROMPT` and `READY_COMMAND` sets from `REVIEWERS_JSON` on modified files only (FR-024). Reuse the enablement and skip decisions from the initial round; do not re-run discovery or re-evaluate preconditions
 7. Merge new findings with existing Minor findings
 8. Gate check: if Critical + Important = 0, GATE PASS and exit loop
 
@@ -501,7 +650,7 @@ After fix loop completes, if code was removed AND `--spec` was provided:
 
 ## Step 7: Write Findings Report
 
-Write `review-findings.md` at the output path:
+Write `review-findings.md` at the output path. Write it for a reader who has not seen the console: for Critical and Important findings, the "What is wrong", "Why this matters" and "How it was resolved" parts carry the long-form explanation from Step 5a (where, what goes wrong, impact, fix); Minor and Notable findings may use one or two full sentences per part.
 
 ```markdown
 # Review Findings
@@ -522,8 +671,7 @@ Write `review-findings.md` at the output path:
 | Notable | N | - | N |
 | **Total** | **N** | **N** | **N** |
 
-**Agents completed:** N/6 (+ N external tools)
-**Agents failed:** [list if any]
+**Reviewers completed:** N/M (M = discovered reviewers; list the others as `name: disabled`, `name: skipped (reason)`, or `name: failed (reason)`)
 
 ## Findings
 
@@ -579,8 +727,8 @@ Include this section only when the meta-review removed findings as false positiv
 
 [Repeat for each removed finding]
 
-## Goal Alignment
-[Goal delivery table + undeclared changes, if goal agent ran]
+## Goal Delivery
+[Goal delivery table + undeclared changes, if a reviewer with the `goals` context block ran]
 
 ## Test Suite Results
 [Per-round test results, if tests ran]
@@ -606,7 +754,7 @@ REPO=$(echo "$REMOTE_URL" | sed -n 's|.*github.com[:/][^/]*/\(.*\)\.git$|\1|p; s
 Source platform functions:
 
 ```bash
-source "$(dirname "$0")/../scripts/platform.sh"
+source "$CORE_DIR/scripts/platform.sh"
 ```
 
 Generate a unique run ID:
@@ -673,12 +821,16 @@ For each previous thread that has no matching current finding (the code fix addr
 
 ### 7.5g: Interactive Local Review
 
-Present all NEW findings (not matched against previous runs) for interactive review before posting.
+Present all NEW findings (not matched against previous runs) for interactive review before posting. Skip this step when `INTERACTIVE` is `false` (all findings are accepted).
+
+**Shortcut first.** The user has just read the findings in Step 5a. Ask once whether to post all N new findings as presented; offer "post all", "let me go through them", and "post none". Only "let me go through them" continues with the per-finding review below.
+
+**Do not compress a finding when asking about it.** A question about a finding must let the user decide without scrolling back: before each question, print the finding's explanation in full sentences (what is wrong and where, what goes wrong, why it matters, the suggested fix, and how solid it is after the meta-review). The question itself restates the problem and its consequence in two or three full sentences, never as a one-line fragment.
 
 **Critical and Important findings** (one at a time):
 
 For each finding with severity Critical or Important, present:
-- The finding details (file, line, severity, description, rationale, fix suggestion, source)
+- The finding explained as above (file, line, severity in plain words, description, rationale, fix suggestion, source)
 - Three options:
   - **Accept**: Mark the finding for posting
   - **Reject**: Exclude the finding from posting
@@ -691,7 +843,7 @@ For each finding with severity Critical or Important, present:
 **Minor and Notable findings** (batched by severity):
 
 Present all Minor findings as a batch with:
-- A summary list showing each finding's file, line, and description
+- A list showing each finding's file, line, and a one- or two-sentence explanation (what is wrong and what to do), grouped by theme as in Step 5a
 - Options:
   - **Accept all**: Mark all Minor findings for posting
   - **Reject all**: Exclude all Minor findings
@@ -709,7 +861,7 @@ If no findings were accepted (all rejected), skip PR posting entirely. Log: "All
 
 For each accepted finding, format the inline comment body.
 
-**Prose plugin detection**:
+**Prose plugin detection**: plugins are installed in harness-specific places (marketplace caches, profile directories), so a fixed path is not a reliable signal. The prose plugin is available when the executing harness exposes its humanizer skill (for example `prose:humanizer` in the list of available skills). As a fallback for harnesses without a skill list, check the legacy locations:
 
 ```bash
 PROSE_AVAILABLE=false
@@ -718,7 +870,9 @@ if [ -d "$HOME/.claude/plugins/cc-prose" ] || [ -f ".claude/skills/prose-voice/S
 fi
 ```
 
-**If prose plugin is available**: Load the reviewer voice profile from `core/templates/reviewer-voice.md` and use it to shape the comment text with all three structural elements (what, why, fix).
+Set `PROSE_AVAILABLE=true` yourself when the humanizer skill is listed, whatever the check above says.
+
+**If prose plugin is available**: Start from the fallback template below, then shape every comment body and the prose parts of the summary body with the reviewer voice profile (`core/templates/reviewer-voice.md`) and the humanizer skill. Do this in one subagent that reads and writes the payload file, so the orchestrator's context stays small. The rewrite changes wording only: keep the severity label, the three structural elements (what, why, fix), the `_Source: ..._` footer, file paths, line numbers, identifiers, commands and numbers exactly; wrap code in backticks; write `<` and `>` outside code spans as `&lt;` and `&gt;` (GitHub drops them as HTML otherwise); keep the `<!-- cc-review:run-id:... -->` line raw; never use em or en dashes. After the rewrite, verify that every comment's `path`, `line`, `start_line` and order are unchanged and that the run-id marker is still present.
 
 **If prose plugin is not available**: Use the fallback template from `core/templates/reviewer-voice.md`:
 
@@ -737,21 +891,23 @@ If the finding has `edited_text`, use that instead of the original `description`
 **Source footer**: Append to every comment:
 - Single source: `_Source: {source_agent} agent_`
 - With co-reporters: `_Source: {source_agent} (also flagged by: {also_reported_by joined by ", "})_`
-- External tool (no "agent" suffix): `_Source: {source_agent}_`
+- Command reviewer (`kind: command`; look up `source_agent` in `REVIEWERS_JSON`): `_Source: {source_agent}_`
 
 ### 7.5j: Generate "What Went Well" Section
 
-When running in PR mode, the goal-alignment agent (Agent 6) produces a "What Went Well" section identifying positive patterns in the PR (solid error handling, clean abstractions, good test coverage).
+Every prompt reviewer may end its final text output with a `Positive observations:` section (2-5 bullets citing concrete code locations). Collect those sections from all completed prompt reviewers and aggregate the bullets into one "What Went Well" list, removing duplicates that cite the same location (FR-006b).
 
-If Agent 6 ran and produced positive observations, include them in the summary body before the findings table. If Agent 6 was skipped (no goals available), omit this section.
+If at least one reviewer produced positive observations, include the aggregated list in the summary body before the findings table. If no reviewer produced any, omit the section.
 
 ### 7.5k: Assemble Review Submission
 
 Build the JSON payload for the GitHub review submission API:
 
-**Event type**:
-- `REQUEST_CHANGES` if any accepted finding has severity Critical or Important
-- `COMMENT` otherwise
+**Event type** (decided here, never asked; see `CAN_REQUEST_CHANGES` from Step 5b):
+- `REQUEST_CHANGES` if any accepted finding has severity Critical or Important AND `CAN_REQUEST_CHANGES` is `true`
+- `COMMENT` otherwise (including the author's own PR, where GitHub rejects a request for changes). The summary body still states the gate outcome, so a failing gate stays visible.
+
+Describe the result to the user in plain words ("posted the review and asked for changes", "posted the findings as review comments"); do not name the event type.
 
 **Summary body** (the review `body` field):
 
@@ -759,7 +915,7 @@ Build the JSON payload for the GitHub review submission API:
 ## cc-review Summary
 
 ### What Went Well
-{positive observations from goal-alignment agent, if available}
+{aggregated positive observations from all prompt reviewers, if any}
 
 ### Findings
 
@@ -775,7 +931,7 @@ Build the JSON payload for the GitHub review submission API:
 - **Findings posted**: {accepted_count}
 - **Findings reviewed and not posted**: {rejected_count}
 - **Gate outcome**: {PASS or FAIL}
-- **Participating agents**: {comma-separated list of all agents and tools that produced findings}
+- **Participating reviewers**: {comma-separated list of all reviewers that produced findings}
 
 <!-- cc-review:run-id:{RUN_ID} -->
 ```
@@ -845,17 +1001,26 @@ Call the platform function to post the review:
 REVIEW_RESPONSE=$(post_review "$OWNER" "$REPO" "$PR_NUMBER" "$PAYLOAD_FILE")
 ```
 
-On success: extract the review URL and log it.
+On success: extract the review URL and show it to the user as a clickable link.
 
-On failure: proceed to error recovery (Step 7.5m).
+On failure: proceed to error recovery (Step 7.5m) before removing the payload file.
 
-Clean up the temp file:
+Clean up the temp file once the review is posted or the recovery file is written:
 
 ```bash
 rm -f "$PAYLOAD_FILE"
 ```
 
 ### 7.5m: Error Recovery
+
+**A timeout does not mean nothing was posted.** Large reviews often come back as HTTP 502/504 although GitHub created them. Before reporting a failure or retrying, wait about 20 seconds and look for this run's marker:
+
+```bash
+gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
+  | jq -r --arg id "$RUN_ID" '.[] | select(.body | contains("cc-review:run-id:" + $id)) | .html_url'
+```
+
+If a URL comes back, the review was posted: report it as a success (with the link) and do not retry, which would post a duplicate. Otherwise continue below.
 
 If the review posting fails, detect the failure type and respond accordingly:
 
@@ -899,29 +1064,27 @@ The local findings report (`review-findings.md`) is unaffected by posting failur
 
 ## Step 8: Console Summary
 
+The findings were already explained in Step 5a; do not repeat them here. Start with two or three plain sentences on what happened since then (fixes applied and whether tests passed, the review posted with its link, or only the report written), then the reviewer table below. Keep the user-facing language rules from Step 5a.
+
 ```
 Review completed.
 
 Gate: PASS|FAIL (after fix round N)
 
-Review Agents:
+Reviewers:
 
-| Agent                   | Found | Fixed | Remaining | Status    |
+| Reviewer                | Found | Fixed | Remaining | Status    |
 |-------------------------|-------|-------|-----------|-----------|
-| Correctness             |     N |     N |         N | completed |
-| Architecture & Idioms   |     N |     N |         N | completed |
-| Security                |     N |     N |         N | completed |
-| Production Readiness    |     N |     N |         N | completed |
-| Test Quality            |     N |     N |         N | completed |
-| Goal Alignment          |     N |     N |         N | completed/skipped |
-| CodeRabbit (external)   |     N |     N |         N | completed/skipped/failed |
-| Copilot (external)      |     N |     N |         N | completed/skipped/failed |
-| Codex (external)        |     N |     N |         N | completed/skipped/failed |
+| {display_name}          |     N |     N |         N | completed |
+| {display_name}          |     - |     - |         - | disabled |
+| {display_name}          |     - |     - |         - | skipped (requires: pr) |
+| {display_name}          |     - |     - |         - | failed (timeout) |
+| {display_name} (project override) | N | N |     N | completed |
 | Test Suite (regression) |     N |     N |         N | passed/failed/skipped |
 |-------------------------|-------|-------|-----------|-----------|
 | Total                   |     N |     N |         N |           |
 
-MVP: <agent name> (<N> findings)
+MVP: <reviewer display name> (<N> findings)
 
 Meta-review: (only when meta-review ran)
   Removed: N false positives | Calibrated: N severities | Contradictions: N
@@ -933,8 +1096,16 @@ Meta-review: (only when meta-review ran)
   | ...                |       ... |  ... |      ... |
 
 Key fixes applied:
-  1. <description> (<agent>)
+  1. <description> (<reviewer>)
   ...
 
 Details: review-findings.md
+```
+
+Generate one row per entry in `REVIEWERS_JSON`, in discovery order, using `display_name`. Append " (project override)" or " (user override)" to the name when the entry's `overrides` field is set. The Status column is one of `completed` (with counts), `disabled`, `skipped (<reason>)`, or `failed (<reason>)`; use `-` for the counts of reviewers that did not run. Invalid reviewers are not rows; they were already reported as warnings in Step 2. The Test Suite (regression) row and the MVP line are unchanged.
+
+Finally, remove the run directory with the reviewer body files and command outputs (the early stops in Step 2 remove it the same way):
+
+```bash
+[ -n "$REVIEW_RUN_DIR" ] && [ -d "$REVIEW_RUN_DIR" ] && rm -rf "$REVIEW_RUN_DIR"
 ```

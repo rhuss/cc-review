@@ -50,17 +50,8 @@
     },
     "category": {
       "type": "string",
-      "enum": [
-        "correctness",
-        "architecture",
-        "security",
-        "production-readiness",
-        "test-quality",
-        "goal-alignment",
-        "external",
-        "regression"
-      ],
-      "description": "Finding category matching the source agent's domain"
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Finding category, populated from the reviewer's `category` metadata (any lowercase identifier). Conventional values: correctness, architecture, security, production-readiness, test-quality, goal-alignment, external, regression"
     },
     "description": {
       "type": "string",

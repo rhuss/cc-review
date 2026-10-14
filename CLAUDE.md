@@ -10,13 +10,13 @@
 review/                  Plugin directory (distributable, all harnesses)
   .claude-plugin/        Claude Code plugin manifest
   .codex-plugin/         Codex plugin manifest
-  .claude/commands/      Claude Code command shims
-  skills/                Codex skill shims
+  skills/                Command shims (Claude Code and Codex)
   opencode/              OpenCode integration (commands + install)
   core/                  Harness-agnostic review engine
-    agents/              6 review agent prompts + shared preamble
-    commands/            Command definitions (review.md, triage.md)
-    schemas/             Finding schema (JSON Schema)
+    reviewers/           Bundled reviewer plugins (6 prompt, 3 command, gator)
+    agents/              Shared preamble + meta-review prompts
+    commands/            Command definitions (review.md, init.md, triage.md)
+    schemas/             Finding and reviewer frontmatter schemas
     scripts/             Shell utilities
   config/                Default configuration template
 

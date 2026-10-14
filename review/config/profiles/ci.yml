@@ -1,16 +1,15 @@
-# CI profile: all agents, all tools, verbose output, no interactive prompts
-agents:
+# CI profile: all bundled reviewers except gator, verbose output, no interactive prompts
+reviewers:
   correctness: true
   architecture: true
   security: true
   production: true
-  test_quality: true
-  goal_alignment: true
-
-external_tools:
+  test-quality: true
+  goal-alignment: true
   coderabbit: true
   copilot: true
   codex: true
+  gator: false
 
 severity:
   min_confidence: 70

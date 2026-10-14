@@ -20,3 +20,48 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: Spec and documentation artifacts don't fully reflect implementation decisions around triage removal and skip behaviors.
 
 > When extracting/removing features, update all spec-level references, not just code-level ones. Pattern detected from 3 CodeRabbit findings about gaps between what the spec describes and what the code implements.
+
+### reviewer-schema-single-source
+
+- **Source**: deep-review
+- **Date**: 2026-10-13
+- **Reference**: 004-reviewer-plugins
+- **Summary**: Frontmatter rules live twice, in the jq validator and in reviewer.schema.json, which no code or test reads; the reserved-name list is copied into the script, schema, docs and data model.
+
+> Adding a field or flag means editing four or five places with nothing catching drift. A test that validates fixtures against the schema, or compares the schema's reserved list with CC_REVIEW_RESERVED_NAMES, would keep one source honest.
+
+### goals-report-section-contract
+
+- **Source**: deep-review
+- **Date**: 2026-10-13
+- **Reference**: 004-reviewer-plugins
+- **Summary**: The report's Goal Delivery section is keyed on the generic `goals` context block but assumes goal-alignment's own table output.
+
+> A contributed reviewer declaring `context: [goals]` would trigger the section without producing those tables. A reviewer-declared report-section contract would remove the last reviewer-shaped assumption from the review command.
+
+### command-finding-path-validation
+
+- **Source**: deep-review
+- **Date**: 2026-10-13
+- **Reference**: 004-reviewer-plugins
+- **Summary**: Findings from command reviewers carry a `file` taken verbatim from external tool output and feed the autonomous fix loop without a containment check.
+
+> LLM-backed tools read the untrusted diff and could be steered to emit absolute or `..` paths. Dropping findings whose file is absolute, has a `..` segment, or is not in CHANGED_FILES before the fix loop would close this.
+
+### deterministic-command-output-parsing
+
+- **Source**: deep-review
+- **Date**: 2026-10-13
+- **Reference**: 004-reviewer-plugins
+- **Summary**: The `json` and `delimited` formats have no deterministic converter, so the orchestrator must read whole tool output; detection also runs for reviewers later disabled by config or --no-external.
+
+> A shipped parse-command-output.sh for json/delimited would keep tool output out of the orchestrator's context, and passing config-disabled names to discovery would skip their network auth probes.
+
+### timeout-process-group-detach
+
+- **Source**: deep-review
+- **Date**: 2026-10-13
+- **Reference**: 004-reviewer-plugins
+- **Summary**: The perl timeout backend now leaves the caller's process group like coreutils timeout, so a harness interrupt no longer reaches a running tool; it stops at its own bound.
+
+> Recording the timeout wrapper's PID so the orchestrator can send TERM (now forwarded to the tool's group) would allow prompt cancellation of slow external reviewers.
