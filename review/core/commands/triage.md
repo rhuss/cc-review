@@ -10,22 +10,35 @@ Triage all review comments on a PR: autonomously handle bot comments (assess, ap
 
 ## Script References
 
+The command shim already resolved the cc-review core directory (the directory that contains `commands/triage.md`); set `CC_REVIEW_CORE_DIR` to that absolute path at the top of every shell block of this command, since the harness may run each block in a new shell. Resolve `CORE_DIR` from it once:
+
 ```bash
-TRIAGE_STATE="core/scripts/triage-state.sh"
-SANITIZE_JSON="core/scripts/sanitize-gh-json.py"
-PLATFORM="core/scripts/platform.sh"
+# $0 names this file only when the command file itself is executed; in a
+# harness-run block it is the shell (zsh, bash), so it is a fallback only.
+if [ -n "${CC_REVIEW_CORE_DIR:-}" ] && [ -f "$CC_REVIEW_CORE_DIR/commands/triage.md" ]; then
+  CORE_DIR="$CC_REVIEW_CORE_DIR"
+else
+  case "$0" in
+    */commands/triage.md) CORE_DIR="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)" ;;
+    *) echo "Error: cc-review core directory unknown; set CC_REVIEW_CORE_DIR to the core path the shim resolved" >&2; exit 1 ;;
+  esac
+fi
+export CC_REVIEW_CORE_DIR="$CORE_DIR"
+TRIAGE_STATE="$CORE_DIR/scripts/triage-state.sh"
+SANITIZE_JSON="$CORE_DIR/scripts/sanitize-gh-json.py"
+PLATFORM="$CORE_DIR/scripts/platform.sh"
 ```
 
 ## Config Resolution
 
 ```bash
-source "$(dirname "$0")/../scripts/resolve-config.sh"
+source "$CORE_DIR/scripts/resolve-config.sh"
 ```
 
-Initialize the merged config from all layers. `--config` and `--profile` are parsed from command arguments:
+Initialize the merged config from all layers. `--config` and `--profile` are parsed from command arguments (`CONFIG_FLAG`, `PROFILE_FLAG`; leave them empty when not given). Pass them as `"${VAR:--}"` (`-` means "not provided"): zsh keeps an unquoted `${VAR:+--config "$VAR"}` as one word.
 
 ```bash
-if ! resolve_config_init ${CONFIG_FLAG:+--config "$CONFIG_FLAG"} ${PROFILE_FLAG:+--profile "$PROFILE_FLAG"}; then
+if ! resolve_config_init --config "${CONFIG_FLAG:--}" --profile "${PROFILE_FLAG:--}"; then
   exit 1
 fi
 resolve_config_validate_types

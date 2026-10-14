@@ -3,19 +3,20 @@
 # or to ~/.cc-review/config.yml (user-level) to customize.
 #
 # Resolution order: CLI flags > --config > --profile > project config > user config > these defaults
-
-agents:
-  correctness: true
-  architecture: true
-  security: true
-  production: true
-  test_quality: true
-  goal_alignment: true
-
-external_tools:
-  coderabbit: true
-  copilot: false
-  codex: true
+#
+# Reviewers are plugins discovered from .cc-review/reviewers/ (project),
+# ~/.cc-review/reviewers/ (user) and the bundled core/reviewers/ directory.
+# Enable or disable any discovered reviewer with reviewers.<name>. A reviewer
+# without a key uses the `enabled` default from its own frontmatter; these
+# defaults set no key, so that frontmatter default (and the `enabled` value of
+# a user or project override) applies. Bundled defaults: every reviewer is
+# enabled except copilot and gator.
+# The legacy keys agents.* and external_tools.* still work but are deprecated.
+#
+# reviewers:
+#   test-quality: false
+#   gator: true
+#   accessibility: true     # a project or user reviewer
 
 severity:
   min_confidence: 70

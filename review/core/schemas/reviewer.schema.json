@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "cc-review Reviewer Frontmatter",
+  "description": "Metadata contract for a reviewer plugin (the YAML frontmatter of <name>.md or <name>/reviewer.md). Discovery (core/scripts/discover-reviewers.sh) enforces these rules with jq and the filesystem checks noted in each field's description. Unknown fields are ignored with a verbose-level note so the format can grow.",
+  "type": "object",
+  "required": ["name", "kind"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "Stable identifier used for config keys (reviewers.<name>), derived CLI flags (--no-<name>), source_agent, and console rows. Must equal the file basename (without .md) or the plugin directory name. Must be a YAML string: quote a value YAML reads as a number or boolean (\"007\", \"1e3\"). Must not be one of the reserved names: external, fix, meta-review, only, sequential, parallel, pr, spec, hints, output, config, profile, max-rounds."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["prompt", "command"],
+      "description": "prompt: the body is the reviewer prompt dispatched as a fresh-context subagent. command: the body holds parsing notes and the command fields describe an external tool."
+    },
+    "display_name": {
+      "type": "string",
+      "default": "<name>",
+      "description": "Shown in the console summary and findings report."
+    },
+    "category": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "default": "<name>",
+      "description": "Written to every finding's category field. Must be a YAML string (quote all-digit values)."
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "Default enablement when the merged config has no reviewers.<name> key."
+    },
+    "requires": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "Precondition tokens: pr (PR context available), spec (spec file provided), binary:<name> (executable on PATH). Unknown tokens are treated as unsatisfied and the reviewer is skipped."
+    },
+    "severity_map": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "enum": ["Critical", "Important", "Minor", "Notable"]
+      },
+      "default": {},
+      "description": "Native severity vocabulary to cc-review severity. Native values not in the map pass through unchanged when they are already cc-review severities; otherwise the finding is dropped with a warning."
+    },
+    "dedup": {
+      "type": "string",
+      "enum": ["cross-category", "isolated"],
+      "default": "cross-category",
+      "description": "isolated: findings from this reviewer never merge with findings of other categories during deduplication."
+    },
+    "references": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "description": "prompt only. Ordered relative paths inside the plugin directory, inlined after the prompt body under a '## Reference: <path>' heading. Absolute paths, '..' segments, and missing files make the reviewer invalid."
+    },
+    "context": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["goals"] },
+      "default": [],
+      "description": "prompt only. Optional context blocks the core supplies at dispatch time. goals: the declared PR goals and linked issues, supplied only when PR context exists."
+    },
+    "detect": {
+      "type": "string",
+      "description": "command only, required. Shell check; exit 0 means the tool is available, otherwise the reviewer is skipped with reason 'not available'."
+    },
+    "auth_check": {
+      "type": "string",
+      "description": "command only, optional. Shell check; non-zero exit skips the reviewer with reason 'not authenticated' (plus the last line of its stderr). A project-layer command reviewer runs neither detect nor auth_check until it is trusted in ~/.cc-review/trusted-reviewers."
+    },
+    "invoke": {
+      "type": "string",
+      "description": "command only, required. Command template. Supported placeholders are exactly {base_branch}, {files} (space-separated shell-quoted changed file paths), and {pr_number}. Using {pr_number} without PR context skips the reviewer with reason 'requires: pr'."
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 120,
+      "description": "command only. Wall-clock bound for the invoke command."
+    },
+    "output": {
+      "type": "object",
+      "description": "command only, required. How raw tool output becomes findings.",
+      "required": ["format"],
+      "properties": {
+        "format": {
+          "type": "string",
+          "enum": ["json", "delimited", "parser"],
+          "description": "json: the tool prints a JSON array of findings (file, line or line_start, severity, description, rationale, optional fix and confidence). delimited: blocks separated by 'delimiter' with '<Label>: <value>' lines mapped by 'fields'. parser: a script in the plugin directory reads raw output on stdin and prints json format."
+        },
+        "delimiter": {
+          "type": "string",
+          "description": "Required for delimited. Block separator."
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "required": ["file", "line", "severity", "description"],
+          "description": "Required for delimited. Finding field to the label the tool prints."
+        },
+        "parser": {
+          "type": "string",
+          "description": "Required for parser. Relative path inside the plugin directory; must be executable."
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "command" } } },
+      "then": { "required": ["detect", "invoke", "output"] }
+    }
+  ],
+  "additionalProperties": true
+}

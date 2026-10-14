@@ -68,7 +68,7 @@ _Source: {source_display_name}{also_reported_by}_
 ```
 
 Where:
-- `{source_display_name}` is `{source_agent} agent` for internal agents (correctness, architecture, security, production, test-quality, goal-alignment) and `{source_agent}` without suffix for external tools (coderabbit, copilot, codex)
+- `{source_display_name}` is `{source_agent} agent` for prompt reviewers (`kind: prompt`) and `{source_agent}` without suffix for command reviewers (`kind: command`, external tools)
 - `{also_reported_by}` is formatted as ` (also flagged by: agent1, agent2)` when present, or empty string when not
 
 ## Source Footer Format

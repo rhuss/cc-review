@@ -15,6 +15,8 @@ Read the first path that contains `commands/triage.md`. If none found, report:
 ## Execution
 
 Read and execute `core/commands/triage.md` from the resolved core path.
+Set `CC_REVIEW_CORE_DIR` to the absolute resolved core path (the directory
+that contains `commands/triage.md`) in every shell block of the command.
 
 Pass through all arguments from the user's invocation:
 - `--pr <number>`: Target PR number

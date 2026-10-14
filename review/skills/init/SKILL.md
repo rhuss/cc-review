@@ -21,6 +21,8 @@ Read the first path that contains `commands/init.md`. If none found, report:
 ## Execution
 
 Read and execute `core/commands/init.md` from the resolved core path.
+Set `CC_REVIEW_CORE_DIR` to the absolute resolved core path (the directory
+that contains `commands/init.md`) in every shell block of the command.
 
 Pass through all arguments from the user's invocation:
 - `--interactive`: Walk through each config section with questions

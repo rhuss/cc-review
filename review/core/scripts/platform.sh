@@ -286,9 +286,6 @@ _github_fetch_reviews() {
                     path
                     line
                     body
-                    pullRequestReviewThread {
-                      id
-                    }
                   }
                 }
               }
@@ -306,7 +303,22 @@ _github_fetch_reviews() {
     cursor=$(printf '%s' "$result" | jq -r '.data.repository.pullRequest.reviews.pageInfo.endCursor')
   done
 
-  printf '%s' "$all_reviews"
+  # A review comment has no field pointing at its thread, so join the thread
+  # node IDs (needed by resolve_thread) in from the PR's review threads by
+  # comment databaseId. Without threads the reviews are returned unchanged.
+  local threads
+  if ! threads=$(_github_fetch_pr_threads "$pr_number"); then
+    echo "WARNING: could not fetch review threads for PR #$pr_number; reviews are returned without thread IDs, so fixed threads cannot be resolved" >&2
+    threads="[]"
+  fi
+  if printf '%s' "${threads:-[]}" | jq -e 'any(.[]; (.comments.nodes | length) >= 100)' >/dev/null 2>&1; then
+    echo "WARNING: a review thread on PR #$pr_number has 100 or more comments; comments past the first 100 get no thread ID" >&2
+  fi
+  printf '%s\n%s' "$all_reviews" "${threads:-[]}" | jq -s '
+    (reduce (.[1][] | . as $t | .comments.nodes[] | {key: (.databaseId | tostring), value: $t.id}) as $e
+      ({}; .[$e.key] = $e.value)) as $by_comment
+    | .[0] | map(.comments.nodes |= map(
+        . + (if $by_comment[.databaseId | tostring] then {pullRequestReviewThread: {id: $by_comment[.databaseId | tostring]}} else {} end)))'
 }
 
 _github_parse_diff_hunks() {

@@ -1,4 +1,4 @@
-.PHONY: validate install uninstall reinstall help
+.PHONY: validate test install uninstall reinstall help
 
 MARKETPLACE := cc-review-plugin-development
 PLUGIN := cc-review@$(MARKETPLACE)
@@ -6,6 +6,9 @@ PLUGIN := cc-review@$(MARKETPLACE)
 validate:
 	claude plugin validate ./
 	claude plugin validate ./review/
+
+test:
+	bash tests/run.sh
 
 install:
 	@if claude plugin marketplace add ./ 2>&1 | grep -q "already installed"; then \
@@ -31,6 +34,7 @@ reinstall: uninstall install
 help:
 	@echo "Available targets:"
 	@echo "  validate   - Validate plugin manifests (Claude Code)"
+	@echo "  test       - Run the bash test suite (tests/run.sh)"
 	@echo "  install    - Install plugin via Claude Code marketplace"
 	@echo "  uninstall  - Remove plugin and marketplace"
 	@echo "  reinstall  - Full uninstall and reinstall"

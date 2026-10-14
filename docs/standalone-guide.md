@@ -11,40 +11,30 @@ Quick start for using cc-review without spec-kit or any other framework.
 
 ## Installation
 
+The `review/` directory of the repository is the plugin. Each harness installs it with its own mechanism; see the README for details.
+
 ### Claude Code
 
 ```bash
 git clone https://github.com/rhuss/cc-review.git ~/cc-review
-
-# Install globally (available in all projects)
-~/cc-review/adapters/claude-code/install.sh --global
-
-# Or install for a single project
-cd /path/to/your/project
-~/cc-review/adapters/claude-code/install.sh
+claude plugin marketplace add ~/cc-review
+claude plugin install cc-review@cc-review-plugin-development
 ```
 
-The install script creates symlinks from your `.claude/commands/` directory to the adapter's SKILL.md files. The adapter resolves the cc-review core at runtime by checking:
-
-1. Relative path from the symlink target (development installs)
-2. `.cc-review/core` in the project root
-3. `~/.cc-review/core` in your home directory
-
-If you prefer manual setup, symlink the command directories directly:
+### Codex
 
 ```bash
-mkdir -p .claude/commands
-ln -s ~/cc-review/adapters/claude-code/commands/review .claude/commands/review
-ln -s ~/cc-review/adapters/claude-code/commands/triage .claude/commands/triage
+codex plugin marketplace add ~/cc-review
+codex plugin install cc-review@cc-review-plugin-development
 ```
 
-### Codex / OpenCode
+### OpenCode
 
 ```bash
-~/cc-review/adapters/agents-md/install.sh
+~/cc-review/review/opencode/install.sh --project-dir .
 ```
 
-This appends the cc-review agent section to your project's `AGENTS.md`. The agent reads core command files at runtime from `.cc-review/core/` or `~/.cc-review/core/`.
+All three shims resolve the cc-review core at runtime: the plugin's own `core/` directory first, then `.cc-review/core` in the project root, then `~/.cc-review/core` in your home directory.
 
 ## First Review
 
@@ -64,8 +54,8 @@ git add -A && git commit -m "implement feature"
 
 cc-review will:
 - Determine changed files by diffing against the main branch
-- Dispatch 6 review agents sequentially (Correctness, Architecture, Security, Production Readiness, Test Quality, Goal Alignment)
-- Check for external tools (CodeRabbit, Codex CLI) and include their findings
+- Discover every reviewer plugin (bundled, `~/.cc-review/reviewers/`, `.cc-review/reviewers/`) and dispatch the enabled ones in parallel; the bundled set is Correctness, Architecture, Security, Production Readiness, Test Quality, Goal Alignment (needs a PR), and the opt-in gator reviewer. See `docs/reviewer-plugins.md` to add your own.
+- Run the enabled command reviewers whose tool is installed (CodeRabbit and Codex by default) and include their findings
 - Merge and deduplicate all findings
 - Run the autonomous fix loop for Critical/Important findings (up to 3 rounds)
 - Write a report to `review-findings.md`
@@ -83,7 +73,7 @@ If your changes are already in a pull request:
 /review --pr 42
 ```
 
-This uses the PR's diff instead of the branch diff and extracts goals from the PR description for the Goal Alignment agent.
+This uses the PR's diff instead of the branch diff and extracts goals from the PR description for reviewers that request the `goals` context block (the bundled Goal Alignment reviewer).
 
 ## Configuration
 
@@ -97,21 +87,24 @@ cp ~/cc-review/config/config-template.yml .cc-review/config.yml
 Edit `.cc-review/config.yml` to customize:
 
 ```yaml
-# Disable CodeRabbit, enable Copilot
-external_tools:
+# Disable CodeRabbit, enable Copilot and the opt-in gator reviewer
+reviewers:
   coderabbit: false
   copilot: true
   codex: true
+  gator: true
 
 # Custom test command (skip auto-detection)
-test_command: "make test-unit"
-test_timeout_seconds: 120
+test:
+  command: "make test-unit"
+  timeout_seconds: 120
 
 # Reduce fix loop rounds
 max_fix_rounds: 2
 
 # Write reports to a subdirectory
-output_dir: "reports"
+output:
+  dir: "reports"
 ```
 
 ### User-level config
@@ -120,7 +113,7 @@ For settings that apply across all projects, place the config at `~/.cc-review/c
 
 ## Review Hints
 
-Review hints give all 6 agents project-specific knowledge that is not apparent from reading the code. This is useful for framework quirks, intentional patterns, or known limitations.
+Review hints give every prompt reviewer project-specific knowledge that is not apparent from reading the code. This is useful for framework quirks, intentional patterns, or known limitations.
 
 Create `.cc-review/review-hints.md`:
 
@@ -192,23 +185,27 @@ The adapter could not locate the core directory. Ensure one of these paths exist
 - `.cc-review/core/` exists in your project root (copy or symlink `core/` there)
 - `~/.cc-review/core/` exists in your home directory
 
-### External tools not detected
+### A command reviewer shows "skipped (not available)"
 
-cc-review checks for external tool CLIs on your PATH. If a tool is installed but not detected:
+Command reviewers wrap external CLIs and run the plugin's `detect` check on your PATH. If a tool is installed but reported as not available:
 
 - Verify with `which coderabbit`, `which copilot`, or `which codex`
-- Check that the tool is enabled in config (CodeRabbit and Codex are enabled by default; Copilot is disabled by default)
+- A reviewer turned off in config shows `disabled`, not `skipped`
+- `skipped (not authenticated)` means the tool's `auth_check` failed; the text after the colon, when present, is the last line the check printed (a network error looks different from a missing login). Log in to the tool first
+- `detection timed out` means the check did not answer within 15 seconds; the tool's state is unknown
+- `skipped (untrusted project command reviewer ...)` is a command reviewer from the project's `.cc-review/reviewers/`; add the `<name> <sha256>` line from the reason to `~/.cc-review/trusted-reviewers` to let it run
 
-### Goal Alignment agent skipped
+### A reviewer shows "skipped (requires: pr)"
 
-The Goal Alignment agent requires a PR to extract goals from. If you run `/review` without `--pr` and no PR exists for the current branch, the agent is skipped. Create a PR first or pass `--pr`.
+Reviewers that declare `requires: [pr]` (the bundled Goal Alignment reviewer) need a PR to work from. If you run `/review` without `--pr` and no PR exists for the current branch, they are skipped. Create a PR first or pass `--pr`.
 
 ### Test command not detected
 
-cc-review auto-detects test commands from `Makefile` (target `test:`), `go.mod`, `package.json`, or `pyproject.toml`/`setup.py`. If your project uses a different test runner, set `test_command` in config:
+cc-review auto-detects test commands from `Makefile` (target `test:`), `go.mod`, `package.json`, or `pyproject.toml`/`setup.py`. If your project uses a different test runner, set `test.command` in config:
 
 ```yaml
-test_command: "cargo test"
+test:
+  command: "cargo test"
 ```
 
 ### GraphQL errors during triage

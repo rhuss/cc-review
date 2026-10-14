@@ -1,7 +1,7 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--no-external] [--no-coderabbit] [--no-copilot] [--no-codex] [--parallel] [--sequential]"
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel]"
 ---
 
 # Review
@@ -21,6 +21,8 @@ Read the first path that contains `commands/review.md`. If none found, report:
 ## Execution
 
 Read and execute `core/commands/review.md` from the resolved core path.
+Set `CC_REVIEW_CORE_DIR` to the absolute resolved core path (the directory
+that contains `commands/review.md`) in every shell block of the command.
 
 Pass through all arguments from the user's invocation:
 - `--pr <number>`: Target PR number
@@ -30,7 +32,10 @@ Pass through all arguments from the user's invocation:
 - `--config <path>`: Explicit config file path
 - `--profile <name>`: Profile preset name (ci, thorough, quick)
 - `--no-fix`: Skip autonomous fix loop
-- `--no-external`: Skip external tool integration
-- `--no-coderabbit` / `--no-copilot` / `--no-codex`: Disable individual tools
-- `--parallel`: Run review agents in parallel
-- `--sequential`: Run review agents sequentially
+- `--max-rounds <n>`: Maximum fix rounds
+- `--no-external` / `--external`: Disable or enable all command (external tool) reviewers
+- `--no-<reviewer>`: Disable one discovered reviewer by name (for example `--no-codex`)
+- `--only <reviewer,...>`: Dispatch only the listed reviewers
+- `--no-meta-review`: Skip the meta-review pass
+- `--sequential`: Run reviewers one at a time instead of in parallel
+- `--parallel`: Run reviewers in parallel (the default; accepted for compatibility)
