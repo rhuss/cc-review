@@ -213,7 +213,9 @@ These rules hold for every selector:
 - The search always stays inside the current repository and its open PRs, so `repo:`, `org:`, `user:`, `is:closed`, `is:merged` and `state:` are rejected.
 - `--limit <n>` caps the run (10 by default). The PRs that haven't been updated for the longest time come first.
 
-Two combinations are rejected outright: `--all-open` with `--search`, and `--bulk` with `--pr`.
+Some combinations are rejected before anything runs: `--all-open` with `--search`, `--bulk` with `--pr`, `--spec` with `--bulk`, `--output` with bulk review (each PR's report goes to its run directory), and a `--limit` that isn't a positive whole number.
+
+The usual review options apply to every PR in the run: `--config`, `--profile`, the reviewer selection (`--only`, `--no-<reviewer>`, `--external`, `--no-external`), `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential` and `--parallel`. `--no-fix` takes "apply fixes" off the menu. For triage, `--config` and `--profile` carry over, and `--idea-inbox` asks once, after you have decided on all PRs.
 
 ### Deciding what happens
 
