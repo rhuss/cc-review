@@ -1,6 +1,6 @@
 # Brainstorm Overview
 
-Last updated: 2026-10-13
+Last updated: 2026-10-25
 
 ## Sessions
 
@@ -11,6 +11,7 @@ Last updated: 2026-10-13
 | 03 | 2026-08-04 | reviewer-abstraction | superseded (by #05) | - | - |
 | 04 | 2026-08-14 | meta-reviewer | active | - | - |
 | 05 | 2026-10-13 | reviewer-plugins | active | - | - |
+| 06 | 2026-10-25 | bulk-review-triage | active | - | - |
 
 ## Open Threads
 - Should --profile and --config be mutually exclusive? (from #02)
@@ -26,6 +27,13 @@ Last updated: 2026-10-13
 - Config migration: deprecated aliases for `agents.*` / `external_tools.*` or clean break? (from #05)
 - Should a plugin be able to opt its findings out of the fix loop? (from #05)
 - Should triage auto-discover bot profiles from `kind: command` reviewer metadata? (from #05)
+- Default `--limit` on PRs per bulk run and behavior when exceeded? (from #06)
+- Sequential vs parallel per-PR subagents, and concurrency limit? (from #06)
+- Unattended review policy: comments only, or auto-fix on own PRs? (from #06)
+- Head SHA in the cc-review marker, and handling of older markers? (from #06)
+- Should single-PR `--pr` also use worktree checkout when not on that branch? (from #06)
+- Config layering when worktrees live outside the repo root? (from #06)
+- Retention policy for `.cc-review/bulk/` state directories? (from #06)
 
 ## Parked Ideas
 - Remote reviewer plugin sources (git URLs in config, community catalog) (#05)
