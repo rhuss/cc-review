@@ -258,7 +258,21 @@ If a run is interrupted (you closed the session, GitHub rate-limited you, you st
 
 When the run stopped in the middle of its analysis, resuming asks how far to go: continue with all remaining PRs, finish only the PR that was being analyzed and then decide, or decide right away on what is already analyzed. With either shortcut, the PRs it didn't get to are left alone. Nothing is posted on them, so your next bulk run picks them up again. (An unattended run doesn't ask and simply continues.)
 
-A resumed run keeps the options it was started with. PRs whose head moved since their analysis are analyzed again, finished PRs stay finished, and anything already pushed, posted or resolved is not done a second time. A PR that failed is tried again, but only up to three failed attempts in all; after that it stays failed and the run can finish without it. There is at most one unfinished run per command. Starting a new one while another is open asks whether to resume it, abandon it or cancel. Abandoning keeps the old run's state but removes the worktrees it still held; its `summary.md` lists them. An unattended run can't ask, so it stops with an error that tells you to add `--resume`.
+When you resume a run, it picks up where it stopped:
+
+- It uses the same options as when it was started. You can't change them on resume.
+- PRs that are already done stay done.
+- Nothing is pushed, posted or resolved twice.
+- A PR that got new commits since it was analyzed is analyzed again.
+- A PR that failed is tried again. After three failures it is given up on, so the run can still finish.
+
+You can only have one unfinished run per command (one for review, one for triage). If you start a new bulk run while an old one is still open, cc-review asks what to do:
+
+- **Resume** the old run.
+- **Abandon** it and start fresh. The old run's state files stay on disk, but its leftover PR checkouts are deleted (its `summary.md` lists which ones).
+- **Cancel** and do nothing.
+
+An unattended run can't ask this question. It stops with an error instead and tells you to add `--resume`.
 
 ### Scheduled jobs
 
