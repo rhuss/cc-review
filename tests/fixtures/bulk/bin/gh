@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Fake gh for the bulk tests. Logs every call and serves canned JSON.
+#
+# Environment:
+#   FAKE_GH_LOG    file that receives one line per call (argv joined by spaces);
+#                  a POST with --input adds an "INPUT <compact json>" line
+#   FAKE_GH_DIR    colon-separated fixture directories, searched in order
+#   FAKE_GH_STATE  directory for the id counter (default: the first FAKE_GH_DIR)
+#   FAKE_GH_FAIL   glob matched against the joined argv; a matching call fails
+#   FAKE_GH_FAIL_AFTER  number of matching calls that succeed before failing (default 0)
+#   FAKE_GH_FAIL_MSG    stderr text of a failing call (default "HTTP 500")
+#
+# Fixture files (first match wins):
+#   api user                        user.json
+#   repo view                       repo.json
+#   pr list [--search q]            pr-list-review-requested.json, pr-list-reviewed-by.json,
+#                                   pr-list-search.json, pr-list-all.json
+#   pr view <n>                     pr-view-<n>.json
+#   api graphql (resolveReviewThread)  fixed success answer
+#   api graphql (search)            graphql-search.json
+#   api graphql (reviewThreads)     graphql-threads-<n>.json, graphql-threads.json
+#   api graphql (reviews)           graphql-reviews-<n>.json, graphql-reviews.json
+#   api .../replies, .../reviews    POST answers {"id": <n>} with an incrementing id
+# A -q/--jq filter is applied to the served JSON, as gh does.
+
+set -u
+
+args="$*"
+[ -n "${FAKE_GH_LOG:-}" ] && printf '%s\n' "$args" >> "$FAKE_GH_LOG"
+
+fixture() {
+  local name dir old_ifs="$IFS"
+  IFS=:
+  for name in "$@"; do
+    for dir in ${FAKE_GH_DIR:-}; do
+      if [ -f "$dir/$name" ]; then
+        IFS="$old_ifs"
+        cat "$dir/$name"
+        return 0
+      fi
+    done
+  done
+  IFS="$old_ifs"
+  echo "fake gh: no fixture for: $args (tried: $*)" >&2
+  return 1
+}
+
+next_id() {
+  local state="${FAKE_GH_STATE:-${FAKE_GH_DIR%%:*}}" n
+  mkdir -p "$state"
+  n=$(cat "$state/counter" 2>/dev/null || echo 1000)
+  n=$((n + 1))
+  echo "$n" > "$state/counter"
+  echo "$n"
+}
+
+if [ -n "${FAKE_GH_FAIL:-}" ]; then
+  # shellcheck disable=SC2053
+  if [[ "$args" == $FAKE_GH_FAIL ]]; then
+    state="${FAKE_GH_STATE:-${FAKE_GH_DIR%%:*}}"
+    mkdir -p "$state"
+    seen=$(cat "$state/fail-count" 2>/dev/null || echo 0)
+    seen=$((seen + 1))
+    echo "$seen" > "$state/fail-count"
+    if [ "$seen" -gt "${FAKE_GH_FAIL_AFTER:-0}" ]; then
+      echo "${FAKE_GH_FAIL_MSG:-HTTP 500}" >&2
+      exit 1
+    fi
+  fi
+fi
+
+# Pull out the options the fixtures are keyed by
+jq_filter="" search="" number="" query="" input="" method="GET" silent=false
+positional=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -q|--jq) jq_filter="$2"; shift 2 ;;
+    --search) search="$2"; shift 2 ;;
+    --input) input="$2"; shift 2 ;;
+    -X|--method) method="$2"; shift 2 ;;
+    --silent) silent=true; shift ;;
+    -f|-F|--field|--raw-field)
+      case "$2" in
+        query=*) query="${2#query=}" ;;
+        number=*) number="${2#number=}" ;;
+      esac
+      [ "${2%%=*}" = body ] && method=POST
+      shift 2 ;;
+    --json|--state|--limit|--repo|-R) shift 2 ;;
+    *) positional+=("$1"); shift ;;
+  esac
+done
+
+if [ -n "$input" ]; then
+  method=POST
+  [ -n "${FAKE_GH_LOG:-}" ] && printf 'INPUT %s\n' "$(jq -c . "$input" 2>/dev/null || cat "$input")" >> "$FAKE_GH_LOG"
+fi
+
+out=""
+case "${positional[0]:-} ${positional[1]:-}" in
+  "api user")
+    out=$(fixture user.json) || exit 1 ;;
+  "repo view")
+    out=$(fixture repo.json) || exit 1 ;;
+  "pr list")
+    case "$search" in
+      "") out=$(fixture pr-list-all.json) || exit 1 ;;
+      *review-requested:@me*) out=$(fixture pr-list-review-requested.json) || exit 1 ;;
+      *reviewed-by:@me*) out=$(fixture pr-list-reviewed-by.json) || exit 1 ;;
+      *) out=$(fixture pr-list-search.json) || exit 1 ;;
+    esac ;;
+  "pr view")
+    out=$(fixture "pr-view-${positional[2]:-}.json" pr-view.json) || exit 1 ;;
+  "api graphql")
+    case "$query" in
+      *resolveReviewThread*) out='{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}' ;;
+      *search*) out=$(fixture graphql-search.json) || exit 1 ;;
+      *reviewThreads*) out=$(fixture "graphql-threads-$number.json" graphql-threads.json) || exit 1 ;;
+      *reviews*) out=$(fixture "graphql-reviews-$number.json" graphql-reviews.json) || exit 1 ;;
+      *) echo "fake gh: unknown graphql query" >&2; exit 1 ;;
+    esac ;;
+  api\ */replies|api\ */reviews)
+    if [ "$method" != POST ]; then
+      echo "fake gh: only POST is supported for: $args" >&2
+      exit 1
+    fi
+    out="{\"id\":$(next_id)}" ;;
+  *)
+    echo "fake gh: unsupported call: $args" >&2
+    exit 1 ;;
+esac
+
+$silent && exit 0
+if [ -n "$jq_filter" ]; then
+  printf '%s' "$out" | jq -r "$jq_filter"
+else
+  printf '%s\n' "$out"
+fi

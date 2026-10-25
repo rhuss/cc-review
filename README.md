@@ -119,6 +119,14 @@ Dispatch only the named reviewers. Any discovered reviewer name works here and i
 | `--no-meta-review` | Skip the skeptic/calibrator meta-review pass |
 | `--sequential` | Run reviewers one at a time (default: parallel) |
 | `--parallel` | Run reviewers in parallel (the default; accepted for compatibility) |
+| `--bulk` | Review several PRs in one run (see Bulk Mode below) |
+| `--all-open` | Bulk: select every open PR |
+| `--search <query>` | Bulk: select the open PRs matching a GitHub search |
+| `--limit <n>` | Bulk: at most this many PRs (default: 10) |
+| `--unattended` | Bulk: no questions, apply the fixed policy |
+| `--resume [<run-id>]` | Bulk: continue an unfinished run |
+
+With `--pr` on a branch other than the PR's own, the PR is checked out into a separate worktree under `.cc-review/pr-worktrees/` and reviewed there, so your working tree stays as it is.
 
 ### PR Comment Triage
 
@@ -148,6 +156,36 @@ Triage with spec context for assessing whether suggestions align with requiremen
 | `--spec <path>` | Specification file for context |
 | `--no-coverage-fix` | Skip automatic coverage remediation |
 | `--idea-inbox <path>` | File for capturing out-of-scope ideas |
+| `--bulk`, `--search`, `--limit`, `--unattended`, `--resume` | Triage several of your PRs in one run (see Bulk Mode below) |
+
+### Bulk Mode
+
+```
+/review --bulk
+```
+
+Reviews the open PRs that request your review, plus PRs you reviewed with cc-review that got new commits since. Each PR is analyzed in its own worktree, and at the end you get one table to decide per PR: post the review, apply the suggested fixes (your own PRs only), post a short "no findings" note, or skip.
+
+```
+/review --bulk --search 'label:needs-review' --limit 5
+/review --bulk --all-open
+```
+
+Pick the PRs with a GitHub search, or take every open PR. Drafts and PRs already reviewed at their current head are skipped.
+
+```
+/triage --bulk
+```
+
+Triages your own open PRs that have unresolved threads. Bot suggestions that cc-review judges valid are fixed in a prepared commit and every bot comment gets a drafted reply; you approve the pushes and replies in one table and answer human comments in the same step.
+
+```
+/review --bulk --resume --unattended
+```
+
+Continues an unfinished run, or starts a new one, without asking anything. This is the form for scheduled jobs. Unattended reviews are posted as plain comments, no code is changed, and human comments in triage are left for you.
+
+Run state and reports live in `.cc-review/bulk/<run-id>/` (git-ignored); `state.md` shows the progress. See the [standalone guide](docs/standalone-guide.md#bulk-review-and-triage) for the details.
 
 ## Configuration
 

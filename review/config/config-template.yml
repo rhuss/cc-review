@@ -17,6 +17,16 @@
 #   test-quality: false
 #   gator: true
 #   accessibility: true     # a project or user reviewer
+#
+# Command reviewers (external CLI tools such as codex or copilot) do not run
+# in the checkout of a pull request from a fork (bulk review, or `--pr` for a
+# PR that is not the current branch): the tool could load the PR's own agent
+# instruction files. They are reported as "skipped (untrusted checkout)".
+# Opt a reviewer in with allow_untrusted_checkout.<name> (boolean, default
+# false). Prompt reviewers always run.
+#
+# allow_untrusted_checkout:
+#   codex: true
 
 severity:
   min_confidence: 70

@@ -1,0 +1,7 @@
+{
+  "owner": {
+    "login": "acme"
+  },
+  "name": "widget",
+  "nameWithOwner": "acme/widget"
+}

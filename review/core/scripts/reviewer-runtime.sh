@@ -19,6 +19,7 @@
 #   apply_config_enablement <reviewers_json> <reviewers_config_json>
 #   apply_cli_selection <reviewers_json> <only_csv> <no_csv> <external_flag>
 #   apply_detection <reviewers_json>
+#   apply_untrusted_checkout <reviewers_json> <allow_config_json>
 #
 # The status values these helpers read and write are defined in one place:
 # specs/004-reviewer-plugins/contracts/discovery-output.md ("Status values").
@@ -339,13 +340,29 @@ apply_detection() {
         | if $u[$k] != null then .status = "skipped" | .reason = $u[$k] else . end)'
 }
 
+# apply_untrusted_checkout <reviewers_json> <allow_config_json>
+# For the checkout of a cross-repository (fork) PR: an external tool run
+# inside it may load the PR's own agent instruction files (AGENTS.md, .codex/,
+# .github/copilot-instructions.md). Every ready command entry becomes skipped
+# (reason "untrusted checkout") unless <allow_config_json> (the merged
+# allow_untrusted_checkout map, see resolve_config_untrusted_json) sets its
+# name to true. Prompt reviewers and every other status are left untouched.
+apply_untrusted_checkout() {
+  local json="$1" cfg="${2:-}"
+  [ -n "$cfg" ] || cfg='{}'
+  printf '%s' "$json" | jq --argjson cfg "$cfg" '
+    ($cfg | if type == "object" then . else {} end) as $c
+    | map(if .status == "ready" and .kind == "command" and ($c[.name] != true and $c[.name] != "true")
+          then .status = "skipped" | .reason = "untrusted checkout" else . end)'
+}
+
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
   if [ "${1:-}" = "helper" ]; then
     shift
     case "${1:-}" in
-      run_with_timeout|substitute_invoke|map_severity|apply_config_enablement|apply_cli_selection|apply_detection) "$@"; exit $? ;;
+      run_with_timeout|substitute_invoke|map_severity|apply_config_enablement|apply_cli_selection|apply_detection|apply_untrusted_checkout) "$@"; exit $? ;;
     esac
   fi
-  echo "Error: usage: reviewer-runtime.sh helper <function> [args...] (run_with_timeout, substitute_invoke, map_severity, apply_config_enablement, apply_cli_selection, apply_detection)" >&2
+  echo "Error: usage: reviewer-runtime.sh helper <function> [args...] (run_with_timeout, substitute_invoke, map_severity, apply_config_enablement, apply_cli_selection, apply_detection, apply_untrusted_checkout)" >&2
   exit 2
 fi

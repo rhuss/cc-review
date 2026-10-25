@@ -25,3 +25,8 @@ Pass through all arguments from the user's invocation:
 - `--profile <name>`: Profile preset name (ci, thorough, quick)
 - `--no-coverage-fix`: Skip automatic coverage fixes
 - `--idea-inbox <path>`: File path for capturing out-of-scope ideas
+- `--bulk`: Triage all your open PRs with unresolved threads in one run
+- `--search <query>`: Restrict the bulk selection with a PR search
+- `--limit <n>`: Maximum number of PRs in a bulk run
+- `--unattended`: Bulk run without prompts, using the fixed policy
+- `--resume [<run-id>]`: Continue an unfinished bulk run

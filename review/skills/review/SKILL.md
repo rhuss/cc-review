@@ -1,7 +1,7 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel]"
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel] [--bulk] [--all-open] [--search <query>] [--limit <n>] [--unattended] [--resume [<run-id>]]"
 ---
 
 # Review
@@ -39,3 +39,8 @@ Pass through all arguments from the user's invocation:
 - `--no-meta-review`: Skip the meta-review pass
 - `--sequential`: Run reviewers one at a time instead of in parallel
 - `--parallel`: Run reviewers in parallel (the default; accepted for compatibility)
+- `--bulk`: Review several PRs in one run (see `core/commands/bulk.md`)
+- `--all-open` / `--search <query>`: Bulk selectors (all open PRs, or a PR search)
+- `--limit <n>`: Maximum number of PRs in a bulk run
+- `--unattended`: Bulk run without prompts, using the fixed policy
+- `--resume [<run-id>]`: Continue an unfinished bulk run

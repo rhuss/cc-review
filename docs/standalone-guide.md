@@ -75,6 +75,15 @@ If your changes are already in a pull request:
 
 This uses the PR's diff instead of the branch diff and extracts goals from the PR description for reviewers that request the `goals` context block (the bundled Goal Alignment reviewer).
 
+You don't need to check the PR out first. If your current branch is something else, cc-review checks the PR out into `.cc-review/pr-worktrees/pr-42`, reviews that copy, and removes it when it's done. Your working tree is left alone. In that case the fix options only show up if you are the PR's author, and accepted fixes are committed and pushed straight to the PR branch. If someone pushed to the PR while the review ran, nothing is pushed and the review is not posted.
+
+A PR from a fork is someone else's code, and an external CLI reviewer (codex, copilot) started inside that checkout could pick up the fork's own `AGENTS.md` or `.github/copilot-instructions.md`. So command reviewers are skipped there and show up as `skipped (untrusted checkout)`; the prompt reviewers still run. The same holds for fork PRs in a bulk review. To let a tool run anyway, opt it in:
+
+```yaml
+allow_untrusted_checkout:
+  codex: true
+```
+
 ## Configuration
 
 ### Project-level config
@@ -174,6 +183,90 @@ Human comments are presented for interactive review. Out-of-scope ideas can be c
 ### Triage State
 
 Triage tracks which comments have been handled in `.cc-review/.triage-state.json` (git-ignored by default). Running triage again skips already-handled comments, so you can run it incrementally as new reviews arrive.
+
+## Bulk Review and Triage
+
+Both commands can work through several PRs in one go. Add `--bulk`:
+
+```
+/review --bulk
+/triage --bulk
+```
+
+Each PR is checked out into its own temporary worktree, so your current branch, index and uncommitted changes are never touched. PRs are handled one at a time, and a PR that fails (a deleted branch, an unreachable fork) is marked as failed while the run moves on to the next one.
+
+### Which PRs get picked
+
+`/review --bulk` takes the open PRs that ask for your review, either directly or through one of your teams. It also takes PRs you reviewed with cc-review before that have new commits since. Two options change that:
+
+| Option | Selects |
+|--------|---------|
+| `--all-open` | every open PR in the repository |
+| `--search '<query>'` | the open PRs of this repository that match a GitHub search, for example `--search 'label:needs-review'` |
+
+`/triage --bulk` takes your own open PRs that have at least one unresolved review thread. `--search` narrows that list further. `--all-open` is not available for triage.
+
+These rules hold for every selector:
+
+- Draft PRs are skipped unless the search asks for them with `draft:true` or `is:draft`.
+- `/review --bulk` skips a PR that already has a cc-review review at its current head commit. A cc-review marker posted by the PR's own author doesn't count, so nobody can opt their PR out of review that way. (`/triage --bulk` does not apply this rule; it goes by unresolved threads.)
+- The search always stays inside the current repository and its open PRs, so `repo:`, `org:`, `user:`, `is:closed`, `is:merged` and `state:` are rejected.
+- `--limit <n>` caps the run (10 by default). The PRs that haven't been updated for the longest time come first.
+
+Two combinations are rejected outright: `--all-open` with `--search`, and `--bulk` with `--pr`.
+
+### Deciding what happens
+
+By default a bulk run analyzes every PR first and asks nothing until all of them are done (the docs and messages call this deferred mode). Then it shows one table with a row per PR: the finding counts (or, for triage, the valid, rejected and deferred bot suggestions and the human comments), the path of the full report, and a proposed action. You can accept all proposals at once, change the action for single PRs, skip everything, or stop and decide later.
+
+For bulk review you can choose per PR:
+
+- post the review
+- go through the findings one by one first, then post the ones you keep
+- apply the fixes and push them (only on your own PRs, and only when a finding comes with a concrete fix or is Critical or Important)
+- apply the fixes, then post what remains
+- post a short "no findings" note so later runs skip the PR
+- skip it
+
+For bulk triage you either apply a PR's prepared work (push the fix commit, post the drafted replies, resolve the handled threads) or skip it. Human comments are shown one by one in the same step, and you approve, edit or skip each reply.
+
+If a PR gets new commits while the other PRs are still being analyzed, it is analyzed once more before the table shows up. Should it move yet again, it is marked stale and gets no action.
+
+Before anything is pushed or posted, cc-review checks that the PR head hasn't moved since the analysis. If it has, that PR is marked stale and left alone, and the next run picks it up again.
+
+### Unattended runs
+
+`--unattended` (or `interactive: false` in the config) runs the whole thing without a single question and applies a fixed policy:
+
+- Reviews are posted as plain comments and never block a PR. PRs without findings get the "no findings" note.
+- Unattended review never changes code.
+- Triage pushes the prepared bot fixes, posts the bot replies and resolves the handled threads.
+- Human comments are left alone and listed under "Needs attention" in the summary.
+
+### Resuming
+
+Every run keeps its state in `.cc-review/bulk/<run-id>/`. The directory is git-ignored and cc-review never deletes it. `state.md` in there shows the progress at any time, and `summary.md` holds the result once the run ends. Each PR also gets a subdirectory with its report.
+
+If a run is interrupted (you closed the session, GitHub rate-limited you, you stopped at the decision step), continue it with:
+
+```
+/review --bulk --resume
+/triage --bulk --resume 20261025-091500-triage
+```
+
+A resumed run keeps the options it was started with. PRs whose head moved since their analysis are analyzed again, finished PRs stay finished, and anything already pushed, posted or resolved is not done a second time. A PR that failed is tried again, but only up to three failed attempts in all; after that it stays failed and the run can finish without it. There is at most one unfinished run per command. Starting a new one while another is open asks whether to resume it, abandon it or cancel. Abandoning keeps the old run's state but removes the worktrees it still held; its `summary.md` lists them. An unattended run can't ask, so it stops with an error that tells you to add `--resume`.
+
+### Scheduled jobs
+
+For a nightly job, use:
+
+```
+/review --bulk --resume --unattended
+```
+
+If an unfinished unattended run exists, this continues it. Otherwise it starts a new run with the flags you passed. So a run that hit a GitHub rate limit picks up the next night where it stopped.
+
+CI is not checked after bulk triage pushes fixes. The summary lists each pushed PR with a hint to run `/triage --pr <n>` when you want the CI repair loop for it.
 
 ## Troubleshooting
 

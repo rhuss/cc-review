@@ -45,7 +45,7 @@ CC_REVIEW_DISCOVER_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &&
 
 # Frontmatter contract, defined once here; reviewer.schema.json must agree with
 # these values (tests/run.sh compares them).
-CC_REVIEW_RESERVED_NAMES="external fix meta-review only sequential parallel pr spec hints output config profile max-rounds"
+CC_REVIEW_RESERVED_NAMES="external fix meta-review only sequential parallel pr spec hints output config profile max-rounds bulk all-open search limit unattended resume"
 CC_REVIEW_NAME_PATTERN='^[a-z0-9][a-z0-9-]*$'
 CC_REVIEW_CATEGORY_PATTERN='^[a-z0-9-]+$'
 CC_REVIEW_KINDS="prompt command"

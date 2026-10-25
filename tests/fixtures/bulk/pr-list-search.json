@@ -1,0 +1,62 @@
+[
+  {
+    "number": 10,
+    "title": "Add parser",
+    "author": {
+      "login": "alice"
+    },
+    "isDraft": false,
+    "headRefOid": "0000000000000000000000000000000000000010",
+    "headRefName": "topic-10",
+    "baseRefName": "main",
+    "updatedAt": "2026-10-20T10:00:00Z",
+    "isCrossRepository": true,
+    "headRepository": {
+      "name": "widget"
+    },
+    "headRepositoryOwner": {
+      "login": "alice"
+    },
+    "reviews": []
+  },
+  {
+    "number": 13,
+    "title": "WIP: new cache",
+    "author": {
+      "login": "erin"
+    },
+    "isDraft": true,
+    "headRefOid": "0000000000000000000000000000000000000013",
+    "headRefName": "topic-13",
+    "baseRefName": "main",
+    "updatedAt": "2026-10-22T10:00:00Z",
+    "isCrossRepository": false,
+    "headRepository": {
+      "name": "widget"
+    },
+    "headRepositoryOwner": {
+      "login": "acme"
+    },
+    "reviews": []
+  },
+  {
+    "number": 18,
+    "title": "Bump deps",
+    "author": {
+      "login": "frank"
+    },
+    "isDraft": false,
+    "headRefOid": "0000000000000000000000000000000000000018",
+    "headRefName": "topic-18",
+    "baseRefName": "main",
+    "updatedAt": "2026-10-16T10:00:00Z",
+    "isCrossRepository": false,
+    "headRepository": {
+      "name": "widget"
+    },
+    "headRepositoryOwner": {
+      "login": "acme"
+    },
+    "reviews": []
+  }
+]

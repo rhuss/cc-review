@@ -1,12 +1,103 @@
 ---
 name: triage
 description: PR comment triage - classify and handle bot review comments, interactively review human comments
-argument-hint: "[--pr <number>] [--spec <path>] [--config <path>] [--profile <name>] [--no-coverage-fix] [--idea-inbox <path>]"
+argument-hint: "[--pr <number>] [--spec <path>] [--config <path>] [--profile <name>] [--no-coverage-fix] [--idea-inbox <path>] [--bulk] [--search <query>] [--limit <n>] [--unattended] [--resume [<run-id>]]"
 ---
 
 # PR Review Comment Triage
 
 Triage all review comments on a PR: autonomously handle bot comments (assess, apply valid fixes, reject invalid, reply), then interactively present human comments for approval.
+
+## Bulk Mode
+
+Check the arguments before anything else. Each check below stops with its error and changes nothing:
+
+- `--bulk` (or `--resume`) together with `--pr`: `Error: --bulk and --pr cannot be combined; --pr names a single PR`
+- `--bulk` (or `--resume`) together with `--spec`: `Error: --spec is not supported with --bulk`
+- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --search requires --bulk`)
+
+When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk triage of the user's own PRs: set `BULK_COMMAND=triage`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file. `bulk.md` runs this file once per PR in a triage worker (see Prepare Mode).
+
+Without `--bulk` and `--resume`, continue below; nothing in single-PR mode changes.
+
+## Prepare Mode (`TRIAGE_MODE=prepare`)
+
+Bulk triage (`commands/bulk.md`) runs this file once per PR in a **triage worker** subagent with `TRIAGE_MODE=prepare`. Without `TRIAGE_MODE=prepare`, skip this section; single-PR triage is unchanged.
+
+A prepare run does the thinking of a triage pass (assess every bot thread, apply and commit valid fixes, draft replies, collect human comments with drafted answers) in the PR's isolated worktree, and **records** every action that would touch the PR instead of performing it. Nothing is pushed, posted or resolved, and nothing asks the user anything. The bulk decision step and `bulk-apply.sh triage` act on the recorded plan later.
+
+**Inputs** (given by `bulk.md`):
+
+| Variable | Meaning |
+|---|---|
+| `TRIAGE_MODE` | `prepare` |
+| `--pr <n>` | the PR to triage (Step 1 uses it directly) |
+| `TRIAGE_ROOT` | absolute path of the PR's worktree, detached at the PR head |
+| `TRIAGE_PLAN` | absolute path of the plan file to write, `<bulk run dir>/pr-<n>/triage-plan.json` |
+| `TRIAGE_STATE_FILE` | the invoking repository's triage state, `<PROJECT_DIR>/.cc-review/.triage-state.json` (FR-014a) |
+| `PROJECT_DIR`, `CC_REVIEW_CORE_DIR` | the invoking repository and the core directory |
+| `--config`, `--profile` | as in single-PR triage (`--spec` is rejected in bulk mode) |
+
+**Rules:**
+- Every shell block runs in `PROJECT_DIR` (configuration, `origin` and `gh` come from the invoking repository) and starts with `export TRIAGE_STATE_FILE="<value>"`, so every `triage-state.sh` call reads and writes the invoking repository's state, never a file inside the worktree.
+- Every file you read or edit is addressed by its absolute path under `TRIAGE_ROOT` (`$TRIAGE_ROOT/<thread.path>`), and every git command runs as `git -C "$TRIAGE_ROOT" ...`. Never edit, stage or commit in `PROJECT_DIR`.
+- Never push, post a reply, post a review, or resolve a thread. Never ask the user.
+
+**Plan file.** Create it once, right after Step 2, then add entries with `jq` (pass texts through `--arg`, never by pasting them into the filter):
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; export TRIAGE_STATE_FILE="{TRIAGE_STATE_FILE}"
+TRIAGE_PLAN="{TRIAGE_PLAN}"; TRIAGE_ROOT="{TRIAGE_ROOT}"; PR_NUM="{PR_NUM}"
+jq -n --argjson pr "$PR_NUM" --arg base "$(git -C "$TRIAGE_ROOT" rev-parse HEAD)" \
+  '{pr: $pr, prepared_commit: null, base_head: $base, replies: [], cc_review_threads: [],
+    stale_resolutions: [], human: []}' > "$TRIAGE_PLAN"
+```
+
+Add each entry in a block like this one (the example records one Step 8 reply; the other lists work the same way with their fields from the table below):
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; export TRIAGE_STATE_FILE="{TRIAGE_STATE_FILE}"; TRIAGE_PLAN="{TRIAGE_PLAN}"
+# plan_add <list> <entry-json>: appends one entry to a list of the plan
+plan_add() {
+  jq --arg k "$1" --argjson e "$2" '.[$k] += [$e]' "$TRIAGE_PLAN" > "$TRIAGE_PLAN.tmp" && mv "$TRIAGE_PLAN.tmp" "$TRIAGE_PLAN"
+}
+# Example: a reply entry (Step 8)
+plan_add replies "$(jq -n --argjson cid "$COMMENT_DB_ID" --arg tid "$THREAD_NODE_ID" --arg author "$AUTHOR" \
+  --arg path "$THREAD_PATH" --argjson line "${THREAD_LINE:-null}" --arg body "$REPLY_BODY" --arg action "$ACTION" \
+  --argjson resolve "$RESOLVE" --argjson self "$SELF_RESOLVES" \
+  '{comment_id: $cid, thread_id: $tid, author: $author, path: $path, line: $line, body: $body,
+    action: $action, resolve: $resolve, self_resolves: $self}')"
+```
+
+**Steps in prepare mode:**
+
+| Step | In prepare mode |
+|---|---|
+| 1 | `PR_NUM` from `--pr`; owner and repo from `PROJECT_DIR`'s `origin` |
+| 2 | runs, with `TRIAGE_STATE_FILE` exported; then create the plan file |
+| 3a, 3b | run unchanged (read only) |
+| 3c | **skipped**: the local CodeRabbit fallback posts to the PR. The summary says `CodeRabbit: rate-limited (local fallback not run in bulk mode)` when the rate-limit comment exists |
+| 3d | runs unchanged (read only) |
+| 4 to 6 | run unchanged, with reads and edits under `TRIAGE_ROOT` (6e checks `$TRIAGE_ROOT/<path>`) |
+| 7 | stage and commit in the worktree (`git -C "$TRIAGE_ROOT" add ...`, `git -C "$TRIAGE_ROOT" commit` with the Step 7 message), **no push**. Record the commit: `jq --arg c "$(git -C "$TRIAGE_ROOT" rev-parse HEAD)" '.prepared_commit = $c'`. Acceptance replies say `Applied in <short sha of that commit>`: `bulk-apply.sh triage` pushes exactly this commit |
+| 7b | **skipped**: CI is not checked in bulk mode (the bulk summary says so per pushed PR) |
+| 7c | **skipped**: `bulk-apply.sh triage` re-reads the threads after the push and re-maps ids by path, line and author |
+| 8 | each reply is **recorded** in `.replies[]` (`comment_id`, `thread_id`, `author`, `path`, `line`, `body` with its signature, `action`: `accepted`, `rejected`, `deferred` or `fix-failed`), not posted; the triage state is updated by the apply step when the reply is posted |
+| 9 | the Step 9 table decides each reply entry's `resolve` (true or false) and `self_resolves` (the bot profile); nothing is resolved |
+| 9b | stale handled thread ids are **recorded** in `.stale_resolutions[]` |
+| 10, 11 | run unchanged |
+| 11b | assessment runs unchanged; each reply and resolution it would make is **recorded** in `.cc_review_threads[]` (`comment_id`, `thread_id`, `author`, `path`, `line`, `body`, `action`, `resolve`), not posted or resolved; the triage state is **not written** here (including the 11b-2b "Update the state file" step), the apply step updates it when the reply is posted |
+| 12 | **collect instead of prompting**: for each unresolved human thread, assess it as in Step 12 items 1 to 3 and record `.human[]` (`comment_id`, `thread_id`, `path`, `line`, `author`, `text` (the comment), `assessment`, `draft`: the drafted reply with the signature, `decision`: `null`). The bulk decision step asks the user |
+| 12b | runs unchanged (it only reads and formats); its output goes into `triage-summary.md` |
+| 12c | **skipped**: coverage remediation never runs in bulk mode (FR-014); the summary still flags files below the threshold |
+| 13 | the summary is **written** to `triage-summary.md` next to the plan (`$(dirname "$TRIAGE_PLAN")/triage-summary.md`) instead of printed; human comments count as pending; `CI status: not checked (bulk mode)` |
+| 14 | **skipped**: `bulk.md` offers the idea-inbox capture once after its decision step |
+| 15 | runs; a low rate limit ends the worker with `STATUS failed reason=rate-limited` |
+
+**Return.** The worker's final reply is exactly one line:
+- `STATUS ok valid=<accepted bot fixes> rejected=<n> deferred=<n> human=<n> commit=<sha or none>`
+- `STATUS failed reason=rate-limited` when the hosting service rate-limits a call (`API rate limit exceeded`, `secondary rate limit`, HTTP 403/429 on a page)
+- `STATUS failed reason=<short reason>` for any other stop (the plan file may be incomplete; `bulk.md` marks the PR failed)
 
 ## Script References
 
@@ -764,7 +855,7 @@ For each unresolved human thread:
 
 ## Step 12b: Status Bot Cross-Reference
 
-**Mandatory**: Steps 12b and 12c MUST execute after every triage pass, even when there are zero review threads.
+**Mandatory**: Steps 12b and 12c MUST execute after every triage pass, even when there are zero review threads. (Prepare mode, see Prepare Mode: 12b runs and writes into `triage-summary.md` instead of posting or printing; 12c is skipped.)
 
 Use the `STATUS_BOT_DATA` and `CODECOV_DATA` collected in Step 3d. If no status bots were detected, skip to Step 12c.
 
@@ -798,6 +889,8 @@ Project: 89.74% (was 90.12%, delta -0.38%)
 If `CODECOV_DATA` is empty, omit the coverage section entirely. If the Codecov comment doesn't contain a per-file table (e.g., it's a simple "patch coverage: 100%"), fall back to a one-line summary: `Codecov: 100% patch coverage (ok)`.
 
 ## Step 12c: Coverage Remediation
+
+(Prepare mode, see Prepare Mode: this step is skipped; coverage remediation never runs in bulk mode.)
 
 After cross-referencing Codecov data (Step 12b), check whether coverage remediation is needed. This step is triggered by two conditions: a failing Codecov CI check, or patch coverage below the configured threshold.
 
@@ -901,7 +994,7 @@ If all targeted files were successfully covered, note: "Coverage fixes pushed. C
 
 ## Step 13: Summary Output
 
-**Mandatory**: This step MUST execute after every triage pass, even when all threads were already handled or all were resolved. This step surfaces patterns and tracks progress. Skipping it silently discards the feedback loop.
+**Mandatory**: This step MUST execute after every triage pass, even when all threads were already handled or all were resolved. This step surfaces patterns and tracks progress. Skipping it silently discards the feedback loop. (Prepare mode, see Prepare Mode: the summary is written to `triage-summary.md` instead of printed.)
 
 At the end of the triage pass, report a summary:
 

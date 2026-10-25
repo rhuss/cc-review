@@ -15,7 +15,7 @@ review/                  Plugin directory (distributable, all harnesses)
   core/                  Harness-agnostic review engine
     reviewers/           Bundled reviewer plugins (6 prompt, 3 command, gator)
     agents/              Shared preamble + meta-review prompts
-    commands/            Command definitions (review.md, init.md, triage.md)
+    commands/            Command definitions (review.md, init.md, triage.md, bulk.md)
     schemas/             Finding and reviewer frontmatter schemas
     scripts/             Shell utilities
   config/                Default configuration template

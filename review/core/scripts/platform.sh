@@ -170,6 +170,8 @@ _github_fetch_pr_threads() {
                 id
                 isResolved
                 isOutdated
+                path
+                line
                 comments(first: 100) {
                   nodes {
                     body
@@ -205,7 +207,7 @@ _github_post_reply() {
   gh api \
     "repos/{owner}/{repo}/pulls/$pr_number/comments/$comment_id/replies" \
     -f body="$body" \
-    --silent
+    --jq '.id'
 }
 
 _github_resolve_thread() {
@@ -280,6 +282,8 @@ _github_fetch_reviews() {
               nodes {
                 databaseId
                 body
+                author { login }
+                commit { oid }
                 comments(first: 100) {
                   nodes {
                     databaseId

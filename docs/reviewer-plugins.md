@@ -222,6 +222,13 @@ reviewers:
 
 A reviewer without a key uses the `enabled` default from its frontmatter. The bundled config template sets no `reviewers.<name>` key, so this also holds for a user or project plugin that overrides a bundled name: its own `enabled` value applies. The bundled defaults (every reviewer enabled except `copilot` and `gator`) live in the reviewers' frontmatter; the `quick`, `thorough` and `ci` profiles set an explicit key for every bundled reviewer. The legacy keys `agents.<name>` and `external_tools.<name>` still work for the migrated reviewers (underscores map to hyphens, for example `agents.test_quality` to `reviewers.test-quality`) and print a deprecation warning.
 
+`kind: command` reviewers do not run in the checkout of a pull request from a fork (bulk review, or `--pr` for a PR that is not the current branch), because the external tool could load the PR's own agent instruction files. They are reported as `skipped (untrusted checkout)`. Opt a reviewer in per name; the value must be a boolean, and an invalid one is dropped with a warning:
+
+```yaml
+allow_untrusted_checkout:
+  codex: true
+```
+
 CLI flags take precedence over config and are derived from the discovered names:
 
 | Flag | Effect |

@@ -8,7 +8,7 @@
     "name": {
       "type": "string",
       "pattern": "^[a-z0-9][a-z0-9-]*$",
-      "description": "Stable identifier used for config keys (reviewers.<name>), derived CLI flags (--no-<name>), source_agent, and console rows. Must equal the file basename (without .md) or the plugin directory name. Must be a YAML string: quote a value YAML reads as a number or boolean (\"007\", \"1e3\"). Must not be one of the reserved names: external, fix, meta-review, only, sequential, parallel, pr, spec, hints, output, config, profile, max-rounds."
+      "description": "Stable identifier used for config keys (reviewers.<name>), derived CLI flags (--no-<name>), source_agent, and console rows. Must equal the file basename (without .md) or the plugin directory name. Must be a YAML string: quote a value YAML reads as a number or boolean (\"007\", \"1e3\"). Must not be one of the reserved names: external, fix, meta-review, only, sequential, parallel, pr, spec, hints, output, config, profile, max-rounds, bulk, all-open, search, limit, unattended, resume."
     },
     "kind": {
       "type": "string",

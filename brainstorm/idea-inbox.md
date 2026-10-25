@@ -65,3 +65,12 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: The perl timeout backend now leaves the caller's process group like coreutils timeout, so a harness interrupt no longer reaches a running tool; it stops at its own bound.
 
 > Recording the timeout wrapper's PID so the orchestrator can send TERM (now forwarded to the tool's group) would allow prompt cancellation of slow external reviewers.
+
+### bulk-worktrees-outside-tree
+
+- **Source**: deep-review
+- **Date**: 2026-10-25
+- **Reference**: 005-bulk-review-triage
+- **Summary**: Bulk worktrees and run state live inside the user's working tree, and finished or abandoned runs are kept forever with no retention.
+
+> Tools that ignore nested .gitignore files (linters, test runners, IDE indexers) see full nested checkouts while a run keeps them; placing worktrees under the git common dir and offering a prune option for old runs would bound disk use and avoid that.

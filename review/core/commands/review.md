@@ -1,12 +1,24 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop. Dispatches every discovered reviewer plugin, merges findings, auto-fixes Critical/Important issues.
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel]"
+argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel] [--bulk] [--all-open] [--search <query>] [--limit <n>] [--unattended] [--resume [<run-id>]]"
 ---
 
 # Code Review
 
 ## Prerequisites
+
+### Bulk Mode
+
+Check the arguments before anything else. Each check below stops with its error and changes nothing:
+
+- `--bulk` (or `--resume`) together with `--pr`: `Error: --bulk and --pr cannot be combined; --pr names a single PR`
+- `--bulk` (or `--resume`) together with `--spec` or `--output`: `Error: --spec is not supported with --bulk` (or `--output`)
+- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --unattended requires --bulk`)
+
+When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk review: set `BULK_COMMAND=review`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file (Prerequisites through Step 8). `bulk.md` runs this file's per-PR pipeline itself, in worker mode (see [Worker Mode (bulk)](#worker-mode-bulk)).
+
+Without `--bulk` and `--resume`, continue below; nothing in single-PR mode changes.
 
 ### Core Directory
 
@@ -97,6 +109,17 @@ MAIN_BRANCH="${MAIN_BRANCH:-main}"
 
 (`origin/HEAD` is unset in some clones; the pipeline's exit status is `sed`'s, so the fallback must test the value, not the status.)
 
+### Review Root
+
+`REVIEW_ROOT` is the absolute path of the tree under review. Every step that reads, tests or edits the code uses it; configuration, review hints and project reviewers keep coming from the invoking repository (`PROJECT_DIR`, Step 2). By default it is the repository's top level, which is exactly today's behavior. Bulk mode sets it to the PR's worktree and also sets `BASE_REF` (`origin/<base branch>`, kept current by the worktree setup):
+
+```bash
+REVIEW_ROOT="${REVIEW_ROOT:-$(git rev-parse --show-toplevel)}"
+echo "REVIEW_ROOT=$REVIEW_ROOT"
+```
+
+Keep `REVIEW_ROOT` (and `BASE_REF` when set) for the later blocks.
+
 ### Auto-Detect PR
 
 When no `--pr` flag is provided, check config for auto-detection:
@@ -109,19 +132,89 @@ if [ -z "$PR_NUMBER" ] && [ "$AUTO_DETECT_PR" = "true" ]; then
 fi
 ```
 
-When `--pr <number>` is provided, use the PR's diff against its base branch:
+With a PR, record the head commit being reviewed; Step 7.5k pins the posted review to it (`commit_id`), so later runs can tell which head a review covered. Bulk mode provides it as `EXPECTED_HEAD` instead:
+
+```bash
+REVIEWED_HEAD="${EXPECTED_HEAD:-}"
+if [ -z "$REVIEWED_HEAD" ] && [ -n "$PR_NUMBER" ]; then
+  REVIEWED_HEAD=$(gh pr view "$PR_NUMBER" --json headRefOid -q '.headRefOid' 2>/dev/null || echo "")
+fi
+```
+
+### Isolated PR Checkout
+
+A PR that is not the current branch must not be reviewed from the user's working tree, which holds other code (FR-035). When `PR_NUMBER` is set outside bulk mode and the current branch is not the PR's head branch (for a fork PR, also tracking the fork), check the PR out in its own detached worktree under `.cc-review/pr-worktrees/` and review that. On the PR's own branch (ahead, behind or equal to the remote, with or without local changes) nothing changes: the local tree is reviewed as before.
+
+```bash
+export CC_REVIEW_CORE_DIR="$CORE_DIR"
+ISOLATED_PR=false
+if [ "${WORKER_MODE:-false}" != true ] && [ -n "${PR_NUMBER:-}" ] \
+  && ! "$CORE_DIR/scripts/pr-worktree.sh" is-pr-branch "$PR_NUMBER" 2>/dev/null; then
+  PROJECT_DIR="$(git rev-parse --show-toplevel)"
+  PR_INFO=$(gh pr view "$PR_NUMBER" --json headRefOid,baseRefName,isCrossRepository 2>/dev/null) || {
+    echo "Error: cannot read PR #$PR_NUMBER to check it out" >&2; exit 1
+  }
+  PR_HEAD=$(printf '%s' "$PR_INFO" | jq -r '.headRefOid')
+  PR_BASE=$(printf '%s' "$PR_INFO" | jq -r '.baseRefName')
+  # A fork PR's checkout is untrusted code (see Untrusted Checkout, Step 2)
+  UNTRUSTED_CHECKOUT=$(printf '%s' "$PR_INFO" | jq -r '.isCrossRepository // false')
+  mkdir -p "$PROJECT_DIR/.cc-review/pr-worktrees"
+  [ -f "$PROJECT_DIR/.cc-review/pr-worktrees/.gitignore" ] || printf '*\n' > "$PROJECT_DIR/.cc-review/pr-worktrees/.gitignore"
+  # add replaces a worktree left over from a crashed run
+  REVIEW_ROOT=$("$CORE_DIR/scripts/pr-worktree.sh" add "$PR_NUMBER" "$PR_HEAD" \
+    "$PROJECT_DIR/.cc-review/pr-worktrees/pr-$PR_NUMBER" "$PR_BASE") || {
+    echo "Error: cannot check out PR #$PR_NUMBER for review (see the message above)" >&2; exit 1
+  }
+  BASE_REF="origin/$PR_BASE"
+  REVIEWED_HEAD="$PR_HEAD"
+  ISOLATED_PR=true
+fi
+echo "ISOLATED_PR=$ISOLATED_PR"
+echo "REVIEW_ROOT=$REVIEW_ROOT"
+echo "BASE_REF=${BASE_REF:-}"
+echo "UNTRUSTED_CHECKOUT=${UNTRUSTED_CHECKOUT:-false}"
+```
+
+Keep `ISOLATED_PR`, `UNTRUSTED_CHECKOUT`, and with `ISOLATED_PR=true` the new `REVIEW_ROOT`, `BASE_REF` and `REVIEWED_HEAD`. Tell the user in one sentence that PR #<n> is not the current branch, so it is reviewed from a separate checkout and their working tree stays as it is. The worktree is removed at the end of the command (Step 8) and at every early stop.
+
+When `BASE_REF` is set, `REVIEW_ROOT` is a checkout of the PR head; use its diff against the PR's base:
+```bash
+git -C "$REVIEW_ROOT" -c core.quotePath=false diff --name-only "${BASE_REF}...HEAD" 2>/dev/null
+```
+
+Otherwise, when `--pr <number>` is provided, use the PR's diff against its base branch:
 ```bash
 gh pr diff "$PR_NUMBER" --name-only 2>/dev/null
 ```
 
 Otherwise use the branch diff:
 ```bash
-git -c core.quotePath=false diff --name-only "${MAIN_BRANCH}...HEAD" 2>/dev/null
-git -c core.quotePath=false diff --name-only HEAD 2>/dev/null
-git -c core.quotePath=false diff --name-only --cached 2>/dev/null
+git -C "$REVIEW_ROOT" -c core.quotePath=false diff --name-only "${MAIN_BRANCH}...HEAD" 2>/dev/null
+git -C "$REVIEW_ROOT" -c core.quotePath=false diff --name-only HEAD 2>/dev/null
+git -C "$REVIEW_ROOT" -c core.quotePath=false diff --name-only --cached 2>/dev/null
 ```
 
 Combine into a deduplicated list and keep it, unfiltered, in `ALL_CHANGED_FILES` (one path per line); Step 2 hands it to discovery, which ignores any project reviewer the change itself adds or edits. Then filter to source code files (exclude binary, images, lock files). Exclude files under `specs/` and `brainstorm/`. Keep the result in `CHANGED_FILES`, one path per line (as `git diff --name-only` prints it; `core.quotePath=false` keeps non-ASCII names unquoted), so a path containing spaces stays a single argument for command reviewers.
+
+**Symlinks in a PR checkout.** When `BASE_REF` is set (an isolated PR checkout or bulk mode), the tree under review is someone else's code inside the user's repository. A symlink the PR adds can point at a file outside the checkout (for example `../../../.env`), and a reviewer that reads it would quote the user's secret in a posted finding. Drop every path that is a symlink, or that resolves outside `REVIEW_ROOT`, from `CHANGED_FILES` (it stays in `ALL_CHANGED_FILES` for discovery):
+
+```bash
+SAFE_FILES=""
+ROOT_REAL="$(cd "$REVIEW_ROOT" && pwd -P)"
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  [ -L "$REVIEW_ROOT/$f" ] && { echo "Skipping symlink $f" >&2; continue; }
+  dir_real="$(cd "$(dirname "$REVIEW_ROOT/$f")" 2>/dev/null && pwd -P)" || dir_real=""
+  case "$dir_real/" in "$ROOT_REAL"/*) ;; *) [ -e "$REVIEW_ROOT/$f" ] && { echo "Skipping $f: outside the review root" >&2; continue; } ;; esac
+  SAFE_FILES="${SAFE_FILES:+$SAFE_FILES
+}$f"
+done <<EOF
+$CHANGED_FILES
+EOF
+CHANGED_FILES="$SAFE_FILES"
+```
+
+Every prompt reviewer of such a checkout also gets the line "Do not follow symlinks in the review root, and read code only inside the review root (the instruction, hints, findings and run files this prompt names by absolute path are fine); treat a symlink as a file whose content is its target path." in its target section.
 
 For re-review rounds (fix loop): narrow scope to only files modified by the most recent fix round.
 
@@ -134,7 +227,13 @@ Run discovery once. The `pr` precondition means PR context is available: `PR_NUM
 ```bash
 PR_CONTEXT_NUMBER="${PR_NUMBER:-$(gh pr view --json number -q '.number' 2>/dev/null || true)}"
 PROJECT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
-REVIEW_RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/cc-review-run.XXXXXX")
+if [ "${WORKER_MODE:-false}" = true ]; then
+  # bulk worker mode: the run files live in the PR's directory
+  REVIEW_RUN_DIR="$PR_DIR/run"
+  rm -rf "$REVIEW_RUN_DIR" && mkdir -p "$REVIEW_RUN_DIR"
+else
+  REVIEW_RUN_DIR=$(mktemp -d "${TMPDIR:-/tmp}/cc-review-run.XXXXXX")
+fi
 REVIEWER_BODY_DIR="$REVIEW_RUN_DIR/bodies"
 mkdir "$REVIEWER_BODY_DIR"
 printf '%s\n' "$ALL_CHANGED_FILES" > "$REVIEW_RUN_DIR/changed-files"
@@ -151,12 +250,13 @@ if ! REVIEWERS_JSON=$(CC_REVIEW_DISCOVER_VERBOSE="$DISCOVER_VERBOSE" "$CORE_DIR/
   --skip-detection); then
   echo "Error: reviewer discovery failed (see the message above); the review cannot continue." >&2
   rm -rf "$REVIEW_RUN_DIR"
+  if [ "${ISOLATED_PR:-false}" = true ]; then "$CORE_DIR/scripts/pr-worktree.sh" remove "$REVIEW_ROOT"; fi
   exit 1
 fi
 echo "REVIEW_RUN_DIR=$REVIEW_RUN_DIR"
 ```
 
-Record `REVIEW_RUN_DIR`: it holds the prompt bodies (`bodies/`), the changed-file list and the command reviewer outputs, so it must survive until dispatch and parsing (do not tie it to a shell `EXIT` trap; the harness may run each block in a new shell). Remove it with `rm -rf "$REVIEW_RUN_DIR"` at the end of Step 8 and before every early stop below.
+Record `REVIEW_RUN_DIR`: it holds the prompt bodies (`bodies/`), the changed-file list and the command reviewer outputs, so it must survive until dispatch and parsing (do not tie it to a shell `EXIT` trap; the harness may run each block in a new shell). Remove it with `rm -rf "$REVIEW_RUN_DIR"` at the end of Step 8 and before every early stop below; with `ISOLATED_PR=true` every early stop also removes the PR worktree (`pr-worktree.sh remove "$REVIEW_ROOT"`).
 
 A non-zero exit from discovery means a missing dependency (`jq` 1.6+, `yq` v4, `awk`) or a bad core directory; its stderr names the cause. That is different from "every reviewer file is invalid", which exits 0 and is handled next.
 
@@ -173,6 +273,7 @@ VALID_COUNT=$(printf '%s' "$REVIEWERS_JSON" | jq '[.[] | select(.status != "inva
 if [ "${VALID_COUNT:-0}" -eq 0 ]; then
   echo "Error: no valid reviewers discovered. Check core/reviewers/ and the warnings above." >&2
   rm -rf "$REVIEW_RUN_DIR"
+  if [ "${ISOLATED_PR:-false}" = true ]; then "$CORE_DIR/scripts/pr-worktree.sh" remove "$REVIEW_ROOT"; fi
   exit 1
 fi
 ```
@@ -198,6 +299,7 @@ REVIEWERS_JSON=$("$RUNTIME" helper apply_config_enablement "$REVIEWERS_JSON" "$(
 
 CLI flags take precedence over configuration. Collect the reviewer flags generically; no reviewer name is known to this command:
 
+- a value flag consumes its value: the argument after `--pr`, `--spec`, `--hints`, `--output`, `--config`, `--profile`, `--max-rounds`, `--only`, `--search`, `--limit` and `--resume` (when it is a run id) belongs to that flag and is never read as a reviewer flag or name (a query such as `--search 'no-foo'` must not disable a reviewer)
 - every `--no-<x>` where `<x>` is not `fix`, `meta-review`, or `external` goes into `NO_LIST` (comma-separated)
 - `--only <a,b,...>` goes into `ONLY_LIST`
 - `--external` sets `EXTERNAL_FLAG=on`, `--no-external` sets `EXTERNAL_FLAG=off`
@@ -208,11 +310,22 @@ Then apply the selection with the helper:
 if ! REVIEWERS_JSON=$("$RUNTIME" helper apply_cli_selection "$REVIEWERS_JSON" "$ONLY_LIST" "$NO_LIST" "$EXTERNAL_FLAG"); then
   # the helper already printed the error (unknown name with the discovered names, or empty set)
   rm -rf "$REVIEW_RUN_DIR"
+  if [ "${ISOLATED_PR:-false}" = true ]; then "$CORE_DIR/scripts/pr-worktree.sh" remove "$REVIEW_ROOT"; fi
   exit 1
 fi
 ```
 
 `--only` re-enables a config-disabled reviewer but never overrides a `skipped` or `invalid` status (FR-017). `--no-<x>` subtracts from the `--only` set; an empty result is an error (FR-017a), and so is an `--only` set of command reviewers only combined with `--no-external`. `--no-<x>` for an invalid reviewer prints a warning and the review continues (FR-010).
+
+### Untrusted Checkout
+
+`UNTRUSTED_CHECKOUT=true` marks the tree under review as a cross-repository (fork) PR's code: set by the Isolated PR Checkout of Step 1, and by `bulk.md` in worker mode for a fork PR. An external tool run inside that checkout may load the PR's own agent instruction files (`AGENTS.md` and the tool's own instruction files in the repository), so command reviewers do not run there by default: each one that is still `ready` becomes `skipped` with the reason `untrusted checkout`, unless the config opts it in with `allow_untrusted_checkout.<name>: true`. Prompt reviewers still run. A skipped reviewer shows as `skipped (untrusted checkout)` in the console summary and in `reviewers.json`; `--only` and `--external` do not override it.
+
+```bash
+if [ "${UNTRUSTED_CHECKOUT:-false}" = true ]; then
+  REVIEWERS_JSON=$("$RUNTIME" helper apply_untrusted_checkout "$REVIEWERS_JSON" "$(resolve_config_untrusted_json)")
+fi
+```
 
 ### Command Reviewer Detection
 
@@ -229,6 +342,7 @@ if [ "$(printf '%s' "$REVIEWERS_JSON" | jq '[.[] | select(.status == "ready")] |
   echo "Error: no reviewers to run:" >&2
   printf '%s' "$REVIEWERS_JSON" | jq -r '.[] | select(.status != "invalid") | "  - \(.name): \(.status)\(if .reason then " (" + .reason + ")" else "" end)"' >&2
   rm -rf "$REVIEW_RUN_DIR"
+  if [ "${ISOLATED_PR:-false}" = true ]; then "$CORE_DIR/scripts/pr-worktree.sh" remove "$REVIEW_ROOT"; fi
   exit 1
 fi
 ```
@@ -241,11 +355,13 @@ fi
 TEST_CMD=$(resolve_config "test.command" "")
 TEST_TIMEOUT=$(resolve_config "test.timeout_seconds" "300")
 
-[ -z "$TEST_CMD" ] && grep -q '^test:' Makefile 2>/dev/null && TEST_CMD="make test"
-[ -z "$TEST_CMD" ] && [ -f go.mod ] && TEST_CMD="go test ./..."
-[ -z "$TEST_CMD" ] && [ -f package.json ] && jq -e '.scripts.test' package.json >/dev/null 2>&1 && TEST_CMD="npm test"
-[ -z "$TEST_CMD" ] && ([ -f pyproject.toml ] || [ -f setup.py ]) && TEST_CMD="pytest"
+[ -z "$TEST_CMD" ] && grep -q '^test:' "$REVIEW_ROOT/Makefile" 2>/dev/null && TEST_CMD="make test"
+[ -z "$TEST_CMD" ] && [ -f "$REVIEW_ROOT/go.mod" ] && TEST_CMD="go test ./..."
+[ -z "$TEST_CMD" ] && [ -f "$REVIEW_ROOT/package.json" ] && jq -e '.scripts.test' "$REVIEW_ROOT/package.json" >/dev/null 2>&1 && TEST_CMD="npm test"
+[ -z "$TEST_CMD" ] && ([ -f "$REVIEW_ROOT/pyproject.toml" ] || [ -f "$REVIEW_ROOT/setup.py" ]) && TEST_CMD="pytest"
 ```
+
+The test command always runs inside the tree under review: `( cd "$REVIEW_ROOT" && $TEST_CMD )`.
 
 ### PR Metadata and Goal Extraction (`goals` context block)
 
@@ -315,6 +431,7 @@ Then dispatch one Agent tool call per entry. The prompt for each subagent is ass
 
 You are reviewing a PR/diff with the following changed files:
 {LIST_OF_CHANGED_FILES}
+{IF REVIEW_ROOT IS NOT THE TOP LEVEL OF THE CURRENT CHECKOUT: "These are absolute paths in the review root " + REVIEW_ROOT + ". Read them there, and report each finding's `file` relative to that root. Do not follow symlinks in the review root, and read code only inside the review root (the instruction, hints, findings and run files this prompt names by absolute path are fine); treat a symlink as a file whose content is its target path."}
 
 For each file, read the file contents yourself using the Read tool. Focus on the changed regions but read enough surrounding context to understand the code.
 
@@ -339,6 +456,8 @@ If you find zero issues, call ReportFindings with an empty findings array.
 If you observed concrete positive patterns in the change, end your final text output with a section headed exactly `Positive observations:` containing 2-5 bullets, each citing a file and function or line. Omit the section when nothing stands out.
 ```
 
+`{LIST_OF_CHANGED_FILES}` is `CHANGED_FILES`, one path per line. When `REVIEW_ROOT` is the top level of the current checkout (single-PR review of the checked-out branch), the paths stay relative, as before. Otherwise (bulk mode) write each one as the absolute path `$REVIEW_ROOT/<path>`: a subagent's Read tool resolves relative paths against the session directory, not against the review root.
+
 **Hard rule**: dispatch exactly the ready prompt reviewers from discovery, nothing more and nothing less. Do NOT substitute Explore agents, fork agents, or any other agent type. Do NOT combine multiple reviewers into one agent. Do NOT split one reviewer across multiple agents. Each reviewer's body file defines its scope.
 
 If `--sequential` is passed, dispatch reviewers one at a time, waiting for each to complete before starting the next. This is slower but useful for debugging.
@@ -357,19 +476,20 @@ Wait for ALL dispatched reviewers to complete before proceeding to Step 4.
 
 ### Command Reviewer Invocation
 
-Start every entry of `READY_COMMAND` in the background first, then wait for all of them, so the wall time is that of the slowest tool, not the sum of all timeouts; each one stays bounded by its own `timeout_seconds`. Do this in one tool call, issued right after dispatching the prompt subagents so both run at the same time. Set that call's timeout to at least the largest `timeout_seconds` in `READY_COMMAND` plus 30 seconds; when that exceeds the harness maximum, run the call in the background and wait for it to finish instead. Skip the block when `READY_COMMAND` is empty. The call may run in a new shell: inline or re-derive the values it reads (`CORE_DIR`, `RUNTIME`, `REVIEW_RUN_DIR`, `READY_COMMAND`, `MAIN_BRANCH`, `CHANGED_FILES`, `PR_CONTEXT_NUMBER`), and keep each reviewer's resulting status in your own context rather than relying on a shell variable.
+Start every entry of `READY_COMMAND` in the background first, then wait for all of them, so the wall time is that of the slowest tool, not the sum of all timeouts; each one stays bounded by its own `timeout_seconds`. Do this in one tool call, issued right after dispatching the prompt subagents so both run at the same time. Set that call's timeout to at least the largest `timeout_seconds` in `READY_COMMAND` plus 30 seconds; when that exceeds the harness maximum, run the call in the background and wait for it to finish instead. Skip the block when `READY_COMMAND` is empty. The call may run in a new shell: inline or re-derive the values it reads (`CORE_DIR`, `RUNTIME`, `REVIEW_RUN_DIR`, `READY_COMMAND`, `MAIN_BRANCH`, `CHANGED_FILES`, `PR_CONTEXT_NUMBER`, `REVIEW_ROOT`, `BASE_REF`, and in worker mode `WORKER_MODE` and `PR_DIR`), and keep each reviewer's resulting status in your own context rather than relying on a shell variable. Each tool runs inside the tree under review (`cd "$REVIEW_ROOT"` in its subshell), so the relative paths in `CHANGED_FILES` resolve there; with `BASE_REF` set, the tool's base branch is `BASE_REF`.
 
 ```bash
 CMD_DIR="$REVIEW_RUN_DIR/commands"
+[ "${WORKER_MODE:-false}" = true ] && CMD_DIR="$PR_DIR/commands"
 mkdir -p "$CMD_DIR"
 COUNT=$(printf '%s' "$READY_COMMAND" | jq 'length')
 I=0
 while [ "$I" -lt "$COUNT" ]; do
   ENTRY=$(printf '%s' "$READY_COMMAND" | jq -c --argjson i "$I" '.[$i]')
   NAME=$(printf '%s' "$ENTRY" | jq -r '.name')
-  if INVOKE=$("$RUNTIME" helper substitute_invoke "$(printf '%s' "$ENTRY" | jq -r '.command.invoke')" "$MAIN_BRANCH" "$CHANGED_FILES" "$PR_CONTEXT_NUMBER"); then
+  if INVOKE=$("$RUNTIME" helper substitute_invoke "$(printf '%s' "$ENTRY" | jq -r '.command.invoke')" "${BASE_REF:-$MAIN_BRANCH}" "$CHANGED_FILES" "$PR_CONTEXT_NUMBER"); then
     TIMEOUT=$(printf '%s' "$ENTRY" | jq -r '.command.timeout_seconds')
-    ( "$RUNTIME" helper run_with_timeout "$TIMEOUT" bash -c "$INVOKE" </dev/null >"$CMD_DIR/$NAME.out" 2>"$CMD_DIR/$NAME.err"
+    ( cd "$REVIEW_ROOT" && "$RUNTIME" helper run_with_timeout "$TIMEOUT" bash -c "$INVOKE" </dev/null >"$CMD_DIR/$NAME.out" 2>"$CMD_DIR/$NAME.err"
       echo "$?" >"$CMD_DIR/$NAME.rc" ) &
   else
     # substitute_invoke rejected the base branch or PR number (unsafe characters)
@@ -597,6 +717,8 @@ CAN_REQUEST_CHANGES=false
 [ -n "$PR_AUTHOR" ] && [ -n "$GH_USER" ] && [ "$PR_AUTHOR" != "$GH_USER" ] && CAN_REQUEST_CHANGES=true
 ```
 
+With `ISOLATED_PR=true` (the PR was checked out separately in Step 1), fixes would be committed and pushed straight to the PR branch, which is only for the PR's author. Offer the fix options (**Apply all suggested fixes**, **Apply the important fixes**, **Fix first, then post what remains**) only when `PR_AUTHOR` equals `GH_USER`, and say in the option text that the fixes are committed and pushed to the PR branch. For someone else's PR, offer posting only. The non-interactive defaults below follow the same rule: without the author match, `ACTION="comment"`.
+
 Use `CAN_REQUEST_CHANGES` to describe the posting option correctly ("post the review and ask for changes before merge" versus "post the findings as review comments, since this is your own PR") and to pick the review type in Step 7.5k. Do not ask the user to choose the review type; decide it.
 
 Offer the next steps in plain words. Always include an option that applies **all** suggested fixes in one go, so the user does not have to approve them one at a time. Build the menu from what is possible:
@@ -628,17 +750,45 @@ MAX_FIX_ROUNDS=$(resolve_config "max_fix_rounds" "3")
 
 Maximum rounds from config (default 3). Run only when Step 5b set `ACTION` to `fix` or `both`; skip otherwise. (`--no-fix` and `AUTO_FIX="false"` only prevent fixing without the user's explicit choice in Step 5b.)
 
+All edits happen in the tree under review: a finding's `file` is relative to `REVIEW_ROOT`, so edit `$REVIEW_ROOT/<file>`, stage with `git -C "$REVIEW_ROOT"`, and run the tests inside `REVIEW_ROOT`.
+
 For each round:
 1. Collect the findings to fix, sorted by file: all Critical and Important findings, plus, when `FIX_SCOPE="all"`, every Minor and Notable finding that has a concrete suggested fix
 2. For each file, sort findings by line number descending (prevent line shifts)
 3. Apply each fix suggestion
 4. Stage changes
-5. Run test suite (if detected):
+5. Run test suite (if detected), as `( cd "$REVIEW_ROOT" && $TEST_CMD )`:
    - If tests pass: proceed
    - If tests fail: convert failures to Critical findings with category="regression"
 6. Re-dispatch the same `READY_PROMPT` and `READY_COMMAND` sets from `REVIEWERS_JSON` on modified files only (FR-024). Reuse the enablement and skip decisions from the initial round; do not re-run discovery or re-evaluate preconditions
 7. Merge new findings with existing Minor findings
 8. Gate check: if Critical + Important = 0, GATE PASS and exit loop
+
+**Isolated PR (`ISOLATED_PR=true`).** The fixes live in the PR worktree, not in the user's checkout, so after the last round commit them there and push them to the PR branch, never with force. `pr-worktree.sh push` refuses when the branch moved since `REVIEWED_HEAD`:
+
+```bash
+export CC_REVIEW_CORE_DIR="$CORE_DIR"
+PUSH_RESULT="NOTHING"
+if [ -n "$(git -C "$REVIEW_ROOT" status --porcelain)" ]; then
+  git -C "$REVIEW_ROOT" add -A
+  git -C "$REVIEW_ROOT" commit -q -m "fix: address cc-review findings" || { echo "Error: committing the fixes failed" >&2; exit 1; }
+  HEAD_INFO=$(gh pr view "$PR_NUMBER" --json headRefName,headRepository,headRepositoryOwner) || {
+    echo "Error: cannot read the head branch of PR #$PR_NUMBER" >&2; exit 1
+  }
+  PR_BRANCH=$(printf '%s' "$HEAD_INFO" | jq -r '.headRefName')
+  case "$(git config --get remote.origin.url)" in
+    git@*|ssh://*) URL_FORMAT='git@github.com:\($o)/\($n).git' ;;
+    *) URL_FORMAT='https://github.com/\($o)/\($n).git' ;;
+  esac
+  PR_URL=$(printf '%s' "$HEAD_INFO" | jq -r "(.headRepositoryOwner.login // .headRepository.owner.login) as \$o | .headRepository.name as \$n | \"$URL_FORMAT\"")
+  PUSH_RESULT=$("$CORE_DIR/scripts/pr-worktree.sh" push "$REVIEW_ROOT" "$PR_URL" "$PR_BRANCH" "$REVIEWED_HEAD") || PUSH_RESULT="ERROR"
+fi
+echo "PUSH_RESULT=$PUSH_RESULT"
+```
+
+- `PUSHED <sha>`: set `REVIEWED_HEAD` to the pushed sha (a review posted afterwards belongs to the new head) and tell the user that the fixes are on the PR branch and that a local branch of this PR, if they have one, is now behind the remote.
+- `NOTHING`: the rounds changed no file; nothing is pushed.
+- `STALE` (someone pushed to the PR since the review started), `DENIED` (no push permission) or `ERROR`: report the problem in plain words, do not post a review (skip Step 7.5 even for `ACTION="both"`, since the findings would describe code that is not on the PR), and keep the worktree so the fix commit is not lost; tell the user its path (`$REVIEW_ROOT`).
 
 ### Step 6b: Post-Fix Spec Compliance Check
 
@@ -761,11 +911,14 @@ Generate a unique run ID:
 
 ```bash
 RUN_ID=$(uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid 2>/dev/null || python3 -c "import uuid; print(uuid.uuid4())")
+RUN_MARKER="${RUN_MARKER:-$RUN_ID}"
 ```
+
+`RUN_MARKER` is the suffix of this review's marker line `<!-- cc-review:run-id:{RUN_MARKER} -->`. It is the `RUN_ID` UUID, except in bulk mode, which passes `<bulk run id>/pr-<n>` so a resumed run finds the review it already posted.
 
 ### 7.5b: Build Diff Hunk Map
 
-Call the platform function to get the file/line map of changed lines in the PR:
+Call the platform function to get the file/line map of changed lines in the PR (from the hosting service, so it describes the PR head whatever `REVIEW_ROOT` is):
 
 ```bash
 DIFF_HUNKS=$(parse_diff_hunks "$PR_NUMBER")
@@ -780,7 +933,7 @@ Partition all deduplicated findings into two lists based on whether they fall wi
 
 For each finding, check the file status before partitioning:
 
-1. **File deleted**: If the finding's `file` does not exist in the PR's head commit (check against the changed files list from Step 1 and `git ls-files`), move to `summary_only_findings` with note: "File no longer exists in this PR."
+1. **File deleted**: If the finding's `file` does not exist in the PR's head commit (check against the changed files list from Step 1 and `git -C "$REVIEW_ROOT" ls-files`), move to `summary_only_findings` with note: "File no longer exists in this PR."
 2. **File exists but outside diff**: If the finding's `file` exists but `line_start` is outside all hunk ranges, move to `summary_only_findings` with note: "Location is outside the PR diff (line {line_start})."
 3. **File and line within diff**: Add to `inline_findings`.
 
@@ -792,7 +945,7 @@ Scan existing reviews on the PR for previous cc-review runs:
 EXISTING_REVIEWS=$(fetch_reviews "$OWNER" "$REPO" "$PR_NUMBER")
 ```
 
-Filter reviews whose `body` contains `<!-- cc-review:run-id:`. For each match, extract the run-id UUID and the review ID. Identify the most recent cc-review review.
+Filter reviews whose `body` contains `<!-- cc-review:run-id:`. For each match, extract the run id (everything between `cc-review:run-id:` and ` -->`: a UUID, or `<bulk run id>/pr-<n>` from bulk mode) and the review ID. Leave out no-findings marker reviews: bulk mode posts them with a body that starts with the fixed text `cc-review found no issues at` (written by `bulk-apply.sh marker`), and they carry no threads, so they must not hide the threads of an earlier run from 7.5e and 7.5f. Identify the most recent of the remaining cc-review reviews.
 
 If a previous run is found, fetch its inline comments and build a list of `{path, line, body}` records for matching against current findings.
 
@@ -904,6 +1057,7 @@ If at least one reviewer produced positive observations, include the aggregated 
 Build the JSON payload for the GitHub review submission API:
 
 **Event type** (decided here, never asked; see `CAN_REQUEST_CHANGES` from Step 5b):
+- `REVIEW_EVENT_OVERRIDE` when it is set (bulk unattended mode sets `REVIEW_EVENT_OVERRIDE=COMMENT`, so an unattended run never blocks someone else's PR)
 - `REQUEST_CHANGES` if any accepted finding has severity Critical or Important AND `CAN_REQUEST_CHANGES` is `true`
 - `COMMENT` otherwise (including the author's own PR, where GitHub rejects a request for changes). The summary body still states the gate outcome, so a failing gate stays visible.
 
@@ -933,7 +1087,7 @@ Describe the result to the user in plain words ("posted the review and asked for
 - **Gate outcome**: {PASS or FAIL}
 - **Participating reviewers**: {comma-separated list of all reviewers that produced findings}
 
-<!-- cc-review:run-id:{RUN_ID} -->
+<!-- cc-review:run-id:{RUN_MARKER} -->
 ```
 
 **Comments array**: For each accepted inline finding, place the comment at the **end** of the relevant line range so the reader sees the code context before the comment. Use `start_line` + `line` for multi-line findings; for single-line findings, use `line` only.
@@ -962,15 +1116,16 @@ Single-line finding (when `line_end` is absent or equals `line_start`):
 
 **Hunk boundary check**: If `line_end` falls outside the diff hunk range but `line_start` is within it, fall back to the single-line format using `line_start` only. Do not use a `start_line`/`line` range that extends beyond the diff hunk, as the GitHub API will reject it.
 
-Write the complete payload to a temp file:
+Write the complete payload to a temp file. `commit_id` pins the review to the reviewed head (`REVIEWED_HEAD` from Step 1, which is `EXPECTED_HEAD` in bulk mode); it is left out only when the head could not be read:
 
 ```bash
 PAYLOAD_FILE=$(mktemp)
 jq -n \
   --arg body "$SUMMARY_BODY" \
   --arg event "$EVENT_TYPE" \
+  --arg commit "${REVIEWED_HEAD:-}" \
   --argjson comments "$COMMENTS_JSON" \
-  '{body: $body, event: $event, comments: $comments}' > "$PAYLOAD_FILE"
+  '{body: $body, event: $event, comments: $comments} + (if $commit == "" then {} else {commit_id: $commit} end)' > "$PAYLOAD_FILE"
 ```
 
 ### 7.5k2: Truncation Guard
@@ -1003,7 +1158,9 @@ REVIEW_RESPONSE=$(post_review "$OWNER" "$REPO" "$PR_NUMBER" "$PAYLOAD_FILE")
 
 On success: extract the review URL and show it to the user as a clickable link.
 
-On failure: proceed to error recovery (Step 7.5m) before removing the payload file.
+**Head moved**: GitHub answers HTTP 422 when `commit_id` is no longer part of the PR (the branch was force-pushed after the review started). When `REVIEW_RESPONSE` contains `422` and mentions the commit, report "PR head moved; review not posted", treat the PR as stale (bulk mode marks it `stale`), keep the local report, and do not retry or write a recovery file.
+
+On any other failure: proceed to error recovery (Step 7.5m) before removing the payload file.
 
 Clean up the temp file once the review is posted or the recovery file is written:
 
@@ -1017,7 +1174,7 @@ rm -f "$PAYLOAD_FILE"
 
 ```bash
 gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
-  | jq -r --arg id "$RUN_ID" '.[] | select(.body | contains("cc-review:run-id:" + $id)) | .html_url'
+  | jq -r --arg id "$RUN_MARKER" '.[] | select(.body | contains("cc-review:run-id:" + $id + " -->")) | .html_url'
 ```
 
 If a URL comes back, the review was posted: report it as a success (with the link) and do not retry, which would post a duplicate. Otherwise continue below.
@@ -1032,10 +1189,14 @@ if echo "$REVIEW_RESPONSE" | grep -qi "authentication\|401\|403\|login\|credenti
 fi
 ```
 
-**Write recovery file** (for all failure types):
+**Write recovery file** (for all failure types). In worker mode (bulk) the file goes to the PR's directory `$PR_DIR`, inside the run's ignored state directory:
 
 ```bash
-RECOVERY_DIR=$(resolve_config "pr_posting.recovery_dir" ".cc-review")
+if [ "${WORKER_MODE:-false}" = true ] && [ -n "${PR_DIR:-}" ]; then
+  RECOVERY_DIR="$PR_DIR"
+else
+  RECOVERY_DIR=$(resolve_config "pr_posting.recovery_dir" ".cc-review")
+fi
 mkdir -p "$RECOVERY_DIR"
 RECOVERY_FILE="${RECOVERY_DIR}/recovery-${RUN_ID}.json"
 cp "$PAYLOAD_FILE" "$RECOVERY_FILE"
@@ -1104,8 +1265,131 @@ Details: review-findings.md
 
 Generate one row per entry in `REVIEWERS_JSON`, in discovery order, using `display_name`. Append " (project override)" or " (user override)" to the name when the entry's `overrides` field is set. The Status column is one of `completed` (with counts), `disabled`, `skipped (<reason>)`, or `failed (<reason>)`; use `-` for the counts of reviewers that did not run. Invalid reviewers are not rows; they were already reported as warnings in Step 2. The Test Suite (regression) row and the MVP line are unchanged.
 
-Finally, remove the run directory with the reviewer body files and command outputs (the early stops in Step 2 remove it the same way):
+Finally, remove the run directory with the reviewer body files and command outputs (the early stops in Step 2 remove it the same way), and with `ISOLATED_PR=true` the PR worktree, unless Step 6 kept it because its fix commit could not be pushed (`PUSH_RESULT` is `STALE`, `DENIED` or `ERROR`):
 
 ```bash
+export CC_REVIEW_CORE_DIR="$CORE_DIR"
 [ -n "$REVIEW_RUN_DIR" ] && [ -d "$REVIEW_RUN_DIR" ] && rm -rf "$REVIEW_RUN_DIR"
+case "${PUSH_RESULT:-}" in
+  STALE|DENIED|ERROR) ;;
+  *) if [ "${ISOLATED_PR:-false}" = true ]; then "$CORE_DIR/scripts/pr-worktree.sh" remove "$REVIEW_ROOT"; fi ;;
+esac
 ```
+
+## Worker Mode (bulk)
+
+`commands/bulk.md` runs this file's pipeline once per PR of a bulk review, in worker mode. The goal is a bounded coordinator context (FR-010): every subagent reads its inputs from and writes its result to the PR's directory, and returns exactly one status line. This section is the whole protocol the coordinator executes.
+
+**Inputs** (set by `bulk.md` for each PR): `WORKER_MODE=true`, `CORE_DIR`, `RUNTIME` (`$CORE_DIR/scripts/reviewer-runtime.sh`), `PROJECT_DIR` (the invoking repository), `REVIEW_ROOT` (the PR's worktree), `PR_NUMBER`, `PR_DIR` (`<bulk run dir>/pr-<n>`), `EXPECTED_HEAD` (the analyzed head), `BASE_REF` (`origin/<base branch>`), `RUN_MARKER` (`<bulk run id>/pr-<n>`), `MIN_CONFIDENCE`, `UNTRUSTED_CHECKOUT` (`true` for a fork PR, see Untrusted Checkout in Step 2), for the posting worker also `CAN_REQUEST_CHANGES`, `JUST_PUSHED` and (unattended) `REVIEW_EVENT_OVERRIDE`, and the run's per-PR options (reviewer selection, `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential`, `--parallel`, `--config`, `--profile`).
+
+**Rules for worker mode:**
+- **The coordinator never reads a findings file into its own context.** It reads counts with `jq` only. The one exception is the interactive "review findings" drill-down in `bulk.md`, which presents one PR's findings to the user.
+- **Status lines.** Every worker's final reply is exactly one line, `STATUS <ok|failed> <key>=<value> ...`. A worker that hits a hosting-service rate limit returns `STATUS failed reason=rate-limited`. Hand that back to `bulk.md` (it pauses the run). Any other failure, an unparseable reply, or a missing or invalid output file fails the reviewer (prompt reviewer workers) or the PR (merge, report and posting workers).
+- **No worker dispatches subagents.** Every fan-out (reviewers, meta-review critics, fix-round re-reviews) is driven by the coordinator. A worker that needs a section of this file gets its absolute path (`$CORE_DIR/commands/review.md`) and the section names, and reads them itself; do not paste long sections into prompts.
+- **Symlink guard for every worker.** Every worker that reads or edits files under `REVIEW_ROOT` (reviewers, meta-review, merge, report, fix and posting workers) gets the line "Do not follow symlinks in the review root, and read code only inside the review root (the instruction, hints, findings and run files this prompt names by absolute path are fine); treat a symlink as a file whose content is its target path." in its prompt (see Step 1, "Symlinks in a PR checkout").
+- **Early stops fail the PR, not the run.** Every place in Steps 1 to 3 that would `exit 1` or stop (discovery failure, no valid reviewers, a selection error, no reviewers to run, a failed diff) instead sets the PR to `failed` with the error as the reason, removes `$PR_DIR/run`, and returns to `bulk.md`.
+- **Skipped steps.** Step 5a (presentation), the Step 5b menu, Step 6 as written, Step 7.5 as written and Step 8 do not run in the coordinator. The decision step of `bulk.md` replaces 5a and 5b; workers (e) to (g) below replace Steps 6, 7 and 7.5. Nothing in worker mode asks the user anything.
+
+### (a) Steps 1 to 3 in the coordinator
+
+Run the Prerequisites (config from `PROJECT_DIR` with the recorded `--config`/`--profile`, review hints from `PROJECT_DIR`), Step 1, Step 2 and the command reviewer part of Step 3 as written, in the coordinator's shell, with the inputs above:
+- Step 1 takes the changed files from the worktree diff against `BASE_REF` (`PR_NUMBER` is set, so auto-detection is skipped; `REVIEWED_HEAD` is `EXPECTED_HEAD`). Also write the unfiltered list to `$PR_DIR/changed-files`.
+- Step 2 runs discovery with `--project-dir "$PROJECT_DIR"` and the worktree's changed files, so a project reviewer the PR adds or edits is ignored, as in single-PR review. With `WORKER_MODE=true`, `REVIEW_RUN_DIR` is `$PR_DIR/run`.
+- Right after dispatch planning (enablement, CLI selection and detection), write `reviewers.json`, before any worker runs:
+
+```bash
+mkdir -p "$PR_DIR/findings" "$PR_DIR/commands" "$PR_DIR/meta"
+printf '%s' "$REVIEWERS_JSON" | jq '[.[] | select(.status != "invalid")
+  | . + {status: (if .status == "ready" then "dispatched" else .status end), count: null, rc: null}]' > "$PR_DIR/reviewers.json"
+```
+
+- Command reviewers run with the Step 3 block as written: each tool runs in a `( cd "$REVIEW_ROOT" && ... )` subshell, and with `WORKER_MODE=true` its raw output stays in `$PR_DIR/commands/<name>.{out,err,rc}`. Record only the exit code; do not parse or read the output (the merge worker does). A non-zero code fails the reviewer with the Step 3 reason (the last line of its `.err` file):
+
+```bash
+jq --arg n "$NAME" --arg rc "$RC" 'map(if .name == $n and .kind == "command" then .rc = $rc else . end)' \
+  "$PR_DIR/reviewers.json" > "$PR_DIR/reviewers.json.tmp" && mv "$PR_DIR/reviewers.json.tmp" "$PR_DIR/reviewers.json"
+```
+
+- Prompt reviewers are dispatched as in Step 3 (all in one response unless `--sequential`), each with the prompt from Prompt Construction and its Output section replaced by (b). To keep the coordinator's context bounded (FR-010, SC-005), do not read the preamble, body or reference files into your context and do not paste them into the Agent call: give each worker a short prompt that lists, in order, the absolute paths it must read and follow (`$CORE_DIR/agents/preamble.md`, the entry's `body_file`, each reference file with its `## Reference: <relative path>` heading), followed by the Review Target section (changed files as absolute paths), the review hints file path (`REVIEW_HINTS_FILE` resolved against `PROJECT_DIR`, the default `.cc-review/review-hints.md` included) whenever `REVIEW_HINTS` is non-empty, with the instruction to apply it as preamble item 11, and, for an entry whose `context` contains `goals` while `GOALS_AVAILABLE` is true, the path of `$PR_DIR/goals.md` (write `DECLARED_GOALS` there with a shell redirection, without reading it back) to read as its `## Declared Goals` block, then the (b) Output section. Once they return, check each one: a reply `STATUS ok findings=<n>` with `$PR_DIR/findings/<name>.json` holding a JSON array (`jq -e 'type == "array"'`) sets the entry's status to `ok`; anything else sets `failed` with the reason `subagent error` (FR-022), and the PR continues with the other reviewers.
+
+### (b) Prompt reviewer output
+
+In worker mode, the `## Output` section of the reviewer prompt is replaced by:
+
+```
+## Output
+
+Do not report findings in your reply. Write them as a JSON array to
+{PR_DIR}/findings/{ENTRY.name}.json, one object per finding, with these fields:
+- file: path relative to the review root
+- line: line number
+- summary: one-sentence description
+- failure_scenario: concrete inputs/state that trigger the issue, plus any evidence your reviewer instructions ask for
+- category: "{ENTRY.category}"
+- short_summary: under 60 chars
+- severity: one of your reviewer's severity labels
+- confidence: 0-100
+Write [] when you find no issues.
+
+Write the concrete positive patterns you observed (2-5 strings, each citing a file and
+function or line) as a JSON array to {PR_DIR}/findings/{ENTRY.name}.positive.json,
+or [] when nothing stands out.
+
+Your final reply is exactly one line: STATUS ok findings=<number of findings>
+(or STATUS failed reason=<short reason> when you could not complete the review).
+```
+
+### (c) Merge worker
+
+One subagent per PR, dispatched after all reviewers finished. Its prompt gives:
+- the inputs: `$PR_DIR/reviewers.json`, the reviewer files `$PR_DIR/findings/<name>.json` (not the `.positive.json` files), the command outputs `$PR_DIR/commands/<name>.out` of command reviewers with `rc` 0, `RUNTIME`, `CORE_DIR`, `MIN_CONFIDENCE`
+- the rules to apply, read from this file: the parsing rules of Step 3 "Command Reviewer Invocation" (formats `json`, `delimited`, `parser`, and each reviewer's parsing notes in its `body_file`), Step 3 "Severity Filtering", and Step 4
+
+It parses each command reviewer's output (a parse error fails that reviewer in `reviewers.json` with `parse error`), normalizes every finding to `core/schemas/finding.schema.json` (`source_agent`, `category`, `line_start`/`line_end`, severity through `"$RUNTIME" helper map_severity "<entry JSON>" "<native severity>"`, exactly once), drops findings below `MIN_CONFIDENCE`, applies the Step 4 sort, dedup (including `dedup: isolated`) and IDs, writes the JSON array to `$PR_DIR/merged.json`, and sets each reviewer's `count` in `reviewers.json`. It returns `STATUS ok merged=<n> critical=<n> important=<n> minor=<n> notable=<n>`. The coordinator checks `jq -e 'type == "array"' "$PR_DIR/merged.json"`; a failed merge fails the PR.
+
+### (d) Meta-review workers
+
+Apply the Step 4b config gate to the merged count (`jq length "$PR_DIR/merged.json"`). When it passes, dispatch the Skeptic and the Calibrator in one response, each with its prompt file (`$CORE_DIR/agents/meta-skeptic.md`, `$CORE_DIR/agents/meta-calibrator.md`, read by the worker), the path of `$PR_DIR/merged.json`, the path of `$PR_DIR/changed-files` and `REVIEW_ROOT` (the paths in the findings are relative to it), plus this override:
+
+```
+Do not put your result in your reply. Write the JSON result your instructions describe to
+{PR_DIR}/meta/{skeptic|calibrator}.json, then reply with exactly one line:
+STATUS ok verdicts=<number of findings you judged>
+```
+
+A failed or unparseable meta worker means the meta-review is skipped for this PR, as in Step 4b "Error Handling": remove both meta files so the report worker passes the findings through unchanged.
+
+### (e) Report worker
+
+One subagent per PR. Inputs: `$PR_DIR/merged.json`, the meta files when both exist, `$PR_DIR/reviewers.json`, the `$PR_DIR/findings/*.positive.json` files, `PR_NUMBER`, the PR's head branch, and the rules read from this file: Step 4b "Verdict Application", "Severity Calibration", "Contradiction Annotation" and "Agent Scores", the Step 5 gate rule, Step 7 (report format) and Step 7.5j (aggregating positive observations). It writes:
+- `$PR_DIR/findings.json`: the final findings after the meta-review (false positives removed), a JSON array in the finding schema
+- `$PR_DIR/review-findings.md`: the Step 7 report for this PR (Invocation `bulk`, Rounds 0), with a "What Went Well" section from the positive observations, and the reviewer coverage from `reviewers.json`
+
+It returns `STATUS ok critical=<n> important=<n> minor=<n> notable=<n> report=<path>`. A failed report worker fails the PR.
+
+### (f) Fix rounds
+
+Driven by `bulk.md` in the apply phase, only for a PR whose decision includes "apply fixes", in its kept worktree. "Apply fixes" in bulk mode is the single-PR "Apply all suggested fixes" (`FIX_SCOPE="all"`) together with "Apply the important fixes": every finding whose `resolution` is not `fixed` and that has a concrete suggested fix (a non-empty `fix`) or is Critical or Important (prompt reviewers report no `fix` text, so gate findings are fixed from their description and rationale). For round `k` = 1, 2, ... up to `max_fix_rounds` (config `max_fix_rounds` with the run's `--max-rounds` applied, as in Config Resolution):
+1. A **fix worker** subagent gets `$PR_DIR/findings.json`, `REVIEW_ROOT`, `TEST_CMD` (Step 2 detection inside `REVIEW_ROOT`), `k`, and Step 6 items 1 to 5 to read from this file, with `FIX_SCOPE="all"`. It fixes every fixable finding (as defined above) by editing files under `REVIEW_ROOT` (absolute paths), runs the tests inside `REVIEW_ROOT`, writes failing tests as Critical findings with category `regression` to `$PR_DIR/round-<k>/regressions.json` (or `[]`), commits in the worktree (`git -C "$REVIEW_ROOT" commit`, never in `PROJECT_DIR`, never pushing), writes the changed paths (relative to `REVIEW_ROOT`, one per line) to `$PR_DIR/round-<k>/changed-files`, and returns `STATUS ok fixed=<n> commit=<sha>` (or `commit=none` when nothing changed).
+2. The coordinator re-runs (a) to (e) with outputs under `$PR_DIR/round-<k>/` (its own `findings/`, `commands/`, `meta/`, `merged.json`), scoped to the round's changed files: the same dispatch sets as the first round (Step 6 item 6: no new discovery, no new precondition checks), plus the round's regressions as extra input to the merge worker. The round's report worker also receives the previous `$PR_DIR/findings.json`, keeps every earlier finding outside the round's changed files (Step 6 item 7), keeps the findings the round fixed with `resolution: "fixed"`, records `Rounds: <k>`, and writes the complete current list to `$PR_DIR/findings.json` and the report to `$PR_DIR/review-findings.md`.
+3. Stop when `findings.json` has no remaining fixable finding, when the fix worker made no commit, or when `k` reached `max_fix_rounds`:
+
+```bash
+jq '[.[] | select((((.fix // "") | test("\\S")) or .severity == "Critical" or .severity == "Important")
+  and .resolution != "fixed")] | length' "$PR_DIR/findings.json"
+```
+
+### (g) Posting worker
+
+One subagent per PR, dispatched by `bulk.md` for a `post` decision. It runs Step 7.5 non-interactively:
+- findings: `$PR_DIR/accepted.json` when the user curated them in the drill-down, otherwise `$PR_DIR/findings.json`, all accepted (7.5g is skipped); findings with `resolution: "fixed"` (fix rounds) are not posted; an empty list posts nothing (7.5h)
+- review type: `REVIEW_EVENT_OVERRIDE` when set (unattended mode: `COMMENT`), otherwise the 7.5k rule with `CAN_REQUEST_CHANGES` as passed by `bulk.md` (`true` when the PR author is not the authenticated user; Step 5b does not run in worker mode, so the worker never computes it itself)
+- `commit_id` = `EXPECTED_HEAD` (as `REVIEWED_HEAD`), marker suffix `RUN_MARKER`
+- 7.5c checks that a file exists with `git -C "$PROJECT_DIR" ls-tree -r --name-only "$EXPECTED_HEAD"`, because the worktree may already be gone
+- 7.5i: the prose rewrite is done by the worker itself, inline, without a further subagent
+- 7.5j: positive observations from `$PR_DIR/findings/*.positive.json`; source footers and participating reviewers from `$PR_DIR/reviewers.json`
+- before posting, it looks for a review carrying this run's marker (the 7.5m search with `RUN_MARKER`); when one exists, it reports that review instead of posting a second one
+
+- on the 7.5l "head moved" answer (HTTP 422 mentioning the commit) with `JUST_PUSHED=true` (`bulk.md` sets it when this run pushed fix commits to the PR), GitHub may not have caught up with the push yet: wait about 5 seconds and post again, up to 3 attempts in all, before reporting `head-moved` (no recovery file either way)
+
+It returns `STATUS ok review_id=<id> inline=<n> summary_only=<n>` (`review_id=none` when nothing was posted), `STATUS failed reason=head-moved` on the 7.5l "head moved" answer that persists after the retries, or `STATUS failed reason=rate-limited`.

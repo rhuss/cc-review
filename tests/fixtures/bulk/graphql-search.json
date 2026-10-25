@@ -1,0 +1,96 @@
+{
+  "data": {
+    "search": {
+      "issueCount": 3,
+      "nodes": [
+        {
+          "number": 20,
+          "title": "Add retries",
+          "author": {
+            "login": "me"
+          },
+          "isDraft": false,
+          "headRefOid": "0000000000000000000000000000000000000020",
+          "headRefName": "topic-20",
+          "baseRefName": "main",
+          "updatedAt": "2026-10-20T10:00:00Z",
+          "isCrossRepository": false,
+          "headRepository": {
+            "name": "widget",
+            "owner": {
+              "login": "acme"
+            }
+          },
+          "reviewThreads": {
+            "nodes": [
+              {
+                "isResolved": false
+              },
+              {
+                "isResolved": false
+              },
+              {
+                "isResolved": false
+              },
+              {
+                "isResolved": true
+              }
+            ]
+          }
+        },
+        {
+          "number": 21,
+          "title": "Tidy logs",
+          "author": {
+            "login": "me"
+          },
+          "isDraft": false,
+          "headRefOid": "0000000000000000000000000000000000000021",
+          "headRefName": "topic-21",
+          "baseRefName": "main",
+          "updatedAt": "2026-10-19T10:00:00Z",
+          "isCrossRepository": false,
+          "headRepository": {
+            "name": "widget",
+            "owner": {
+              "login": "acme"
+            }
+          },
+          "reviewThreads": {
+            "nodes": [
+              {
+                "isResolved": true
+              }
+            ]
+          }
+        },
+        {
+          "number": 22,
+          "title": "Speed up CI",
+          "author": {
+            "login": "me"
+          },
+          "isDraft": false,
+          "headRefOid": "0000000000000000000000000000000000000022",
+          "headRefName": "topic-22",
+          "baseRefName": "main",
+          "updatedAt": "2026-10-21T10:00:00Z",
+          "isCrossRepository": false,
+          "headRepository": {
+            "name": "widget",
+            "owner": {
+              "login": "acme"
+            }
+          },
+          "reviewThreads": {
+            "nodes": [
+              {
+                "isResolved": false
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

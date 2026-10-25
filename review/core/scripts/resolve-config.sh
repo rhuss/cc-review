@@ -262,16 +262,22 @@ resolve_config_validate_types() {
 
   local key val default_val
 
-  # Every reviewers.<name> key must be boolean. An invalid value is removed so
-  # the reviewer's frontmatter `enabled` default applies.
-  while IFS= read -r key; do
-    [ -z "$key" ] && continue
-    val="$(CC_K="$key" yq -r '.reviewers[strenv(CC_K)]' "$CC_REVIEW_MERGED_CONFIG" 2>/dev/null)"
-    if [ "$val" != "true" ] && [ "$val" != "false" ]; then
-      echo "Warning: invalid value for reviewers.${key}: '${val}', using the reviewer's default" >&2
-      CC_K="$key" yq -i 'del(.reviewers[strenv(CC_K)])' "$CC_REVIEW_MERGED_CONFIG"
-    fi
-  done < <(yq -r '(.reviewers // {}) | select(type == "!!map") | keys | .[]' "$CC_REVIEW_MERGED_CONFIG" 2>/dev/null)
+  # Every reviewers.<name> and allow_untrusted_checkout.<name> key must be
+  # boolean. An invalid value is removed so the default applies: the
+  # reviewer's frontmatter `enabled`, or no run in an untrusted checkout.
+  local section fallback
+  for section in reviewers allow_untrusted_checkout; do
+    fallback="using the reviewer's default"
+    [ "$section" = allow_untrusted_checkout ] && fallback="using false"
+    while IFS= read -r key; do
+      [ -z "$key" ] && continue
+      val="$(CC_S="$section" CC_K="$key" yq -r '.[strenv(CC_S)][strenv(CC_K)]' "$CC_REVIEW_MERGED_CONFIG" 2>/dev/null)"
+      if [ "$val" != "true" ] && [ "$val" != "false" ]; then
+        echo "Warning: invalid value for ${section}.${key}: '${val}', ${fallback}" >&2
+        CC_S="$section" CC_K="$key" yq -i 'del(.[strenv(CC_S)][strenv(CC_K)])' "$CC_REVIEW_MERGED_CONFIG"
+      fi
+    done < <(CC_S="$section" yq -r '(.[strenv(CC_S)] // {}) | select(type == "!!map") | keys | .[]' "$CC_REVIEW_MERGED_CONFIG" 2>/dev/null)
+  done
 
   for key in severity.auto_fix pr_posting.enabled pr_posting.auto_detect_pr; do
     val="$(yq -r ".${key} // \"\"" "$CC_REVIEW_MERGED_CONFIG" 2>/dev/null)"
@@ -325,16 +331,29 @@ resolve_config_validate_types() {
   fi
 }
 
-# resolve_config_reviewers_json: prints the merged config's reviewers map as
-# compact JSON ({} when absent), the input of apply_config_enablement.
-resolve_config_reviewers_json() {
+# _cc_review_map_json <caller> <section>: prints one top-level map of the
+# merged config as compact JSON ({} when absent or not a map)
+_cc_review_map_json() {
   if [ -z "$CC_REVIEW_MERGED_CONFIG" ] || [ ! -f "$CC_REVIEW_MERGED_CONFIG" ]; then
-    echo "Error: resolve_config_init must be called before resolve_config_reviewers_json" >&2
+    echo "Error: resolve_config_init must be called before $1" >&2
     return 1
   fi
   local out
-  out="$(yq -o=json -I=0 '.reviewers // {}' "$CC_REVIEW_MERGED_CONFIG" 2>/dev/null)" || out='{}'
+  out="$(CC_S="$2" yq -o=json -I=0 '.[strenv(CC_S)] // {}' "$CC_REVIEW_MERGED_CONFIG" 2>/dev/null)" || out='{}'
   printf '%s' "$out" | jq -c 'if type == "object" then . else {} end' 2>/dev/null || printf '{}'
+}
+
+# resolve_config_reviewers_json: prints the merged config's reviewers map as
+# compact JSON ({} when absent), the input of apply_config_enablement.
+resolve_config_reviewers_json() {
+  _cc_review_map_json resolve_config_reviewers_json reviewers
+}
+
+# resolve_config_untrusted_json: prints the merged config's
+# allow_untrusted_checkout map as compact JSON ({} when absent), the input of
+# apply_untrusted_checkout.
+resolve_config_untrusted_json() {
+  _cc_review_map_json resolve_config_untrusted_json allow_untrusted_checkout
 }
 
 resolve_config_file() {
