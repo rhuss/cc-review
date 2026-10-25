@@ -884,6 +884,28 @@ jq -r '"STATUS \(.status)", "UNDECIDED \([.prs[] | select(.status == "analyzed" 
 
 `RATE_LIMITED`: the run is set to `paused` with its PRs as they were; go to Summary, which tells the user to resume later.
 
-**3. Continue.** Tell the user in one line how many PRs are analyzed again, wait for a decision, and are applied. Then run the normal flow from [Analysis Loop](#analysis-loop) on: the analysis loop handles the `reanalyze` PRs (they are `pending` now), the [Pre-Decision Refresh](#pre-decision-refresh) and [Decision Step](#decision-step) cover the undecided analyzed PRs (only undecided PRs are offered; actioned PRs are never decided again), and [Apply](#apply) takes the `apply` list together with the new decisions. Skip each part that has nothing to do.
+**3. Offer to cut the analysis short.** Only in deferred mode, and only when the plan's `reanalyze` list is not empty (the run stopped during its analysis). Unattended runs skip this step and continue with every PR. Ask the user, in plain words, naming the counts and, when `interrupted` is not null, that PR's number and title:
+
+- **Continue the analysis** (default): analyze all `reanalyze` PRs, as below.
+- **Finish #`<interrupted>`, then decide** (offered only when `interrupted` is not null): analyze that PR again, then go to the decision step.
+- **Decide now**: go to the decision step with the PRs analyzed so far.
+
+For the two shortcuts, every other pending PR becomes `not-analyzed`: finished for this run, nothing posted on it, so a later bulk run selects it again. Its leftover checkout is removed:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; cd "$PROJECT_DIR" || exit 1
+# KEEP is the interrupted PR for "Finish #<n>, then decide", empty for "Decide now"
+KEEP="{KEEP}"
+if [ -n "$KEEP" ]; then
+  "$S/bulk-state.sh" cut-short "$RUN_ID" "$KEEP"
+else
+  "$S/bulk-state.sh" cut-short "$RUN_ID"
+fi
+```
+
+Tell the user how many PRs were left for a later run (`OK not-analyzed=<n>`). When nothing is left to analyze or decide (for example "Decide now" before any PR was analyzed), go straight to Summary.
+
+**4. Continue.** Tell the user in one line how many PRs are analyzed again, wait for a decision, and are applied. Then run the normal flow from [Analysis Loop](#analysis-loop) on: the analysis loop handles the `reanalyze` PRs (they are `pending` now), the [Pre-Decision Refresh](#pre-decision-refresh) and [Decision Step](#decision-step) cover the undecided analyzed PRs (only undecided PRs are offered; actioned PRs are never decided again), and [Apply](#apply) takes the `apply` list together with the new decisions. Skip each part that has nothing to do.
 
 **Nothing is done twice (FR-028).** Every completed sub-action has its id in the state and is skipped: `bulk-apply.sh` skips recorded pushes, replies and resolutions, and the posting step is skipped when `review_id` is recorded. Before posting a review that is not recorded, the posting worker looks for this run's marker on the PR and reports that review instead (`review.md` Worker Mode (g)); `bulk-apply.sh marker` does the same for the marker, and `bulk-apply.sh triage` records a reply this run already posted (a reply by the user with `<!-- cc-review-triage`, created since the run started) instead of posting it again. A fix push already recorded (`.actions.pushed_sha`) skips the fix rounds.

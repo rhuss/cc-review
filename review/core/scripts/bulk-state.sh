@@ -16,6 +16,7 @@
 #   bulk-state.sh finish <run>
 #   bulk-state.sh abandon <run>
 #   bulk-state.sh resume-plan <run> <current-heads-json>
+#   bulk-state.sh cut-short <run> [<keep-n>]
 #   bulk-state.sh render <run>
 #   bulk-state.sh validate <run>
 #   bulk-state.sh summary <run>
@@ -28,7 +29,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUN_STATUSES="selecting analyzing deciding applying finished paused abandoned"
-PR_STATUSES="pending analyzing analyzed applying failed stale cannot-push partially-applied actioned skipped closed"
+PR_STATUSES="pending analyzing analyzed applying failed stale cannot-push partially-applied actioned skipped closed not-analyzed"
 RUN_ID_PATTERN='^[0-9]{8}-[0-9]{6}-(review|triage)(-[0-9]+)?$'
 # A PR whose attempts failed this often (counted across resumes) is not
 # retried; it stays failed and counts as finished for the run (FR-028)
@@ -46,7 +47,7 @@ MAX_REANALYSES=1
 #   to_apply  the PR has a decision that is not fully applied yet
 JQ_DEFS="
   def terminal: .status == \"actioned\" or .status == \"skipped\" or .status == \"stale\"
-    or .status == \"cannot-push\" or .status == \"closed\"
+    or .status == \"cannot-push\" or .status == \"closed\" or .status == \"not-analyzed\"
     or (.status == \"failed\" and (.failed_attempts // 0) >= $MAX_FAILED_ATTEMPTS);
   def reset: .status = \"pending\" | .reason = null | .analyzed_head = null | .expected_head = null
     | .pending_push = null | .actions.pushed_sha = null
@@ -375,15 +376,18 @@ intact() {
 # resume-plan <run> <current-heads-json>: applies the resume transitions
 # (bulk.md Resume) to every PR, given the current head per PR number
 # ({"<n>": "<sha>"}; a missing or null head is unknown and changes nothing),
-# writes them back and prints {reanalyze, keep, apply}.
+# writes them back and prints {reanalyze, keep, apply, interrupted}, where
+# interrupted is the PR whose analysis was cut off (null when the run stopped
+# between PRs or outside the analysis).
 do_resume_plan() {
   [ $# -eq 2 ] || { echo "Usage: bulk-state.sh resume-plan <run> <current-heads-json>" >&2; exit 2; }
-  local run="$1" heads="$2" dir state command n pr intact_json="{}" ok
+  local run="$1" heads="$2" dir state command n pr intact_json="{}" ok interrupted
   printf '%s' "$heads" | jq -e 'type == "object"' >/dev/null 2>&1 || { echo "Error: current heads must be a JSON object" >&2; exit 2; }
   dir=$(run_dir "$run")
   state="$dir/state.json"
   check_state "$state" "$state" || exit 1
   command=$(jq -r '.command' "$state")
+  interrupted=$(jq -c '[.prs[] | select(.status == "analyzing") | .number] | first // null' "$state")
   for n in $(jq -r '.prs[] | select(.status == "analyzed" or .status == "applying" or .status == "partially-applied") | .number' "$state"); do
     pr=$(jq -c --argjson n "$n" '.prs[] | select(.number == $n)' "$state")
     ok=false
@@ -421,8 +425,33 @@ do_resume_plan() {
   jq -c "$JQ_DEFS"'{
     reanalyze: [.prs[] | select(.status == "pending") | .number],
     apply: [.prs[] | select(to_apply) | .number],
-    keep: [.prs[] | select(.status != "pending" and (to_apply | not)) | .number]
-  }' "$state"
+    keep: [.prs[] | select(.status != "pending" and (to_apply | not)) | .number],
+    interrupted: (if $i != null and any(.prs[]; .number == $i and .status == "pending") then $i else null end)
+  }' --argjson i "$interrupted" "$state"
+}
+
+# cut-short <run> [<keep-n>]: ends the analysis of a resumed run early. Every
+# pending PR except <keep-n> becomes not-analyzed (finished for this run, no
+# marker, so a later run selects it again) and its leftover worktree is
+# removed; prints "OK not-analyzed=<count>".
+do_cut_short() {
+  [ $# -ge 1 ] && [ $# -le 2 ] || { echo "Usage: bulk-state.sh cut-short <run> [<keep-n>]" >&2; exit 2; }
+  local run="$1" keep="${2:-}" dir root n count=0
+  [ -z "$keep" ] || require_pr_number "$keep"
+  dir=$(run_dir "$run")
+  check_state "$dir/state.json" "$dir/state.json" || exit 1
+  root=$(jq -r '.repo.root' "$dir/state.json")
+  for n in $(jq -r --arg keep "$keep" '.prs[] | select(.status == "pending" and (.number | tostring) != $keep) | .number' "$dir/state.json"); do
+    # An interrupted analysis may have left its checkout behind
+    if [ -e "$dir/pr-$n/wt" ]; then
+      (cd "$root" && "$SCRIPT_DIR/pr-worktree.sh" remove "$dir/pr-$n/wt" >/dev/null) \
+        || echo "Warning: could not remove the worktree of #$n at $dir/pr-$n/wt" >&2
+    fi
+    update_pr "$run" "$n" '.status = "not-analyzed" | .worktree = null
+      | .reason = "not analyzed: the run was cut short; a later run selects it again"'
+    count=$((count + 1))
+  done
+  echo "OK not-analyzed=$count"
 }
 
 do_set_status() {
@@ -608,7 +637,9 @@ case "${1:-}" in
     shift; do_summary "$@" ;;
   resume-plan)
     shift; do_resume_plan "$@" ;;
+  cut-short)
+    shift; do_cut_short "$@" ;;
   *)
-    echo "Usage: bulk-state.sh {init|find-unfinished|set-prs|pr-set|pr-get|record|set-status|reanalyze|open-prs|finish|abandon|resume-plan|render|validate|summary}" >&2
+    echo "Usage: bulk-state.sh {init|find-unfinished|set-prs|pr-set|pr-get|record|set-status|reanalyze|open-prs|finish|abandon|resume-plan|cut-short|render|validate|summary}" >&2
     exit 2 ;;
 esac

@@ -256,6 +256,8 @@ If a run is interrupted (you closed the session, GitHub rate-limited you, you st
 /triage --bulk --resume 20261025-091500-triage
 ```
 
+When the run stopped in the middle of its analysis, resuming asks how far to go: continue with all remaining PRs, finish only the PR that was being analyzed and then decide, or decide right away on what is already analyzed. With either shortcut, the PRs it didn't get to are left alone. Nothing is posted on them, so your next bulk run picks them up again. (An unattended run doesn't ask and simply continues.)
+
 A resumed run keeps the options it was started with. PRs whose head moved since their analysis are analyzed again, finished PRs stay finished, and anything already pushed, posted or resolved is not done a second time. A PR that failed is tried again, but only up to three failed attempts in all; after that it stays failed and the run can finish without it. There is at most one unfinished run per command. Starting a new one while another is open asks whether to resume it, abandon it or cancel. Abandoning keeps the old run's state but removes the worktrees it still held; its `summary.md` lists them. An unattended run can't ask, so it stops with an error that tells you to add `--resume`.
 
 ### Scheduled jobs

@@ -23,7 +23,8 @@ State root: `$CC_REVIEW_BULK_DIR` (default `<git toplevel>/.cc-review/bulk`).
 | `open-prs <run>` | PR numbers, one per line | PRs that are not terminal for the run |
 | `finish <run>` | run status | Sets `finished` when the run is not paused or abandoned and every PR is terminal |
 | `abandon <run>` | `OK removed=<n>` | Sets `abandoned`, removes the run's kept worktrees (`pr-worktree.sh remove`, from `repo.root`), records them in `removed_worktrees` and rewrites `summary.md` |
-| `resume-plan <run> <current-heads-json>` | JSON `{reanalyze:[n], keep:[n], apply:[n]}` | Applies the resume transition rules (data-model) and writes them back; a `failed` PR with 3 failed attempts is kept as it is |
+| `resume-plan <run> <current-heads-json>` | JSON `{reanalyze:[n], keep:[n], apply:[n], interrupted:n\|null}` (`interrupted`: the PR whose analysis was cut off) | Applies the resume transition rules (data-model) and writes them back; a `failed` PR with 3 failed attempts is kept as it is |
+| `cut-short <run> [<keep-n>]` | `OK not-analyzed=<count>` | Every `pending` PR except `<keep-n>` becomes `not-analyzed` (terminal, nothing posted, selected again by a later run); a leftover `pr-<n>/wt` checkout is removed (FR-028a) |
 | `render <run>` | `OK` | Regenerates `state.md` |
 | `validate <run>` | `OK` or error | Schema sanity check (required fields, enums); never rewrites an invalid file |
 | `summary <run>` | path | Writes `summary.md`: selected and excluded PRs, outcome, reason, what was done (review link, pushed sha, reply and resolution counts), kept worktrees, and for an abandoned run the removed worktrees. For triage runs it also lists, from each `triage-plan.json`, human comments with no decision ("needs attention") and a "CI not checked; run `/triage --pr <n>` for CI repair" line per pushed PR. |

@@ -82,7 +82,8 @@ pending ──► analyzing ──► analyzed ──► (decision) ──► ap
 - A reset to `pending` clears `pending_push` and `actions.pushed_sha` (the next analysis prepares a new commit to push) and keeps the recorded replies and resolutions for dedup.
 - `applying` and `partially-applied` on resume → apply list (completed sub-actions are skipped by their recorded ids).
 - Analyzed PRs with a decision but no terminal status → apply list.
-- `actioned`, `skipped`, `stale`, `cannot-push`, `closed`, and `failed` with 3 failed attempts are terminal for the run.
+- `pending` on a deferred resume whose analysis was cut short by the user (`bulk-state.sh cut-short`, FR-028a) → `not-analyzed`, except the interrupted PR when the user chose to finish it first. Nothing is posted for a `not-analyzed` PR, so a later run selects it again.
+- `actioned`, `skipped`, `stale`, `cannot-push`, `closed`, `not-analyzed`, and `failed` with 3 failed attempts are terminal for the run.
 - Run `status` becomes `finished` when every PR is terminal.
 
 ## Exclusion

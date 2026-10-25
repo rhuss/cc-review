@@ -1809,6 +1809,59 @@ test_bulk_state_resume_plan_keeps_unchanged() {
   assert_json "the run continues with the analysis" "$out" '.status' "analyzing"
 }
 
+test_bulk_state_resume_plan_reports_interrupted() {
+  local run out
+  run="$(new_run review)"
+  analyzed_pr "$run" 10 aaa10
+  bstate pr-set "$run" 11 '.status="analyzing"' >/dev/null
+  out="$(bstate resume-plan "$run" '{"10":"aaa10","11":"aaa11"}')"
+  assert_json "the PR cut off mid-analysis is reported" "$out" '.interrupted' "11"
+  assert_json "and it is analyzed again" "$out" '.reanalyze | join(",")' "11"
+  run="$(new_run review)"
+  analyzed_pr "$run" 10 aaa10
+  out="$(bstate resume-plan "$run" '{"10":"aaa10","11":"aaa11"}')"
+  assert_json "a run stopped between PRs has no interrupted PR" "$out" '.interrupted' "null"
+}
+
+test_bulk_state_cut_short() {
+  local run out
+  # Keep the interrupted PR: it stays pending, the rest is left for a later run
+  run="$(new_run review)"
+  bstate resume-plan "$run" '{}' >/dev/null
+  out="$(bstate cut-short "$run" 10)"
+  assert_eq "one PR is left out" "OK not-analyzed=1" "$out"
+  out="$(state_of "$run")"
+  assert_json "the kept PR is still pending" "$out" '.prs[0].status' "pending"
+  assert_json "the other PR is not analyzed" "$out" '.prs[1] | "\(.status) \(.worktree)"' "not-analyzed null"
+  assert_contains "the reason says a later run picks it up" "$(jq -r '.prs[1].reason' <<<"$out")" "a later run selects it again"
+  assert_eq "only the kept PR is still open" "10" "$(bstate open-prs "$run")"
+  # Decide now: nothing stays pending, analyzed PRs are untouched
+  run="$(new_run review)"
+  analyzed_pr "$run" 10 aaa10
+  out="$(bstate cut-short "$run")"
+  assert_eq "the pending PR is left out" "OK not-analyzed=1" "$out"
+  out="$(state_of "$run")"
+  assert_json "the analyzed PR keeps its result" "$out" '.prs[0].status' "analyzed"
+  bstate pr-set "$run" 10 '.status="skipped"' >/dev/null
+  assert_eq "the run can finish with a not-analyzed PR" "finished" "$(bstate finish "$run")"
+  bstate validate "$run" >/dev/null && _pass || _fail "the state with a not-analyzed PR is valid"
+  bstate summary "$run" >/dev/null
+  assert_contains "the summary shows the outcome" "$(cat "$TEST_TMP/bulk/$run/summary.md")" "| not-analyzed |"
+}
+
+test_bulk_state_cut_short_removes_worktree() {
+  local sha run wt out
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(review_run_pr7 "$sha")"
+  bstate pr-set "$run" 7 '.status="pending"' >/dev/null
+  wt="$TEST_TMP/bulk/$run/pr-7/wt"
+  prwt add 7 "$sha" "$wt" >/dev/null
+  out="$(cd "$BULK_REPO" && CC_REVIEW_BULK_DIR="$TEST_TMP/bulk" bash "$BULK_STATE" cut-short "$run")"
+  assert_eq "the PR is left out" "OK not-analyzed=1" "$out"
+  [ ! -e "$wt" ] && _pass || _fail "the leftover worktree is removed"
+}
+
 test_bulk_state_resume_plan_reanalyzes_moved_head() {
   local run out
   run="$(new_run review)"
@@ -3666,6 +3719,9 @@ main() {
   run_test test_bulk_state_validate_rejects_corrupt
   run_test test_bulk_state_summary
   run_test test_bulk_state_resume_plan_keeps_unchanged
+  run_test test_bulk_state_resume_plan_reports_interrupted
+  run_test test_bulk_state_cut_short
+  run_test test_bulk_state_cut_short_removes_worktree
   run_test test_bulk_state_resume_plan_reanalyzes_moved_head
   run_test test_bulk_state_resume_plan_missing_worktree_reanalyzes
   run_test test_bulk_state_resume_plan_analyzing_and_failed_to_pending
