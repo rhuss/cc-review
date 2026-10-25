@@ -585,12 +585,12 @@ test_bundled_reviewers_discovery() {
     "command -v coderabbit|coderabbit auth status|coderabbit review --agent --base {base_branch} --committed|540"
   assert_json "codex detection is only command -v codex (no auth_check)" "$(entry codex)" \
     '[.command.detect, (.command.auth_check | tostring), .command.invoke, (.command.timeout_seconds | tostring)] | join("|")' \
-    "command -v codex|null|codex review --base {base_branch}|180"
+    "command -v codex|null|codex review --base {base_branch}|600"
   assert_json "codex severity map" "$(entry codex)" '.severity_map | to_entries | map(.key + "=" + .value) | join(",")' "P0=Critical,P1=Important,P2=Minor,P3=Notable"
   assert_json "codex delimited format" "$(entry codex)" '.command.output.format + ":" + (.command.output.delimiter | tojson)' 'delimited:"\n\n"'
   assert_json "copilot detection, timeout, delimiter" "$(entry copilot)" \
     '[.command.detect, (.command.timeout_seconds | tostring), .command.output.format, .command.output.delimiter] | join("|")' \
-    "command -v copilot|180|delimited|### FINDING"
+    "command -v copilot|600|delimited|### FINDING"
   assert_contains "copilot invoke asks for the diff against the base branch" "$(entry copilot | jq -r '.command.invoke')" 'copilot -s -p "Review the git diff between {base_branch} and HEAD'
 
   local g

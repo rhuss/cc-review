@@ -6,7 +6,7 @@ category: external
 enabled: true
 detect: "command -v codex"
 invoke: "codex review --base {base_branch}"
-timeout_seconds: 180
+timeout_seconds: 600
 severity_map:
   P0: Critical
   P1: Important

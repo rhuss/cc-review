@@ -13,7 +13,7 @@ invoke: >-
   'File: <relative path>', 'Line: <line number>', 'Severity: <Critical|Important|Minor>',
   'Description: <what is wrong>', 'Rationale: <why it matters>'.
   Report nothing else and do not include praise."
-timeout_seconds: 180
+timeout_seconds: 600
 output:
   format: delimited
   delimiter: "### FINDING"
