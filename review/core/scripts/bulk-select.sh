@@ -19,7 +19,8 @@
 # over-limit. Drafts are excluded (unless a --search query asks for them with
 # draft:true or is:draft), and so is every PR that already has a cc-review
 # review against its current head commit. A marker review by the PR's own
-# author never counts: the author could post one to opt out of review.
+# author does not count (the author could post one to opt out of review),
+# unless that author is the user running the bulk review.
 #
 # check-query rejects search qualifiers that would leave the current
 # repository or its open PRs (repo:, org:, user:, is:closed, is:merged,
@@ -151,7 +152,7 @@ classify() {
     --argjson keep_drafts "$keep_drafts" '
     def reviewed_at_head: .headRefOid as $h | .author.login as $pr_author
       | any(.reviews[]?; ((.body // "") | contains($marker)) and .commit.oid == $h
-          and .author.login != $pr_author);
+          and (.author.login != $pr_author or .author.login == $user));
     def seed: {
       number, title,
       author: .author.login,

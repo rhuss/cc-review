@@ -3427,6 +3427,11 @@ test_bulk_select_marker_authors() {
   assert_json "so the PR is not excluded" "$out" '[.excluded[] | select(.number == 12)] | length' "0"
   out="$(FAKE_GH_DIR="$dir" bselect review --all-open --user me)"
   assert_json "the rule holds for --all-open" "$out" '[.selected[].number] | index(12) != null' "true"
+  # The user's own marker on the user's own PR is trusted
+  jq '[.[] | if .number == 12 then .author.login = "me" | .reviews[0].author.login = "me" else . end]' \
+    "$BULK_FIXTURES/pr-list-all.json" > "$dir/pr-list-all.json"
+  out="$(FAKE_GH_DIR="$dir" bselect review --all-open --user me)"
+  assert_json "the user's marker on the user's own PR counts" "$out" '[.excluded[] | select(.number == 12) | .reason] | first' "reviewed-at-head"
   # Re-reviews: only the user's own marker at an older head counts
   rm -f "$dir/pr-list-review-requested.json"
   jq '[.[] | if .number == 14 then .reviews[0].author.login = "carol" else . end]' \

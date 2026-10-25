@@ -209,7 +209,7 @@ Each PR is checked out into its own temporary worktree, so your current branch, 
 These rules hold for every selector:
 
 - Draft PRs are skipped unless the search asks for them with `draft:true` or `is:draft`.
-- `/review --bulk` skips a PR that already has a cc-review review at its current head commit. A cc-review marker posted by the PR's own author doesn't count, so nobody can opt their PR out of review that way. (`/triage --bulk` does not apply this rule; it goes by unresolved threads.)
+- `/review --bulk` skips a PR that already has a cc-review review at its current head commit. A cc-review marker posted by the PR's own author doesn't count, so nobody can opt their PR out of review that way. The one exception is your own marker on your own PR, which counts. (`/triage --bulk` does not apply this rule; it goes by unresolved threads.)
 - The search always stays inside the current repository and its open PRs, so `repo:`, `org:`, `user:`, `is:closed`, `is:merged` and `state:` are rejected.
 - `--limit <n>` caps the run (10 by default). The PRs that haven't been updated for the longest time come first.
 
