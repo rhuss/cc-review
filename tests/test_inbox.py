@@ -31,6 +31,20 @@ def emit(value):
 def fail(message):
     print(message, file=sys.stderr)
     sys.exit(1)
+def top_level_fields(query):
+    # Names at depth 0 of the "... on <Type> { ... }" selection; nested
+    # selections, arguments and the $id variable do not count.
+    body = query[re.search(r"\.\.\. on \w+ \{", query).end():]
+    names, depth, parens = set(), 0, 0
+    for token in re.findall(r"[{}()]|\w+", body):
+        if token == "{": depth += 1
+        elif token == "}":
+            if depth == 0: break
+            depth -= 1
+        elif token == "(": parens += 1
+        elif token == ")": parens -= 1
+        elif depth == 0 and parens == 0: names.add(token)
+    return names
 if args[:2] == ["repo", "view"]:
     if fixture.get("repo_error"): fail(fixture["repo_error"])
     emit(fixture.get("repository", {"nameWithOwner":"acme/widgets", "url":"https://github.com/acme/widgets", "hasDiscussionsEnabled":True}))
@@ -70,8 +84,8 @@ elif args and args[0] == "api" and "graphql" in args:
         if "response" in value: emit(value["response"])
         else:
             # Like GitHub, return only the top-level fields the query selects.
-            selected = {k: v for k, v in value.items()
-                        if k == "__typename" or re.search(r"\b" + re.escape(k) + r"\b", query)}
+            fields = top_level_fields(query) | {"__typename"}
+            selected = {k: v for k, v in value.items() if k in fields}
             emit({"data":{"node":selected}})
     else:
         fail("unknown GraphQL query")
