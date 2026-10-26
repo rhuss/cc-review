@@ -27,7 +27,8 @@ REASONS = {
            "commented": "commenter", "reviewed": "reviewed-by", "review_requested": "review-requested",
            "team_review_requested": "team-review-requested-user"},
     "issue": {"authored": "author", "assigned": "assignee", "mentioned": "mentions", "commented": "commenter"},
-    # Discussion search silently ignores mentions:, so that reason is a known coverage limit.
+    # Discussion search returns no matches for mentions: (and involves: covers only
+    # author and commenter), so mentions are a known coverage limit.
     "discussion": {"authored": "author", "commented": "commenter"},
 }
 KNOWN_LIMITS = {

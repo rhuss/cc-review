@@ -418,15 +418,21 @@ class InboxTests(unittest.TestCase):
             "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
             "details": {"discussion-1": value}})
         self.assertTrue(snap["items"][0]["context_complete"], snap["items"][0]["warnings"])
+        queries = [call for call in self.calls() if "InboxDetail_discussion" in json.dumps(call)]
+        self.assertEqual(1, len(queries))
+        self.assertIn("category { isAnswerable }", json.dumps(queries))
 
-    def test_answerable_discussion_requires_is_answered(self):
-        value = detail("discussion")
-        value["isAnswered"] = None
-        snap = self.snapshot("--type", "discussion", fixture={
-            "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
-            "details": {"discussion-1": value}})
-        self.assertFalse(snap["items"][0]["context_complete"])
-        self.assertIn("isAnswered", " ".join(snap["items"][0]["warnings"]))
+    def test_unknown_answerability_requires_is_answered(self):
+        for category, field in [({"isAnswerable": True}, "isAnswered"), ({"isAnswerable": None}, "isAnswered"),
+                                ({}, "isAnswered"), (None, "category")]:
+            with self.subTest(category=category):
+                value = detail("discussion")
+                value.update(isAnswered=None, category=category)
+                snap = self.snapshot("--type", "discussion", fixture={
+                    "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
+                    "details": {"discussion-1": value}})
+                self.assertFalse(snap["items"][0]["context_complete"])
+                self.assertIn(field, " ".join(snap["items"][0]["warnings"]))
 
     def test_discussion_mentions_are_a_disclosed_limit_not_a_query(self):
         snap = self.snapshot("--type", "discussion")

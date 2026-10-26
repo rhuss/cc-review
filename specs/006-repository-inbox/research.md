@@ -14,7 +14,7 @@ Sources: [issue and PR search](https://docs.github.com/en/search-github/searchin
 
 ## R-003: Discussions are a separate source
 
-Decision: GraphQL DISCUSSION searches for author/mentions/commenter, then typed details with answers and nested replies.
+Decision: GraphQL DISCUSSION searches for author/commenter, then typed details with answers and nested replies. A live check on cli/cli showed `mentions:` returns 0 for DISCUSSION search and `involves:` matches exactly the commenter set, so mention-only Discussions cannot be discovered; this is disclosed as a known limit. `isAnswered` is null for categories that cannot be answered, so details also read `category { isAnswerable }`.
 
 Rationale: Discussions are distinct from issues. Documented participation and date filters match the need. Live schema inspection confirmed closed, answer/isAnswered, and backward reply pagination.
 

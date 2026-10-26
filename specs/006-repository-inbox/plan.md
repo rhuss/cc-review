@@ -52,7 +52,7 @@ The constitution is an unfilled template. Existing architecture and explicit rep
 - normalize_detail(value: dict) -> tuple[dict, list[str]]: sanitize display strings, cap text, recursively detect connection truncation.
 - main(argv: list[str] | None = None) -> int: stdout JSON on success; stderr and exit 1 for service errors, 2 for arguments.
 
-PR search reasons: author, assignee, mention, commenter, reviewed-by, review-requested. Issues: author, assignee, mention, commenter. Discussions: author, mention, commenter. Merge node identities and preserve all reason membership before applying most-recent ordering and the per-type cap. Validate node types so issue results cannot leak PRs.
+PR search reasons: author, assignee, mention, commenter, reviewed-by, review-requested. Issues: author, assignee, mention, commenter. Discussions: author, commenter (Discussion search cannot match mentions; the snapshot reports this in `scope.known_limits`). Merge node identities and preserve all reason membership before applying most-recent ordering and the per-type cap. Validate node types so issue results cannot leak PRs.
 
 Details include body, actor identities, timestamps, links, PR head/review commits and check state, thread resolution, and Discussion answers/replies. A failed detail retains the discovery entry with uncertainty. Every trimmed string or incomplete nested connection clears context_complete.
 
