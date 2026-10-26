@@ -81,7 +81,7 @@ inbox --type issue,discussion --limit 20
 inbox --repo owner/repo --since 2026-10-01
 ```
 
-The inbox explains what needs your attention in one repository. It includes your own items, assignments, review requests (including team requests), mentions, and conversations you commented on or reviewed, including participation outside cc-review.
+The inbox explains what needs your attention in one repository. It includes your own items, assignments, review requests (including team requests), mentions in PRs and issues (GitHub cannot search Discussion mentions), and conversations you commented on or reviewed, including participation outside cc-review.
 
 Results appear under **Needs your attention**, **Waiting on others**, and **No current action**. Each entry explains why it appears, links to supporting activity, and suggests a next step. Inferred or uncertain responsibility is labeled. A PR can suggest review for a first or substantial review, triage for continuing owned feedback, or both; one action does not clear the other. Issues and Discussions get a suggested next step with a conversation link. The report is read-only, and follow-up actions remain suggestions.
 

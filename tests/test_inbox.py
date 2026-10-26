@@ -106,7 +106,7 @@ def detail(kind="issue", number=1):
                      reviewThreads=connection([{"isResolved": True, "isOutdated": False,
                                                 "comments": connection([comment()])}]))
     if kind == "discussion":
-        value.update(isAnswered=True, answer=comment("This is the answer"),
+        value.update(isAnswered=True, category={"isAnswerable": True}, answer=comment("This is the answer"),
                      comments=connection([dict(comment(), replies=connection([comment("Following up")]))]))
     return value
 
@@ -410,6 +410,31 @@ class InboxTests(unittest.TestCase):
         self.assertTrue(entry["detail"]["isAnswered"])
         self.assertEqual("This is the answer", entry["detail"]["answer"]["body"])
         self.assertEqual("Following up", entry["detail"]["comments"]["nodes"][0]["replies"]["nodes"][0]["body"])
+
+    def test_unanswerable_discussion_with_null_is_answered_is_complete(self):
+        value = detail("discussion")
+        value.update(isAnswered=None, category={"isAnswerable": False}, answer=None)
+        snap = self.snapshot("--type", "discussion", fixture={
+            "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
+            "details": {"discussion-1": value}})
+        self.assertTrue(snap["items"][0]["context_complete"], snap["items"][0]["warnings"])
+
+    def test_answerable_discussion_requires_is_answered(self):
+        value = detail("discussion")
+        value["isAnswered"] = None
+        snap = self.snapshot("--type", "discussion", fixture={
+            "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
+            "details": {"discussion-1": value}})
+        self.assertFalse(snap["items"][0]["context_complete"])
+        self.assertIn("isAnswered", " ".join(snap["items"][0]["warnings"]))
+
+    def test_discussion_mentions_are_a_disclosed_limit_not_a_query(self):
+        snap = self.snapshot("--type", "discussion")
+        searches = [call for call in self.calls() if "InboxSearch_discussion" in json.dumps(call)]
+        self.assertEqual(1, len(searches))
+        self.assertNotIn("mentions:", json.dumps(searches))
+        self.assertIn("mentioned", " ".join(snap["scope"]["known_limits"]))
+        self.assertEqual([], self.snapshot("--type", "pr,issue")["scope"]["known_limits"])
 
     def test_nested_reply_truncation_marks_context_incomplete(self):
         value = detail("discussion")
