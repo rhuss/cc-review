@@ -97,7 +97,7 @@ By default, PRs and issues are open, including draft PRs, with no recency cutoff
 
 The report states its scope and coverage. Discovery is bounded to 100 matches per relevance reason, and long bodies and conversations are shortened. Reached limits, missing context, failed sources, and disabled or inaccessible Discussions are shown explicitly. Participation or a recent update alone does not mean you owe a response.
 
-The inbox requires Python 3.9+ and `gh` authenticated for the selected repository. It uses the existing plugin installation and works independently of a spec-kit ship pipeline.
+The inbox requires Python 3.9+, `jq`, and `gh` authenticated for the selected repository. It uses the existing plugin installation and works independently of a spec-kit ship pipeline.
 
 Reviewer follow-up activity is stored per GitHub account under `$XDG_STATE_HOME/cc-review/reviewer-activity/`, or `~/.local/state/cc-review/reviewer-activity/` when `XDG_STATE_HOME` is unset. The inbox reads this cache without creating or changing it. Missing or incomplete thread evidence stays visible as uncertain.
 
