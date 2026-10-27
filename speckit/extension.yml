@@ -15,6 +15,9 @@ provides:
     - name: speckit.cc-review.triage
       file: commands/speckit.cc-review.triage.md
       description: "PR comment triage with bot handling and human review"
+    - name: speckit.cc-review.inbox
+      file: commands/speckit.cc-review.inbox.md
+      description: "Personal repository inbox for PRs, issues, and Discussions"
 
 hooks:
   after_implement:

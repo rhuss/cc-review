@@ -12,6 +12,7 @@ cc-review dispatches a set of specialized reviewers against your code changes, m
 - **External tool integration**: CodeRabbit, GitHub Copilot CLI, and Codex CLI run as command reviewers; their findings are merged and deduplicated with agent findings
 - **Gator reviewer (opt-in)**: a pragmatic principal-engineer review persona ported from NVIDIA OpenShell, with an evidence contract for every blocking finding
 - **PR comment triage**: classify and handle bot review comments (CodeRabbit, Copilot, Devin) and human reviewer feedback
+- **Repository inbox**: see relevant PRs, issues, and Discussions grouped by who acts next, with evidence and suggested actions
 - **Spec-aware review**: pass a specification file to cross-check implementation against functional requirements
 - **Multi-harness support**: thin adapter layer for Claude Code, spec-kit, and AGENTS.md-based tools (Codex, OpenCode)
 
@@ -32,7 +33,7 @@ claude plugin install cc-review@cc-review-plugin-development
 make install
 ```
 
-This registers the local marketplace and installs the plugin. The `/review` and `/triage` commands become available immediately.
+This registers the local marketplace and installs the plugin. The `/review`, `/triage`, and `/inbox` commands become available immediately.
 
 ### Codex
 
@@ -44,7 +45,7 @@ codex plugin marketplace add /path/to/cc-review
 codex plugin install cc-review@cc-review-plugin-development
 ```
 
-The `review` and `triage` skills are discovered from `review/skills/`.
+The `review`, `triage`, and `inbox` skills are discovered from `review/skills/`.
 
 ### OpenCode
 
@@ -68,6 +69,35 @@ specify extension add /path/to/cc-review/speckit
 The spec-kit adapter automatically passes spec paths, constitution hints, and output locations during the ship pipeline.
 
 ## Usage
+
+### Repository Inbox
+
+Run the `inbox` command or skill through your coding agent:
+
+```text
+inbox
+inbox --type pr
+inbox --type issue,discussion --limit 20
+inbox --repo owner/repo --since 2026-10-01
+```
+
+The inbox explains what needs your attention in one repository. It includes your own items, assignments, review requests (including team requests), mentions, and conversations you commented on or reviewed, including participation outside cc-review.
+
+Results appear under **Needs your attention**, **Waiting on others**, and **No current action**. Each entry explains why it appears, links to supporting activity, and suggests a next step. Inferred or uncertain responsibility is labeled. PR suggestions can point to review or triage; issues and Discussions get a suggested next step with a conversation link. The report is read-only, and follow-up actions remain suggestions.
+
+| Option | Behavior |
+|--------|----------|
+| `--repo owner/name` | Select a repository explicitly, including outside a checkout. Default follows the invoking `gh` repository context. |
+| `--type pr,issue,discussion` | Select any combination; repeat to combine selections. Default: all three types. |
+| `--limit N` | Select the most recently updated items per type, from 1 to 100. Default: 10 per type. |
+| `--since YYYY-MM-DD` | Filter every selected type by its last update. |
+| `--help` | Show collector options without contacting GitHub. |
+
+By default, PRs and issues are open, including draft PRs, with no recency cutoff. Discussions cover the last 90 days of activity, including answered and closed conversations. An explicit `--since` replaces that window and applies to all selected types.
+
+The report states its scope and coverage. Discovery is bounded to 100 matches per relevance reason, and long bodies and conversations are shortened. Reached limits, missing context, failed sources, and disabled or inaccessible Discussions are shown explicitly. Participation or a recent update alone does not mean you owe a response.
+
+The inbox requires Python 3.9+ and `gh` authenticated for the selected repository. It uses the existing plugin installation and works independently of a spec-kit ship pipeline.
 
 ### Code Review
 
