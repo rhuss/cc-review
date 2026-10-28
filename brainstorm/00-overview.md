@@ -1,6 +1,6 @@
 # Brainstorm Overview
 
-Last updated: 2026-10-27
+Last updated: 2026-10-28
 
 ## Sessions
 
@@ -14,7 +14,7 @@ Last updated: 2026-10-27
 | 06 | 2026-10-25 | bulk-review-triage | active | - | - |
 | 07 | 2026-10-26 | repository-inbox | active | - | [#4](https://github.com/rhuss/cc-review/issues/4) |
 | 08 | 2026-10-27 | inbox-action-alignment | active | - | [#7](https://github.com/rhuss/cc-review/issues/7) |
-| 09 | 2026-10-27 | incremental-review | active | - | - |
+| 09 | 2026-10-27 | incremental-review | active | - | [#8](https://github.com/rhuss/cc-review/issues/8) |
 
 ## Open Threads
 
@@ -60,13 +60,11 @@ Last updated: 2026-10-27
 - How should review and triage recognize verification already performed at the same code and conversation state while preserving a separate outstanding review obligation? (from #08)
 - What shared evidence contract can inbox and bulk selection use without turning the inbox into a full review? The helper or snapshot format belongs in planning. (from #08)
 - What sequencing lets #08 establish useful alignment before #09's incremental review behavior is available, and which behavior requires both features? (from #08)
-- Automatic incremental mode with `--full`, or opt-in `--since-last`? What does bulk review default to? (from #09)
-- Range-diff output is hard for reviewers to read. Is a reconstructed "PR diff at baseline vs PR diff at head" a better input, and how is it produced in a worktree? (from #09)
-- Whose review is the baseline when several people ran cc-review on the same PR? (from #09)
-- How do command reviewers (CodeRabbit, gator) get delta scope? Gator has its own follow-up mode; CodeRabbit may only support full or incremental on its own terms. (from #09)
-- Does the meta-review (Skeptic, Calibrator) see the earlier findings, so it can reject duplicates and goalpost-moving findings? (from #09)
-- Where does the shared verification logic live, so review (follow-up) and triage (Step 11b) do not drift apart? (from #09)
-- How should the posted review read when it mixes verifications and new findings: one summary with two sections, or verification replies in the threads plus a short summary? (from #09)
+- What evidence establishes a trustworthy completed personal baseline, including no-findings reviews, reviewer/configuration differences and chains of incremental runs? (from #09)
+- What comparison evidence reliably separates author changes from upstream movement across rebases, force pushes and conflict resolutions, and when is full-review fallback required? (from #09)
+- How should unsupported command-reviewer scope and incomplete reviewer coverage affect fallback, reporting and baseline completion? (from #09)
+- What shared verification evidence should review, triage and meta-review receive to preserve findings across moved code, avoid duplicates and enforce the critical-only unchanged-code exception? (from #09)
+- How should verification outcomes and new findings be presented between existing threads and the review summary, including acknowledgment of a renewed request on unchanged content? (from #09)
 
 ## Parked Ideas
 
