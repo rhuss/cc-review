@@ -6,6 +6,12 @@ argument-hint: "[--pr <number>] [--spec <path>] [--config <path>] [--profile <na
 
 # PR Review Comment Triage
 
+## Shared Earlier-Finding Verification
+
+Reviewer triage uses the same explicit evidence contract as review's Prior Finding Verification: `review_scope.py targets` collects owned unresolved concerns; inspect current code and complete conversations; `review_scope.py reconcile` checks exact activity, status, concrete evidence and `code_checked:true`. Partial fixes remain still-present. Accepted explanations additionally require `approved:true` under existing policy. Missing, duplicate, stale, unclear or incomplete evidence cannot resolve a thread. Retain role, approval, exact handled-activity and immediate freshness guards. Cache evidence only with actual completed outcomes. Triage never invokes scope `marker` and never creates or advances code-review baseline evidence.
+
+Still-present outcomes also carry a normalized `finding` with current location, severity and explanation, so a later review preserves the concern without requiring rediscovery. This adds evidence to reviewer triage; it does not change author bot-comment handling or permit new branch mutations.
+
 Triage all review comments on a PR: autonomously handle bot comments (assess, apply valid fixes, reject invalid, reply), then interactively present human comments for approval.
 
 ## Bulk Mode

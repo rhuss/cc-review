@@ -1,7 +1,7 @@
 ---
 name: review
-description: Multi-agent code review with autonomous fix loop. Dispatches every discovered reviewer plugin, merges findings, auto-fixes Critical/Important issues.
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel] [--bulk] [--all-open] [--search <query>] [--limit <n>] [--unattended] [--resume [<run-id>]]"
+description: Multi-agent code review with automatic personal incremental scope and explicit finding verification.
+argument-hint: "[--pr <number>] [--full] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel] [--bulk] [--all-open] [--search <query>] [--limit <n>] [--unattended] [--resume [<run-id>]]"
 ---
 
 # Code Review
@@ -19,6 +19,8 @@ Check the arguments before anything else. Each check below stops with its error 
 When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk review: set `BULK_COMMAND=review`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file (Prerequisites through Step 8). `bulk.md` runs this file's per-PR pipeline itself, in worker mode (see [Worker Mode (bulk)](#worker-mode-bulk)).
 
 Without `--bulk` and `--resume`, continue below; nothing in single-PR mode changes.
+
+Parse `--full` as `FULL_REVIEW=true` (default false). It is a scope override, not a reviewer name or posting permission, and applies to single-PR and bulk review. Local non-PR review retains its existing scope.
 
 ### Core Directory
 
@@ -385,6 +387,114 @@ For each linked issue, fetch title and body. Build a `DECLARED_GOALS` block from
 
 `DECLARED_GOALS` is the `goals` context block. It is supplied to every prompt reviewer whose `context` list contains `goals`, and only when `GOALS_AVAILABLE` is true. Reviewers that need PR context declare `requires: [pr]` themselves and are already `skipped (requires: pr)` by discovery when no PR exists. A PR with an empty description still satisfies `requires: [pr]`: such a reviewer runs without the `goals` block and infers the goals from the change itself (the bundled reviewer that requests `goals` does this and marks them as inferred).
 
+## Personal PR Review Scope
+
+Run after discovery, selection and detection, before dispatch, in both single-PR and worker mode. Keep the complete original `ALL_CHANGED_FILES` for discovery/trust, and the full PR diff for GitHub inline anchors. Scope never changes reviewer discovery or project-reviewer trust.
+
+Set `RENEWED_REQUEST` from the shared assessment's outstanding personal/team request evidence in bulk mode. A direct user invocation asks for an acknowledgment even on unchanged content. Do not infer ownership from another person's request. Use the same effective scope rules in both modes.
+
+```bash
+SCOPE_TOOL="$CORE_DIR/scripts/review_scope.py"
+source "$CORE_DIR/scripts/platform.sh"
+if [ -n "${PR_CONTEXT_NUMBER:-}" ]; then
+  SCOPE_DIR="$REVIEW_RUN_DIR/scope"
+  [ "${WORKER_MODE:-false}" = true ] && SCOPE_DIR="$PR_DIR/scope"
+  mkdir -p "$SCOPE_DIR"
+  SCOPE_REPO=$(gh repo view --json nameWithOwner,url) || exit 1
+  GH_USER=$(gh api user -q .login) || exit 1
+  SCOPE_META=$(gh pr view "$PR_CONTEXT_NUMBER" --json headRefOid,baseRefOid,state,author) || exit 1
+  [ "$(printf '%s' "$SCOPE_META" | jq -r '.state')" = OPEN ] || { echo 'PR closed; scope preparation stopped' >&2; exit 1; }
+  for scope_oid in $(printf '%s' "$SCOPE_META" | jq -r '.headRefOid,.baseRefOid'); do
+    case "$scope_oid" in ''|*[!0-9a-f]*) echo 'Invalid current PR commit ID' >&2; exit 1 ;; esac
+    if ! git -C "$REVIEW_ROOT" cat-file -e "$scope_oid^{commit}" 2>/dev/null; then
+      git -C "$REVIEW_ROOT" fetch --no-tags -- origin "$scope_oid" || {
+        echo 'Current PR head/base unavailable; review inputs are incomplete' >&2; exit 1;
+      }
+    fi
+  done
+  SCOPE_REVIEWS_COMPLETE=true
+  if ! fetch_reviews "$(printf '%s' "$SCOPE_REPO" | jq -r '.nameWithOwner | split("/")[0]')" \
+    "$(printf '%s' "$SCOPE_REPO" | jq -r '.nameWithOwner | split("/")[1]')" "$PR_CONTEXT_NUMBER" > "$SCOPE_DIR/reviews.json"; then
+    SCOPE_REVIEWS_COMPLETE=false
+    printf '[]\n' > "$SCOPE_DIR/reviews.json"
+  fi
+  REQUIRED_REVIEWERS_JSON=$(printf '%s' "$REVIEWERS_JSON" | jq '[.[] | select(.status == "ready") | . + {required:true}]')
+  yq -o=json '.' "$CC_REVIEW_MERGED_CONFIG" > "$SCOPE_DIR/settings.json" || exit 1
+  SCOPE_CONTEXT=$(jq -nc --arg core "$CORE_DIR" '[($core + "/agents/preamble.md"),($core + "/agents/meta-skeptic.md"),($core + "/agents/meta-calibrator.md"),($core + "/commands/review.md")]')
+  for scope_context_file in "${REVIEW_HINTS_FILE:-}" "${SPEC_FLAG:-}"; do
+    if [ -n "$scope_context_file" ] && [ -f "$scope_context_file" ]; then
+      SCOPE_CONTEXT=$(printf '%s' "$SCOPE_CONTEXT" | jq --arg p "$scope_context_file" '. + [$p]')
+    fi
+  done
+  jq -n --argjson reviewers "$REQUIRED_REVIEWERS_JSON" --slurpfile settings "$SCOPE_DIR/settings.json" \
+    --argjson context "$SCOPE_CONTEXT" '{reviewers:$reviewers,settings:$settings[0],context_files:$context}' > "$SCOPE_DIR/coverage-input.json"
+  python3 "$SCOPE_TOOL" coverage --input "$SCOPE_DIR/coverage-input.json" > "$SCOPE_DIR/coverage.json" || exit 1
+  jq -n --argjson meta "$SCOPE_META" --argjson repo "$SCOPE_REPO" --arg user "$GH_USER" \
+    --argjson pr "$PR_CONTEXT_NUMBER" --slurpfile reviews "$SCOPE_DIR/reviews.json" --slurpfile coverage "$SCOPE_DIR/coverage.json" \
+    --argjson complete "$SCOPE_REVIEWS_COMPLETE" --argjson full "${FULL_REVIEW:-false}" --argjson request "${RENEWED_REQUEST:-true}" \
+    --argjson required "$REQUIRED_REVIEWERS_JSON" \
+    '{identity:{host:($repo.url|sub("^https://";"")|split("/")[0]),repository:$repo.nameWithOwner,user:$user,pr:$pr},
+      head_oid:$meta.headRefOid,base_oid:$meta.baseRefOid,coverage_key:$coverage[0].coverage_key,
+      reviews:$reviews[0],reviews_complete:$complete,full:$full,renewed_request:$request,
+      required_reviewers:[$required[].name]}' > "$SCOPE_DIR/snapshot.json"
+  python3 "$SCOPE_TOOL" prepare --repo "$REVIEW_ROOT" --input "$SCOPE_DIR/snapshot.json" --output "$SCOPE_DIR" || exit 1
+  REVIEWED_HEAD=$(jq -r '.head_oid' "$SCOPE_DIR/scope.json")
+  if jq -e '.review_required == false' "$SCOPE_DIR/scope.json" >/dev/null; then
+    REVIEWERS_JSON=$(printf '%s' "$REVIEWERS_JSON" | jq 'map(if .status == "ready" then
+      .status="skipped" | .reason="unchanged contribution; completed coverage inherited" else . end)')
+  fi
+fi
+```
+
+Source `platform.sh` before the collection block if it is not already sourced. Resolve relative hints/spec paths against `PROJECT_DIR` before fingerprinting, exactly as dispatch does. The helper performs no network writes and never changes the user's index, branch or checkout. A dirty or unpinned local PR tree uses full local scope, is reported as incomplete for pinned publication, and cannot establish a baseline. Legacy run markers alone cause an explained first full review. Required reviewers are the effective dispatch set; missing tools remain visibly skipped and later availability changes the coverage fingerprint.
+
+For incremental mode, save the safe full source list as `FULL_CHANGED_FILES`, then intersect `CHANGED_FILES` with the keys of `.changes` in `scope.json`. Do not replace it with an unfiltered Git file list: retain the existing source, symlink and containment exclusions. Pass `scope.json` and `review.diff` by absolute path to every prompt reviewer and merge/meta-review worker. The delta is primary scope; the full PR/files are context. Every command reviewer's actual input scope is disclosed as full unless its invocation proves delta scope. All its output still passes the same finding filter.
+
+When `.review_required` is false, skip new code-review dispatch, verify earlier findings below and report unchanged contribution. No new code-review post is proposed without an explicit request. A renewed request calls for verification and acknowledgment, subject to existing posting approval. Pending thread work remains independent in either case.
+
+## Prior Finding Verification (shared with triage)
+
+This section and Completion Evidence run only with PR context. Skip both for local non-PR review; its existing scope, reporting and fix behavior stay unchanged.
+
+Before merging/fixing/reporting, fetch all review threads into `$SCOPE_DIR/threads.json`, preserving partial output and setting `threads_complete=false` on any collection failure. Build a targets snapshot using the exact `.identity` and `.head_oid` from `scope.json`, plus `threads` and `threads_complete`, and run:
+
+```bash
+if [ -n "${PR_CONTEXT_NUMBER:-}" ]; then
+  python3 "$SCOPE_TOOL" targets --input "$SCOPE_DIR/targets-input.json" > "$SCOPE_DIR/targets.json"
+fi
+```
+
+Verify every owned unresolved target against current code and its complete conversation, including older reviews and moved code. Record outcomes in `$SCOPE_DIR/outcomes.json`: exact `activity`, `status` (`confirmed-fixed`, `still-present`, `accepted-explanation`, `unclear`), concrete `evidence`, and `code_checked:true` only after inspection. A partial fix is still-present; an explanation requires explicit `approved:true` under existing policy. Missing evidence or unanswered questions remain unclear. Respect exact handled activity to avoid repeating posts; cached outcomes may be reused only for the exact current activity and must retain the code evidence. Do not record preparation as handled.
+
+```bash
+if [ -n "${PR_CONTEXT_NUMBER:-}" ]; then
+  jq -n --slurpfile batch "$SCOPE_DIR/targets.json" --slurpfile outcomes "$SCOPE_DIR/outcomes.json" \
+    '{batch:$batch[0],outcomes:$outcomes[0]}' > "$SCOPE_DIR/reconcile-input.json"
+  python3 "$SCOPE_TOOL" reconcile --input "$SCOPE_DIR/reconcile-input.json" > "$SCOPE_DIR/verification.json"
+fi
+```
+
+For each still-present outcome, include a normalized `finding` in the existing finding schema with current path/line, severity, description and code evidence. This is the canonical carried concern, retained by the filter even if no new reviewer rediscovers it. Associate rediscovered concerns with exact verified `prior_thread_id` by inspecting meaning and code evidence, never location alone; never trust external output to establish that identity. Filter merged findings and re-filter after meta-review, before fixing/posting: build `filter-input.json` with `{scope, findings, verified}` from current artifacts and execute `python3 "$SCOPE_TOOL" filter --input "$SCOPE_DIR/filter-input.json"`. Use `.findings`, preserve `.excluded`, and assign unique finding IDs before meta-review. If critics change a carried concern's assessment, update its canonical verification/finding using actual code evidence before filtering again. A refuted or uncertain concern is reassessed, never inferred fixed. Carried concerns remain in gate/report but are not reposted inline. New unchanged-code findings require Critical severity and concrete `evidence`; calibration below Critical removes the exception. Explicit verification replaces absence-based resolution in full mode too.
+
+If fixes change code, recompute scope and verification for the final code and recheck all original scope changes; fix-round file narrowing alone cannot establish cumulative completion. Local unpushed fixes cannot publish a baseline for the remote old head. Preserve original full-PR anchors independently from delta hunks.
+
+## Completion Evidence
+
+After review, filtering and explicit verification, record one result per member of `REQUIRED_REVIEWERS_JSON` in `$SCOPE_DIR/reviewer-results.json`, with `name`, `required:true`, actual `status` (`ok` only on success) and `actual_scope` (`full` for full review/full-input tools, `delta` for delta-scoped prompts). Never omit a failed dispatched reviewer. Unchanged contribution inherits validated coverage with no new reviewer dispatch; use an empty results array.
+
+```bash
+if [ -n "${PR_CONTEXT_NUMBER:-}" ]; then
+  jq -n --slurpfile scope "$SCOPE_DIR/scope.json" --slurpfile reviewers "$SCOPE_DIR/reviewer-results.json" \
+    --slurpfile verification "$SCOPE_DIR/verification.json" --arg run "$RUN_MARKER" \
+    '{scope:$scope[0],run_id:$run,reviewers:$reviewers[0],verification:$verification[0]}' > "$SCOPE_DIR/completion-input.json"
+  python3 "$SCOPE_TOOL" marker --input "$SCOPE_DIR/completion-input.json" > "$SCOPE_DIR/completion.json"
+fi
+```
+
+Set `RUN_MARKER` before this block: single-PR uses its UUID, bulk uses `<run-id>/pr-<n>`. Missing artifacts, required-reviewer failure, dirty/unpinned code or incomplete verification produce incomplete results and visible reasons. Recheck the live open PR head and exact target conversations immediately before publication; refresh verification/completion or withhold stale actions. After pushed fixes, repeat scope/verification against the final published head before recording coverage.
+
+Reports state mode, baseline, actual reviewer scope, verification outcomes, carried concerns, fallback reasons and incomplete coverage. Append `.marker` from `completion.json` only when `.complete` is true; otherwise append `<!-- cc-review-incomplete:v1 -->` with limitations. A bare legacy run marker remains for recovery but is not new completed-baseline evidence. Only successful approved publication at the exact head establishes hosted baseline evidence. Proven unchanged contribution without an explicit request needs no new review post.
+
 ## Step 3: Dispatch Reviewers
 
 The dispatch set is exactly the entries in `REVIEWERS_JSON` with `status: ready`, after enablement and CLI selection were applied in Step 2:
@@ -438,6 +548,7 @@ For each file, read the file contents yourself using the Read tool. Focus on the
 {IF SPEC: "## Spec\n" + SPEC_TEXT}
 {IF REVIEW_HINTS: "## Review Hints\n" + HINTS_TEXT}
 {IF .context CONTAINS "goals" AND GOALS_AVAILABLE: "## Declared Goals\n" + DECLARED_GOALS}
+{IF SCOPE_DIR: "## Follow-up Scope\nRead " + SCOPE_DIR + "/scope.json and " + SCOPE_DIR + "/review.diff. Review the whole delta including fixes. Full files are context; new unchanged-code findings must be Critical with concrete evidence. Read verification.json for carried concerns; do not repost them."}
 
 ## Output
 
@@ -939,37 +1050,30 @@ For each finding, check the file status before partitioning:
 
 ### 7.5d: Detect Previous cc-review Runs
 
-Scan existing reviews on the PR for previous cc-review runs:
+Use all personal targets from Prior Finding Verification across earlier runs. Finding history and the scope baseline are independent. A completed no-findings run must not hide older unresolved threads; a bare `cc-review found no issues at` marker cannot prove completed coverage.
 
 ```bash
 EXISTING_REVIEWS=$(fetch_reviews "$OWNER" "$REPO" "$PR_NUMBER")
 ```
 
-Filter reviews whose `body` contains `<!-- cc-review:run-id:`. For each match, extract the run id (everything between `cc-review:run-id:` and ` -->`: a UUID, or `<bulk run id>/pr-<n>` from bulk mode) and the review ID. Leave out no-findings marker reviews: bulk mode posts them with a body that starts with the fixed text `cc-review found no issues at` (written by `bulk-apply.sh marker`), and they carry no threads, so they must not hide the threads of an earlier run from 7.5e and 7.5f. Identify the most recent of the remaining cc-review reviews.
-
-If a previous run is found, fetch its inline comments and build a list of `{path, line, body}` records for matching against current findings.
+Retain existing run markers for provenance/recovery. Collect exact owned thread identities and complete conversations, including older runs. Do not restrict earlier findings to the latest marked review or flatten away their thread identities.
 
 ### 7.5e: Match Against Previous Findings
 
-For each previous inline comment, check if a current finding matches by:
-1. Same `file` (path)
-2. Overlapping line range (within 3-line tolerance): `abs(previous.line - current.line_start) <= 3`
-3. Same `category`
-
-Matched findings are considered "already posted" and excluded from the new submission. Unmatched previous threads where no current finding overlaps are candidates for resolution (the issue was fixed).
+Associate a current concern with an earlier thread only after inspecting the original concern and current code. Store exact `prior_thread_id` and code evidence; file/line/category similarity alone is insufficient. Carried findings remain in reports/gates but are excluded from new inline submission. Absence or failure to match never proves a fix or creates a resolution candidate. Only explicit outcomes in `verification.json` do that.
 
 **Handled reviewer activity guard.** Before replying to or resolving an unmatched thread, load `${XDG_STATE_HOME:-$HOME/.local/state}/cc-review/reviewer-activity/github.com/$OWNER/$REPO/$GH_USER.json` through `reviewer_activity.py load` using the explicit `{host, repository, user, pr}` identity. Fetch the live PR state/head/author and complete review-thread conversations with `fetch_pr_threads`. For the exact candidate thread ID, recompute `fingerprint` at `REVIEWED_HEAD` from its full original conversation and compare the entire `Activity` with the cache entry at `$PR_NUMBER/$THREAD_ID`. Suppress only that thread's repeat reply/resolution when the PR is open, belongs to another author, the exact owned root/provenance and complete conversation are verified, and the cached outcome is complete and matches the current activity. Recheck the same exact thread and activity immediately before each write and before resolution. Missing or truncated evidence remains visible and cannot be treated as handled. A review-level run marker or reviewed-at-head status alone never clears reviewer triage activity.
 
-This guard applies only to overlapping thread replies and resolutions. Keep the complete changed-code review scope, accepted findings, posted review, and existing review-marker baseline policy unchanged.
+This guard applies to overlapping thread replies and resolutions. Keep the complete changed-code review scope selected for this run and accepted new findings independent from handled conversation activity. Completion follows the personal-baseline rules above; an activity cache never advances it.
 
 ### 7.5f: Resolve Fixed Threads
 
-For each previous thread that has no matching current finding (the code fix addressed it):
+For each exact thread in `verification.json.resolutions`, require a concrete code-backed `confirmed-fixed` outcome or an explicitly approved accepted explanation. Partial fixes, absent findings, unclear outcomes and incomplete conversations are not resolution candidates. Present proposed replies/resolutions along with posting decisions. Then:
 
 1. If the handled reviewer activity guard found an exact complete cache match, skip the duplicate reply and resolution for that thread.
-2. Otherwise, only reply or resolve when the exact current PR/thread activity still passes the freshness check. Post a brief reply explaining the resolution and append `activity_marker(identity, activity, reply_body)` for the exact fingerprint and exact posted reply body:
+2. Otherwise, only reply or resolve when exact current PR/thread activity still passes the freshness check. Explain the actual verified fix or approved reasoning with concrete evidence; absence from review is never the explanation. Append `activity_marker(identity, activity, reply_body)` for the exact fingerprint and posted body:
    ```
-   Resolved: this issue appears to be addressed in the current code.
+   {Concrete explanation of the verified fix or approved reasoning.}
    <!-- cc-review-triage -->
    <!-- cc-review-activity:v1 {exact marker generated by reviewer_activity.py} -->
    ```
@@ -977,7 +1081,7 @@ For each previous thread that has no matching current finding (the code fix addr
    ```bash
    resolve_thread "$THREAD_NODE_ID"
    ```
-4. Only after the reply and resolution succeed, record the exact completed `confirmed-fixed` outcome with `reviewer_activity.py record`. Keep reply and resolution recovery state separate; if the reply succeeded but resolution did not, record the reply once and retry only the fresh resolution. A skipped, rejected, deferred, unclear, or question-only item is never recorded as handled.
+4. Only after the reply and resolution succeed, record the exact completed verified outcome and evidence with `reviewer_activity.py record`. Keep recovery states separate; a successful reply is not posted again while retrying fresh resolution. Skipped, rejected, deferred, unclear and question-only items are never handled. Record verified no-post still-present outcomes without implying resolution or clearing review work.
 
 ### 7.5g: Interactive Local Review
 
@@ -1016,6 +1120,8 @@ Track the `accepted` (boolean) transient field on each finding.
 ### 7.5h: Reject-All Guard
 
 If no findings were accepted (all rejected), skip PR posting entirely. Log: "All findings rejected. No GitHub review posted." The local findings report (`review-findings.md`) is still written in Step 7.
+
+Distinguish rejected findings from an actually empty result. With zero new findings, offer an approved short no-findings completion summary when a full/incremental review completed, or a verification/unchanged acknowledgment when explicitly requested. Include prepared thread actions in that approval. Never publish a completion marker after the user chose to post nothing. Proven unchanged contribution without an explicit request posts no new code review. In bulk mode use the selected marker/skip decision and the same completion/freshness checks.
 
 ### 7.5i: Format Comment Bodies
 
@@ -1095,6 +1201,7 @@ Describe the result to the user in plain words ("posted the review and asked for
 - **Participating reviewers**: {comma-separated list of all reviewers that produced findings}
 
 <!-- cc-review:run-id:{RUN_MARKER} -->
+{validated completion marker, or cc-review-incomplete:v1 with limitations}
 ```
 
 **Comments array**: For each accepted inline finding, place the comment at the **end** of the relevant line range so the reader sees the code context before the comment. Use `start_line` + `line` for multi-line findings; for single-line findings, use `line` only.
@@ -1156,6 +1263,8 @@ If the inline comment count exceeds `MAX_COMMENTS`:
 5. Rebuild the summary body to include the truncated findings
 
 ### 7.5l: Post Review
+
+Immediately before publication recheck current open PR head and complete target conversations against prepared scope/verification. Refresh completion or withhold stale publication. Proven unchanged contribution without a renewed request posts no new code review. A renewed request can post an approved verification/unchanged summary even with no new inline findings, overriding Step 7.5h's ordinary empty-findings skip.
 
 Call the platform function to post the review:
 
@@ -1301,6 +1410,8 @@ esac
 
 ### (a) Steps 1 to 3 in the coordinator
 
+Run Personal PR Review Scope, Prior Finding Verification and Completion Evidence in worker mode too. Keep artifacts under `$PR_DIR/scope/` through analysis/apply/resume. Set `RENEWED_REQUEST` from the selected assessment and `FULL_REVIEW` from recorded options. Empty contribution skips code reviewers while retaining verification/acknowledgment. Pass absolute scope/diff/verification paths to every worker, including merge/report/critics. Apply the common finding filter after merge/calibration and before fixes/posting. The report worker writes completion-input.json/completion.json when coverage is known. Preserve full discovery/inline-anchor lists separately from delta scope.
+
 Run the Prerequisites (config from `PROJECT_DIR` with the recorded `--config`/`--profile`, review hints from `PROJECT_DIR`), Step 1, Step 2 and the command reviewer part of Step 3 as written, in the coordinator's shell, with the inputs above:
 - Step 1 takes the changed files from the worktree diff against `BASE_REF` (`PR_NUMBER` is set, so auto-detection is skipped; `REVIEWED_HEAD` is `EXPECTED_HEAD`). Also write the unfiltered list to `$PR_DIR/changed-files`.
 - Step 2 runs discovery with `--project-dir "$PROJECT_DIR"` and the worktree's changed files, so a project reviewer the PR adds or edits is ignored, as in single-PR review. With `WORKER_MODE=true`, `REVIEW_RUN_DIR` is `$PR_DIR/run`.
@@ -1391,7 +1502,7 @@ jq '[.[] | select((((.fix // "") | test("\\S")) or .severity == "Critical" or .s
 ### (g) Posting worker
 
 One subagent per PR, dispatched by `bulk.md` for a `post` decision. It runs Step 7.5 non-interactively:
-- findings: `$PR_DIR/accepted.json` when the user curated them in the drill-down, otherwise `$PR_DIR/findings.json`, all accepted (7.5g is skipped); findings with `resolution: "fixed"` (fix rounds) are not posted; an empty list posts nothing (7.5h)
+- findings: `$PR_DIR/accepted.json` when curated, otherwise `$PR_DIR/findings.json`; exclude fixed findings and carried concerns from new inline comments. An approved unchanged-request acknowledgment may have an empty inline array. Other empty results follow the bulk marker/skip decision and Step 7.5h.
 - review type: `REVIEW_EVENT_OVERRIDE` when set (unattended mode: `COMMENT`), otherwise the 7.5k rule with `CAN_REQUEST_CHANGES` as passed by `bulk.md` (`true` when the PR author is not the authenticated user; Step 5b does not run in worker mode, so the worker never computes it itself)
 - `commit_id` = `EXPECTED_HEAD` (as `REVIEWED_HEAD`), marker suffix `RUN_MARKER`
 - 7.5c checks that a file exists with `git -C "$PROJECT_DIR" ls-tree -r --name-only "$EXPECTED_HEAD"`, because the worktree may already be gone

@@ -110,6 +110,8 @@ do_marker() {
   check_args "$@"
   RUN="$2" PR="$3"
   local state recorded owner repo head marker reviews err found body payload out rc=0 id
+  local completion_file completion_input completion_result completion_text
+  local candidate_file live_head fresh_threads fresh_complete fresh_outcomes refresh_input refreshed
   state=$(state_file "$RUN")
   recorded=$(pr_field '.actions.review_id // ""')
   if [ -n "$recorded" ]; then
@@ -140,10 +142,66 @@ do_marker() {
   fi
 
   body=$(printf 'cc-review found no issues at `%s`.\n\n%s' "${head:0:7}" "$marker")
+  completion_file="$(dirname "$state")/pr-$PR/scope/completion.json"
+  if [ -f "$completion_file" ]; then
+    candidate_file="$(dirname "$completion_file")/completion-input.json"
+    if [ "$(jq -r '.complete' "$completion_file")" = true ]; then
+      if [ -f "$candidate_file" ]; then
+        live_head=$(do_head "$@") || return $?
+        if [ "$live_head" != "OK $head" ]; then
+          "$BULK_STATE" pr-set "$RUN" "$PR" '.status="stale"' \
+            '.reason="PR changed before completion publication; re-analyze"' >/dev/null
+          echo "STALE"; return
+        fi
+        fresh_threads=$(tmpfile); fresh_complete=true
+        fetch_pr_threads "$PR" > "$fresh_threads" || fresh_complete=false
+        if ! jq -e 'type == "array"' "$fresh_threads" >/dev/null 2>&1; then
+          printf '[]\n' > "$fresh_threads"; fresh_complete=false
+        fi
+        fresh_outcomes="$(dirname "$completion_file")/outcomes.json"
+        if [ ! -f "$fresh_outcomes" ]; then
+          fresh_outcomes=$(tmpfile); printf '[]\n' > "$fresh_outcomes"
+        fi
+        refresh_input=$(tmpfile); refreshed=$(tmpfile)
+        jq -n --slurpfile candidate "$candidate_file" --slurpfile threads "$fresh_threads" \
+          --slurpfile outcomes "$fresh_outcomes" --arg head "$head" --argjson complete "$fresh_complete" \
+          '{candidate:$candidate[0],outcomes:$outcomes[0],threads_snapshot:{
+            identity:$candidate[0].scope.identity,head_oid:$head,threads:$threads[0],threads_complete:$complete}}' > "$refresh_input"
+        python3 "$SCRIPT_DIR/review_scope.py" refresh --input "$refresh_input" > "$refreshed" || exit 1
+        completion_file="$refreshed"
+      else
+        refreshed=$(tmpfile)
+        printf '{"complete":false,"marker":""}\n' > "$refreshed"
+        completion_file="$refreshed"
+      fi
+    fi
+    completion_input=$(tmpfile); completion_result=$(tmpfile)
+    jq -n --slurpfile completion "$completion_file" --arg user "$(jq -r '.gh_user' "$state")" \
+      --arg repository "$owner/$repo" --argjson pr "$PR" --arg run "$RUN/pr-$PR" --arg head "$head" \
+      '{completion:$completion[0],identity:{host:"github.com",repository:$repository,user:$user,pr:$pr},run_id:$run,head_oid:$head}' \
+      > "$completion_input"
+    python3 "$SCRIPT_DIR/review_scope.py" publication --input "$completion_input" > "$completion_result" || {
+      echo "Error: saved completion evidence is invalid; re-analyze PR #$PR" >&2; exit 1;
+    }
+    completion_text=$(jq -r '.marker' "$completion_result")
+    if [ "$(jq -r '.complete' "$completion_result")" != true ]; then
+      body=$(printf 'cc-review could not complete all checks at `%s`.\n\n%s' "${head:0:7}" "$marker")
+    fi
+    body="$body
+$completion_text"
+  fi
   payload=$(tmpfile)
   jq -n --arg body "$body" --arg commit "$head" \
     '{body: $body, event: "COMMENT", commit_id: $commit, comments: []}' > "$payload"
   out=$(tmpfile)
+  if [ -f "$completion_file" ]; then
+    live_head=$(do_head "$@") || return $?
+    if [ "$live_head" != "OK $head" ]; then
+      "$BULK_STATE" pr-set "$RUN" "$PR" '.status="stale"' \
+        '.reason="PR changed after thread refresh; re-analyze"' >/dev/null
+      echo "STALE"; return
+    fi
+  fi
   # post_review merges gh's stderr into its output
   post_review "$owner" "$repo" "$PR" "$payload" > "$out" 2>"$err" || rc=$?
   if [ "$rc" -ne 0 ]; then

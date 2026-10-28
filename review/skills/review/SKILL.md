@@ -1,7 +1,7 @@
 ---
 name: review
 description: Multi-agent code review with autonomous fix loop
-argument-hint: "[--pr <number>] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel] [--bulk] [--all-open] [--search <query>] [--limit <n>] [--unattended] [--resume [<run-id>]]"
+argument-hint: "[--pr <number>] [--full] [--spec <path>] [--hints <path>] [--output <path>] [--config <path>] [--profile <name>] [--no-fix] [--max-rounds <n>] [--no-external] [--external] [--no-<reviewer>] [--only <reviewer,...>] [--no-meta-review] [--sequential] [--parallel] [--bulk] [--all-open] [--search <query>] [--limit <n>] [--unattended] [--resume [<run-id>]]"
 ---
 
 # Review
@@ -26,6 +26,7 @@ that contains `commands/review.md`) in every shell block of the command.
 
 Pass through all arguments from the user's invocation:
 - `--pr <number>`: Target PR number
+- `--full`: Force full PR review instead of automatic personal incremental scope; also applies in bulk mode
 - `--spec <path>`: Specification file path
 - `--hints <path>`: Review hints file
 - `--output <path>`: Output report path

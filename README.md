@@ -115,6 +115,10 @@ Reviews all changed files on the current branch against main. Dispatches every e
 
 Reviews the diff of a specific PR.
 
+PR follow-ups automatically review changes since your latest trustworthy completed cc-review run, including code changed to fix earlier findings. Earlier concerns are verified explicitly and retained in their original threads until addressed; their absence from a new review never proves a fix. In incremental mode, new findings on unchanged code require a critical problem with concrete evidence.
+
+Use `review --pr 42 --full` or `review --bulk --full` to request full scope. First reviews, legacy markers without completion evidence, changed reviewer coverage/settings and unreliable history comparisons also use full review with an explanation. Proven rebase-only changes avoid another code review; a renewed request receives verification and an acknowledgment under existing posting approval.
+
 ```
 /review --spec specs/feature/spec.md
 ```
@@ -138,6 +142,7 @@ Dispatch only the named reviewers. Any discovered reviewer name works here and i
 | Flag | Description |
 |------|-------------|
 | `--pr <number>` | Review a specific PR's diff |
+| `--full` | Force full PR scope, including already-reviewed bulk candidates; retains draft/filter exclusions |
 | `--spec <path>` | Specification file for compliance checking |
 | `--hints <path>` | Review hints file (default: `.cc-review/review-hints.md`) |
 | `--output <path>` | Output report path (default: `./review-findings.md`) |
@@ -221,7 +226,7 @@ Continues an unfinished run, or starts a new one, without asking anything. This 
 
 Run state and reports live in `.cc-review/bulk/<run-id>/` (git-ignored); `state.md` shows the progress. See the [standalone guide](docs/standalone-guide.md#bulk-review-and-triage) for the details.
 
-The separate [incremental follow-up review proposal](brainstorm/09-incremental-review.md) covers delta-scoped re-review and rebase handling. That behavior remains proposed; inbox action alignment does not replace full review with incremental review.
+Review and triage share exact verification evidence and avoid duplicate thread actions. Triage never advances the code-review baseline. Reports disclose scope, personal baseline, actual tool coverage, fallback reasons and incomplete work. A completed no-findings review can establish a baseline when approved and posted with completion evidence; incomplete or unposted work cannot. Command reviewers without delta support may still examine the full PR, with their findings subject to the same scope policy. See the [standalone guide](docs/standalone-guide.md#follow-up-reviews) for details.
 
 ## Configuration
 

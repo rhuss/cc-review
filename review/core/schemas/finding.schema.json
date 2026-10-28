@@ -18,6 +18,20 @@
     "round_found"
   ],
   "properties": {
+    "scope": {
+      "type": "string",
+      "enum": ["latest_delta", "carried", "unchanged_critical"],
+      "description": "Review scope; carried findings refer to an explicitly verified earlier thread"
+    },
+    "evidence": {
+      "type": "string",
+      "description": "Concrete code evidence, required for new critical findings outside an incremental delta"
+    },
+    "prior_thread_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact verified earlier thread; never infer identity from line proximity alone"
+    },
     "id": {
       "type": "string",
       "pattern": "^FINDING-[0-9]+$",

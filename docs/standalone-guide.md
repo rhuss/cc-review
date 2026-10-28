@@ -84,6 +84,29 @@ allow_untrusted_checkout:
   codex: true
 ```
 
+## Follow-up Reviews
+
+Both single-PR and bulk review automatically use incremental scope when your own latest completed cc-review run provides trustworthy, compatible coverage. They review every change since that baseline, including requested fixes. Other reviewers' runs do not establish your baseline.
+
+The report names the mode, baseline, reviewed content, verification outcomes and actual tool coverage. The full PR remains available as context. In incremental mode, ordinary new findings stay within the delta; a new critical problem in unchanged code needs concrete evidence. Command reviewers without incremental support may read the full PR, which is disclosed, and their output is filtered by the same finding policy.
+
+Earlier unresolved findings from all your cc-review runs are checked explicitly. Partial fixes remain open in their original threads, including when a new reviewer does not rediscover them. Review and reviewer triage use the same exact activity and verification rules to avoid duplicate replies/resolutions. Triage does not advance a code-review baseline or clear separate changed-code work.
+
+Force a full review when needed:
+
+```text
+review --pr 42 --full
+review --bulk --full
+```
+
+First reviews, legacy run markers without explicit completion evidence, changed reviewer coverage/settings and unavailable or unreliable comparison history trigger an explained full review. A completed no-findings review can become a baseline after approved publication; a local-only run, missing verification, failed required reviewer or dirty/unpinned PR checkout cannot create pinned completion evidence. Unresolved findings do not by themselves make a review incomplete.
+
+A proven rebase-only update requires no new code review or review post. Pending thread work remains independent. A renewed review request receives verification and an unchanged-contribution acknowledgment rather than an automatic full review. Substantive conflict resolutions and additional changes are reviewed; uncertain equivalence triggers full fallback.
+
+Existing approval and unattended policies still govern every remote action. Scope preparation does not post, resolve, change branches or alter the user's index. Prepared completion evidence is checked against the current PR head and conversations before publication.
+
+Missing current head/base objects are fetched before comparison, including when you are already on the PR branch. Unavailable older baseline objects still cause full fallback. A labeled incomplete personal attempt stays actionable even if GitHub clears its review request; a later completed personal review supersedes it. Approved partial notices never establish completed coverage.
+
 ## Repository Inbox
 
 Use `/inbox --type pr` to see open PRs and whether your next action is review, triage, or both. Review covers a first or substantial code review. Triage continues eligible feedback already owned by you on another author's PR, or comments on your own PR. A PR can stay eligible for both actions; completing one does not satisfy the other. The inbox is read-only and labels missing or bounded review-thread context as incomplete instead of treating it as a verified empty result.
@@ -217,15 +240,15 @@ Each PR is checked out into its own temporary worktree, so your current branch, 
 These rules hold for every selector:
 
 - Draft PRs are skipped by ordinary bulk review unless the search explicitly selects them (`is:draft` or `draft:true`). Triage includes drafts because existing feedback can still need action.
-- `/review --bulk` skips a PR that already has a cc-review review at its current head commit. A cc-review marker posted by the PR's own author doesn't count, so nobody can opt their PR out of review that way. The one exception is your own marker on your own PR, which counts. (`/triage --bulk` does not apply this rule; it goes by unresolved threads.)
+- `/review --bulk` normally skips a PR reviewed at its current head, except for a renewed personal/team request or `--full`. Marked incomplete runs do not clear review work. A marker by the PR's author does not suppress another reviewer; your own marker on your own PR retains its existing selection behavior. Triage selection remains independent.
 - The search always stays inside the current repository and its open PRs, so `repo:`, `org:`, `user:`, `is:closed`, `is:merged` and `state:` are rejected.
 - `--limit <n>` caps the run (10 by default). The PRs that haven't been updated for the longest time come first.
 
-Delta-scoped incremental follow-up review, including rebase handling and explicit verification of prior findings, is still proposed in [brainstorm #09](../brainstorm/09-incremental-review.md). The current shared inbox assessment separates review from triage without replacing the review command's full-review behavior.
+Selection can retain uncertain changed-head candidates without computing their entire delta. Execution establishes incremental/full scope and can then report a proven unchanged contribution and skip new code review. The inbox remains read-only and lightweight.
 
 Some combinations are rejected before anything runs: `--all-open` with `--search`, `--bulk` with `--pr`, `--spec` with `--bulk`, `--output` with bulk review (each PR's report goes to its run directory), and a `--limit` that isn't a positive whole number.
 
-The usual review options apply to every PR in the run: `--config`, `--profile`, the reviewer selection (`--only`, `--no-<reviewer>`, `--external`, `--no-external`), `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential` and `--parallel`. `--no-fix` takes "apply fixes" off the menu. For triage, `--config` and `--profile` carry over, and `--idea-inbox` asks once, after you have decided on all PRs.
+The usual review options apply to every PR: `--full`, `--config`, `--profile`, reviewer selection (`--only`, `--no-<reviewer>`, `--external`, `--no-external`), `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential` and `--parallel`. `--no-fix` removes "apply fixes". Resume uses recorded scope options; start a new run to change `--full`. For triage, `--config`, `--profile` and `--idea-inbox` retain their behavior.
 
 ### Deciding what happens
 

@@ -2247,6 +2247,18 @@ reviews_fixture() {
     nodes:[$r[] | .comments.nodes[] | {id:("PRRT_\(.databaseId)"), isResolved:false, isOutdated:false, comments:{nodes:[{databaseId, body, author:{login:"me"}}]}}]}}}}}' > "$dir/graphql-threads-$n.json"
 }
 
+test_platform_fetch_reviews_retains_partial_thread_ids() {
+  local out
+  make_bulk_repo
+  reviews_fixture "$TEST_TMP/gh" 7 '[{databaseId:1,body:"review",author:{login:"me"},commit:{oid:"old"},
+    comments:{nodes:[{databaseId:11,path:"a.sh",line:3,body:"concern"}]}}]'
+  jq '.data.repository.pullRequest.reviewThreads.nodes[0].comments.pageInfo={hasNextPage:true,hasPreviousPage:false}' \
+    "$TEST_TMP/gh/graphql-threads-7.json" > "$TEST_TMP/threads.json"
+  mv "$TEST_TMP/threads.json" "$TEST_TMP/gh/graphql-threads-7.json"
+  out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh bash -c 'source "$1"; fetch_reviews acme widget 7' _ "$SCRIPTS/platform.sh" 2>"$TEST_TMP/partial.err")"
+  assert_json "collected IDs survive incomplete thread collection" "$out" '.[0].comments.nodes[0].pullRequestReviewThread.id' "PRRT_11"
+}
+
 test_platform_fetch_reviews_includes_commit() {
   local out
   make_bulk_repo
@@ -2386,7 +2398,7 @@ test_bulk_select_review_default_union() {
   local out
   make_bulk_repo
   out="$(bselect review --user me)"
-  assert_json "requested plus re-review, deduplicated, oldest update first" "$out" '[.selected[].number] | join(",")' "14,11,10"
+  assert_json "requested plus re-review, deduplicated, oldest update first" "$out" '[.selected[].number] | join(",")' "14,11,10,12"
   assert_json "a review without the marker is no re-review" "$out" '[(.selected + .excluded)[] | select(.number == 15)] | length' "0"
   assert_json "seed fields" "$out" '.selected[] | select(.number == 11) | [.title, .author, .head_ref, .base_ref, .head_repo_url, (.is_cross_repo | tostring)] | join("|")' \
     "Fix race|bob|topic-11|main|https://github.com/acme/widget.git|false"
@@ -2406,9 +2418,32 @@ test_bulk_select_excludes_reviewed_at_head() {
   local out
   make_bulk_repo
   out="$(bselect review --user me)"
-  assert_json "a marker review by someone other than the PR author at the head excludes the PR" "$out" '.excluded[] | select(.number == 12) | .reason' "reviewed-at-head"
+  assert_json "a renewed request survives another reviewer's head marker" "$out" '[.selected[] | select(.number == 12)] | length' "1"
   assert_json "a marker review at the head also beats an older one" "$out" '.excluded[] | select(.number == 17) | .reason' "reviewed-at-head"
   assert_json "a marker review at an older head is not excluded" "$out" '[.selected[] | select(.number == 14)] | length' "1"
+}
+
+test_bulk_select_incomplete_current_head() {
+  local out author
+  make_bulk_repo
+  mkdir -p "$TEST_TMP/gh"
+  printf '[]\n' > "$TEST_TMP/gh/pr-list-review-requested.json"
+  for author in alice me; do
+    jq --arg author "$author" '[.[] | select(.number == 14) | .author.login=$author
+      | .reviews=[{author:{login:"me"},commit:{oid:.headRefOid},
+          body:"<!-- cc-review:run-id:partial -->\n<!-- cc-review-incomplete:v1 -->"}]]' \
+      "$BULK_FIXTURES/pr-list-reviewed-by.json" > "$TEST_TMP/gh/pr-list-reviewed-by.json"
+    out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect review --user me)"
+    assert_json "$author PR: incomplete current head remains selectable" "$out" '[.selected[].number] | join(",")' "14"
+  done
+}
+
+test_bulk_select_full_override() {
+  local out
+  make_bulk_repo
+  out="$(bselect review --full --user me)"
+  assert_json "full includes already-reviewed candidates" "$out" '[.selected[].number] | index(17) != null' "true"
+  assert_json "full retains draft exclusion" "$out" '[.selected[].number] | index(13) == null' "true"
 }
 
 test_bulk_select_drops_drafts() {
@@ -2424,7 +2459,7 @@ test_bulk_select_limit_and_order() {
   make_bulk_repo
   out="$(bselect review --user me --limit 2)"
   assert_json "the least recently updated PRs are kept" "$out" '[.selected[].number] | join(",")' "14,11"
-  assert_json "the rest is over the limit" "$out" '[.excluded[] | select(.reason == "over-limit") | .number] | join(",")' "10"
+  assert_json "the rest is over the limit" "$out" '[.excluded[] | select(.reason == "over-limit") | .number] | join(",")' "10,12"
   bselect review --user me --limit 0 >/dev/null 2>&1; rc=$?
   assert_eq "limit 0 is a usage error" "2" "$rc"
   bselect review --limit 2 >/dev/null 2>&1; rc=$?
@@ -2570,7 +2605,8 @@ test_bulk_select_refetches_truncated_reviews() {
   jq '[.[] | if .number == 11 then .reviews = [range(100) | {author: {login: "x"}, body: "ok", commit: {oid: "old"}}] else . end]' \
     "$BULK_FIXTURES/pr-list-review-requested.json" > "$dir/pr-list-review-requested.json"
   reviews_fixture "$dir" 11 "[{databaseId: 5, body: \"<!-- cc-review:run-id:r/pr-11 -->\", author: {login: \"carol\"}, commit: {oid: \"$(printf '%040d' 11)\"}, comments: {nodes: []}}]"
-  out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$dir" with_fake_gh bash "$BULK_SELECT" review --user me)"
+  cp "$dir/pr-list-review-requested.json" "$dir/pr-list-all.json"
+  out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$dir" with_fake_gh bash "$BULK_SELECT" review --all-open --user me)"
   assert_json "the full review list decides" "$out" '.excluded[] | select(.number == 11) | .reason' "reviewed-at-head"
 }
 
@@ -2592,6 +2628,50 @@ review_run_pr7() {
     updated_at: "2026-10-20T10:00:00Z"}]')" '[]' >/dev/null || return 1
   SHA="$1" bstate pr-set "$run" 7 '.status="analyzed"' '.analyzed_head=env.SHA' '.expected_head=env.SHA' >/dev/null || return 1
   printf '%s' "$run"
+}
+
+test_bulk_apply_marker_validates_completion_evidence() {
+  local run head evidence input rc=0
+  make_bulk_repo
+  head="abcdef1234567890abcdef1234567890abcdef12"
+  run="$(review_run_pr7 "$head")"
+  reviews_fixture "$TEST_TMP/gh" 7 '[]'
+  mkdir -p "$TEST_TMP/bulk/$run/pr-7/scope"
+  evidence=$(jq -nc --arg h "$head" --arg r "$run/pr-7" '{identity:{host:"github.com",repository:"acme/widget",user:"me",pr:7},
+    run_id:$r,mode:"full",head_oid:$h,base_oid:$h,coverage_key:("a"*64),complete:true,parent_run_id:null,root_run_id:$r}')
+  jq -nc --argjson e "$evidence" '{complete:true,evidence:$e,marker:("<!-- cc-review-scope:v1 " + ($e|tojson) + " -->")}' \
+    > "$TEST_TMP/bulk/$run/pr-7/scope/completion.json"
+  jq -nc --arg h "$head" '{state:"OPEN",headRefOid:$h}' > "$TEST_TMP/gh/pr-view-7.json"
+  jq -nc --argjson e "$evidence" '{scope:($e + {clean:true,required_reviewers:["correctness"],baseline:null}),
+    run_id:$e.run_id,reviewers:[{name:"correctness",required:true,status:"ok",actual_scope:"full"}]}' \
+    > "$TEST_TMP/bulk/$run/pr-7/scope/completion-input.json"
+  FAKE_GH_FAIL='pr view*' FAKE_GH_FAIL_AFTER=1 bapply marker "$run" 7 > "$TEST_TMP/stale-marker.out" 2> "$TEST_TMP/stale-marker.err" || rc=$?
+  assert_eq "head is rechecked after refreshing threads" "1" "$rc"
+  assert_not_contains "failed final head check prevents publication" "$(cat "$TEST_TMP/gh.log")" "--method POST"
+  : > "$TEST_TMP/gh.log"
+  assert_contains "valid completion is posted" "$(bapply marker "$run" 7)" "POSTED"
+  input="$(sed -n 's/^INPUT //p' "$TEST_TMP/gh.log")"
+  assert_json "no-findings review carries completion evidence" "$input" '.body | contains("cc-review-scope:v1")' "true"
+  run="$(review_run_pr7 "$head")"
+  mkdir -p "$TEST_TMP/bulk/$run/pr-7/scope"
+  printf '{"complete":false,"marker":""}\n' > "$TEST_TMP/bulk/$run/pr-7/scope/completion.json"
+  : > "$TEST_TMP/gh.log"
+  bapply marker "$run" 7 >/dev/null
+  input="$(sed -n 's/^INPUT //p' "$TEST_TMP/gh.log")"
+  assert_json "incomplete review is labeled" "$input" '.body | contains("cc-review-incomplete:v1")' "true"
+  assert_json "incomplete work has no baseline marker" "$input" '.body | contains("cc-review-scope:v1")' "false"
+}
+
+test_platform_thread_collection_discloses_truncation() {
+  local out rc=0
+  make_bulk_repo
+  reviews_fixture "$TEST_TMP/gh" 7 '[]'
+  jq '.data.repository.pullRequest.reviewThreads.nodes=[{id:"T",isResolved:false,comments:{totalCount:101,
+      pageInfo:{hasNextPage:true,hasPreviousPage:false},nodes:[]}}]' "$TEST_TMP/gh/graphql-threads-7.json" > "$TEST_TMP/threads.json"
+  mv "$TEST_TMP/threads.json" "$TEST_TMP/gh/graphql-threads-7.json"
+  out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh bash -c 'source "$1"; fetch_pr_threads 7' _ "$SCRIPTS/platform.sh" 2>"$TEST_TMP/threads.err")" || rc=$?
+  assert_eq "truncated conversations return incomplete status" "1" "$rc"
+  assert_json "partial evidence remains usable" "$out" '.[0].id' "T"
 }
 
 test_bulk_apply_marker_posts_comment_with_commit_id() {
@@ -3387,6 +3467,15 @@ deleted.py" "$out"
   done
 }
 
+test_review_adapters_pass_full_scope() {
+  local f
+  for f in "$ROOT/review/skills/review/SKILL.md" "$ROOT/review/opencode/command/review.md" \
+           "$ROOT/speckit/commands/speckit.cc-review.review.md"; do
+    assert_contains "review adapter forwards full scope: $f" "$(cat "$f")" '`--full`'
+  done
+  assert_contains "core documents automatic scope" "$(cat "$REVIEW_MD")" "Personal PR Review Scope"
+}
+
 test_shims_pass_bulk_flags() {
   local f
   for f in "$ROOT/review/skills/review/SKILL.md" "$ROOT/review/skills/triage/SKILL.md" \
@@ -4031,6 +4120,15 @@ test_bulk_md_pre_decision_refresh() {
 # Main
 # ---------------------------------------------------------------------------
 
+test_review_scope() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_review_scope.py" 2>&1)"; then
+    _pass
+  else
+    _fail "incremental review scope Python suite" "$output"
+  fi
+}
+
 test_pr_actions() {
   local output
   if output="$(python3 -B "$ROOT/tests/test_pr_actions.py" 2>&1)"; then
@@ -4205,6 +4303,13 @@ main() {
   run_test test_bulk_state_abandon_removes_worktrees
   run_test test_inbox
   run_test test_pr_actions
+  run_test test_review_scope
+  run_test test_bulk_apply_marker_validates_completion_evidence
+  run_test test_platform_thread_collection_discloses_truncation
+  run_test test_bulk_select_full_override
+  run_test test_review_adapters_pass_full_scope
+  run_test test_bulk_select_incomplete_current_head
+  run_test test_platform_fetch_reviews_retains_partial_thread_ids
 
   if [ -n "$FILTER" ] && [ "$RAN" -eq 0 ]; then
     echo "Error: no test matches filter '$FILTER'" >&2

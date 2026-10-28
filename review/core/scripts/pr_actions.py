@@ -3,6 +3,7 @@
 import argparse
 import copy
 import json
+import re
 import sys
 
 import reviewer_activity as activity
@@ -98,11 +99,19 @@ def _action(eligible=False, role=None, reason="No supported action", evidence=No
 def _marker(review):
     # Preserve bulk review's existing marker/author policy, including markers
     # in review bodies. Reviewer-thread provenance uses the stricter helper.
-    return "<!-- cc-review:run-id:" in (review.get("body") or "")
+    body = activity._without_fenced_code(review.get("body") or "")
+    return ("<!-- cc-review:run-id:" in body
+            and not re.search(r"(?m)^<!-- cc-review-incomplete:v1 -->$", body))
+
+
+def _incomplete(review):
+    body = activity._without_fenced_code(review.get("body") or "")
+    return ("<!-- cc-review:run-id:" in body
+            and bool(re.search(r"(?m)^<!-- cc-review-incomplete:v1 -->$", body)))
 
 
 def assess_pr(evidence: dict, handled: dict, review_mode: str = "default",
-              include_review_drafts: bool = False) -> dict:
+              include_review_drafts: bool = False, force_full: bool = False) -> dict:
     if review_mode not in ("default", "all-open", "search"):
         raise ValueError("review_mode must be default, all-open or search")
     user, author = evidence.get("user"), evidence.get("author")
@@ -129,6 +138,9 @@ def assess_pr(evidence: dict, handled: dict, review_mode: str = "default",
         return result
 
     reviews = evidence.get("reviews") or []
+    attempts = [(r.get("submittedAt") or "", i, r) for i, r in enumerate(reviews)
+                if activity.author(r) == user and (_marker(r) or _incomplete(r))]
+    pending_incomplete = bool(attempts and _incomplete(sorted(attempts, key=lambda r: (r[0], r[1]))[-1][2]))
     at_head = [r for r in reviews if _marker(r) and (r.get("commit") or {}).get("oid") == head
                and (activity.author(r) != author or activity.author(r) == user)]
     older = [r for r in reviews if _marker(r) and activity.author(r) == user and author != user
@@ -138,12 +150,18 @@ def assess_pr(evidence: dict, handled: dict, review_mode: str = "default",
         review.update(reason="Draft excluded from ordinary bulk review; triage is assessed separately", exclusion="draft")
     elif not head or not coverage.get("reviews", False):
         review.update(reason="Head or review history is incomplete", complete=False, exclusion="incomplete-evidence")
-    elif at_head:
-        review.update(reason="cc-review already reviewed this head", exclusion="reviewed-at-head",
-                      evidence=[{"kind": "reviewed-at-head", "head_oid": head}])
     elif requested:
         review.update(eligible=True, reason="Outstanding personal or team review request", exclusion=None,
                       evidence=[{"kind": "review-request", "reasons": reasons}])
+    elif pending_incomplete:
+        review.update(eligible=True, reason="Latest personal cc-review attempt was incomplete", exclusion=None,
+                      evidence=[{"kind": "incomplete-review"}])
+    elif force_full and (at_head or older or review_mode in ("all-open", "search")):
+        review.update(eligible=True, reason="Explicit full review of a PR in review scope", exclusion=None,
+                      evidence=[{"kind": "full-override"}])
+    elif at_head:
+        review.update(reason="cc-review already reviewed this head", exclusion="reviewed-at-head",
+                      evidence=[{"kind": "reviewed-at-head", "head_oid": head}])
     elif older:
         unchanged = evidence.get("contribution") or {}
         if unchanged.get("reliable") is True and unchanged.get("unchanged") is True:
@@ -218,14 +236,15 @@ def assess_pr(evidence: dict, handled: dict, review_mode: str = "default",
 
 
 def select_prs(evidence: list, handled: dict, action: str, limit: int,
-               review_mode: str = "default", include_review_drafts: bool = False) -> dict:
+               review_mode: str = "default", include_review_drafts: bool = False,
+               force_full: bool = False) -> dict:
     if action not in ("review", "triage"):
         raise ValueError("action must be review or triage")
     if type(limit) is not int or limit < 1:
         raise ValueError("limit must be a positive integer")
     selected, excluded, warnings = [], [], []
     for value in sorted(evidence, key=lambda e: (e.get("updated_at") or "", e["number"])):
-        assessment = assess_pr(value, handled, review_mode, include_review_drafts)
+        assessment = assess_pr(value, handled, review_mode, include_review_drafts, force_full)
         decision = assessment[action]
         if not decision["complete"]:
             warnings.append("PR #" + str(value["number"]) + ": " + decision["reason"])
@@ -250,6 +269,7 @@ def main(argv=None):
     parser.add_argument("--host", required=True)
     parser.add_argument("--review-mode", required=True, choices=("default", "all-open", "search"))
     parser.add_argument("--include-review-drafts", action="store_true")
+    parser.add_argument("--full", action="store_true")
     parser.add_argument("--action", choices=("review", "triage"))
     parser.add_argument("--limit", type=int)
     args = parser.parse_args(argv)
@@ -267,10 +287,10 @@ def main(argv=None):
             normalized.update(host=args.host, handled_complete=not warnings)
             evidence.append(normalized)
         if args.operation == "select":
-            result = select_prs(evidence, records, args.action, args.limit, args.review_mode, args.include_review_drafts)
+            result = select_prs(evidence, records, args.action, args.limit, args.review_mode, args.include_review_drafts, args.full)
             result["warnings"] = warnings + result["warnings"]
         else:
-            assessments = [assess_pr(value, records, args.review_mode, args.include_review_drafts) for value in evidence]
+            assessments = [assess_pr(value, records, args.review_mode, args.include_review_drafts, args.full) for value in evidence]
             result = dict(assessments=assessments, warnings=warnings + [
                 "PR #" + str(a["number"]) + ": " + a[k]["reason"] for a in assessments
                 for k in ("review", "triage") if not a[k]["complete"]])

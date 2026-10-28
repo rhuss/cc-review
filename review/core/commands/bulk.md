@@ -82,6 +82,7 @@ Parse the user's arguments. Every value flag consumes the next argument as its v
 | `--spec <path>`, `--output <path>` | `SPEC_FLAG`, `OUTPUT_FLAG` | rejected: `--spec` for bulk review and bulk triage (a spec belongs to one change), `--output` for bulk review |
 | `--config <path>`, `--profile <name>` | `CONFIG_FLAG`, `PROFILE_FLAG` | apply to every PR |
 | `--no-fix` | `NO_FIX=true` | review: "apply fixes" is not offered |
+| `--full` | `FULL_REVIEW=true` | review only: also retain `--full` in `PER_PR_OPTIONS`/recorded options and pass it to selection; force full scope, keeping draft/scope exclusions |
 | `--idea-inbox <path>` | `IDEA_INBOX_FLAG` | triage: offered once after the decision step (deferred only) |
 | `--no-coverage-fix` | | triage: accepted, no effect (coverage remediation never runs in bulk) |
 | every other argument | `PER_PR_OPTIONS` | review: reviewer selection (`--only`, `--no-<name>`, `--external`, `--no-external`), `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential`, `--parallel`; applied to every PR exactly as the single-PR command reads them |
@@ -190,6 +191,7 @@ The output lists unfinished run ids, newest (most recently updated) first. With 
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID=""
 S="$CC_REVIEW_CORE_DIR/scripts"; cd "$PROJECT_DIR" || exit 1
 SELECT_ARGS=(--user "$GH_USER" --limit "${LIMIT_FLAG:-10}")
+[ "${FULL_REVIEW:-false}" = true ] && SELECT_ARGS+=(--full)
 if [ "${ALL_OPEN_FLAG:-}" = true ]; then SELECT_ARGS+=(--all-open); fi
 if [ "${SEARCH_GIVEN:-}" = true ]; then SELECT_ARGS+=(--search "$SEARCH_QUERY"); fi
 # The selection is kept inside the ignored state root until the run exists (FR-033)
@@ -357,7 +359,9 @@ Failure handling (`review.md` Worker Mode):
 - An early stop in Steps 1 to 3, or a merge or report worker that fails, returns no `STATUS` line or leaves its output file missing, fails the PR: set `failed` with a reason naming the step (`REASON="merge worker failed: <detail>"`), keep the worktree, and go to the next PR.
 - `STATUS failed reason=rate-limited` from any worker: see Rate Limits.
 
-**3. Record the result.** Counts come from `findings.json` with `jq`; do not read the findings themselves. The proposed action follows FR-021: findings, so `post`; no findings, so `marker`:
+**Scope and verification.** The shared pipeline writes `$PR_DIR/scope/{scope.json,review.diff,targets.json,verification.json,reviewer-results.json,completion-input.json,completion.json}`. Explain mode, personal baseline, actual tool scope and incomplete coverage in the report and decision table. A failed required reviewer or incomplete verification is never a completed baseline. Keep usable partial results and name their limitations.
+
+**3. Record the result.** Counts come from `findings.json` with `jq`; do not read the findings themselves. The proposed action is findings -> `post`, no findings -> `marker`, except proven unchanged contribution without a renewed request -> `skip`. A renewed request proposes an approved verification/unchanged summary; it never turns into an automatic full review. List proposed owned-thread replies/resolutions alongside the review action before approval. Handle them through review Step 7.5e–f, retaining triage eligibility until actually handled. Recheck exact target conversations and refresh completion immediately before any post/marker. Marker approval covers only the stated actions.
 
 ```bash
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
@@ -375,6 +379,10 @@ COUNTS=$(jq -c '{critical: map(select(.severity == "Critical")) | length,
   notable: map(select(.severity == "Notable")) | length}' "$PR_DIR/findings.json")
 PROPOSED=marker
 [ "$(jq 'length' "$PR_DIR/findings.json")" -gt 0 ] && PROPOSED=post
+if [ -s "$PR_DIR/scope/scope.json" ] && jq -e \
+  '.mode == "unchanged" and .acknowledgment_required == false' "$PR_DIR/scope/scope.json" >/dev/null; then
+  PROPOSED=skip
+fi
 # Fixable findings: a concrete suggested fix, or a gate finding (Critical,
 # Important), as single-PR review offers "Apply the important fixes" for those
 FIXABLE=$(jq '[.[] | select((((.fix // "") | test("\\S")) or .severity == "Critical" or .severity == "Important")

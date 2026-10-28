@@ -264,7 +264,8 @@ class AssessmentTests(unittest.TestCase):
         value["reasons"] = ["review_requested"]
         self.assertTrue(self.assess(value)["review"]["eligible"])
         value["reviews"][0]["commit"]["oid"] = "head"
-        self.assertEqual("reviewed-at-head", self.assess(value)["review"]["exclusion"])
+        self.assertTrue(self.assess(value)["review"]["eligible"],
+                        "a renewed outstanding request survives a review-at-head marker")
         value["reviews"][0]["author"]["login"] = "alice"
         self.assertTrue(self.assess(value)["review"]["eligible"])
         triage_value = pr()
@@ -272,6 +273,27 @@ class AssessmentTests(unittest.TestCase):
                                       "commit":{"oid":"head"}}], threads=[thread()])
         self.assertTrue(self.assess(triage_value)["triage"]["eligible"],
                         "a review-level marker alone does not mark reviewer thread activity handled")
+
+    def test_renewed_request_and_full_override_are_not_cleared_by_head_markers(self):
+        value = pr()
+        value['reviews'] = [{'author': {'login': 'me'}, 'body': '<!-- cc-review:run-id:r -->',
+                             'commit': {'oid': 'head'}}]
+        value['reasons'] = ['review_requested']
+        self.assertTrue(self.assess(value)['review']['eligible'])
+        value['reasons'] = []
+        self.assertTrue(self.assess(value, force_full=True)['review']['eligible'])
+        value['reviews'][0]['body'] += '\n<!-- cc-review-incomplete:v1 -->'
+        self.assertFalse(self.assess(value)['review']['exclusion'] == 'reviewed-at-head')
+
+    def test_incomplete_personal_attempt_remains_work_after_request_is_cleared(self):
+        value = pr()
+        incomplete = dict(author={'login':'me'}, body='<!-- cc-review:run-id:first -->\n<!-- cc-review-incomplete:v1 -->',
+                          commit={'oid':'head'}, submittedAt='2026-10-28T10:00:00Z')
+        value['reviews'] = [incomplete]
+        self.assertTrue(self.assess(value)['review']['eligible'])
+        completed = dict(incomplete, body='<!-- cc-review:run-id:second -->', submittedAt='2026-10-28T11:00:00Z')
+        value['reviews'].append(completed)
+        self.assertFalse(self.assess(value)['review']['eligible'])
 
     def test_fresh_code_and_replies_reactivate_only_owned_findings(self):
         value = pr()
@@ -308,6 +330,7 @@ class AssessmentTests(unittest.TestCase):
         self.assertFalse(after_triage["triage"]["eligible"])
         value["reviews"] = [{"author":{"login":"me"},"body":"<!-- cc-review:run-id:run -->",
                              "commit":{"oid":"head"}}]
+        value["reasons"] = []  # GitHub clears the request once the review is submitted.
         self.assertFalse(self.assess(value, handled)["review"]["eligible"], "the full review marker advances only review's own baseline")
         self.assertFalse(self.assess(value, handled)["triage"]["eligible"],
                          "a review marker does not clear a different handled-activity record")

@@ -139,6 +139,7 @@ _github_fetch_pr_threads() {
   fi
 
   local all_threads="[]"
+  local complete=true
   local has_next="true"
   local cursor=""
   local max_pages=20
@@ -148,6 +149,7 @@ _github_fetch_pr_threads() {
     page_count=$((page_count + 1))
     if [ "$page_count" -gt "$max_pages" ]; then
       echo "WARNING: Pagination limit ($max_pages pages) reached, results may be incomplete" >&2
+      complete=false
       break
     fi
 
@@ -202,6 +204,11 @@ _github_fetch_pr_threads() {
   done
 
   printf '%s' "$all_threads"
+  if [ "$complete" != true ] || printf '%s' "$all_threads" | jq -e \
+    'any(.[]; .comments.pageInfo.hasNextPage == true or .comments.pageInfo.hasPreviousPage == true)' >/dev/null; then
+    echo "WARNING: review thread collection is incomplete; partial evidence returned" >&2
+    return 1
+  fi
 }
 
 _github_post_reply() {
@@ -266,7 +273,8 @@ _github_fetch_reviews() {
     page_count=$((page_count + 1))
     if [ "$page_count" -gt "$max_pages" ]; then
       echo "WARNING: Pagination limit ($max_pages pages) reached, results may be incomplete" >&2
-      break
+      printf '%s' "$all_reviews"
+      return 1
     fi
 
     local cursor_arg=""
@@ -289,6 +297,8 @@ _github_fetch_reviews() {
                 body
                 author { login }
                 commit { oid }
+                state
+                submittedAt
                 comments(first: 100) {
                   nodes {
                     databaseId
@@ -317,8 +327,10 @@ _github_fetch_reviews() {
   # comment databaseId. Without threads the reviews are returned unchanged.
   local threads
   if ! threads=$(_github_fetch_pr_threads "$pr_number"); then
-    echo "WARNING: could not fetch review threads for PR #$pr_number; reviews are returned without thread IDs, so fixed threads cannot be resolved" >&2
-    threads="[]"
+    echo "WARNING: review threads for PR #$pr_number are incomplete; valid partial thread IDs are retained" >&2
+    if ! printf '%s' "$threads" | jq -e 'type == "array"' >/dev/null 2>&1; then
+      threads="[]"
+    fi
   fi
   if printf '%s' "${threads:-[]}" | jq -e 'any(.[]; (.comments.nodes | length) >= 100)' >/dev/null 2>&1; then
     echo "WARNING: a review thread on PR #$pr_number has 100 or more comments; comments past the first 100 get no thread ID" >&2

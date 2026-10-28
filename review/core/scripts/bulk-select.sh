@@ -182,6 +182,7 @@ classify() {
   local normalized result
   local draft_args=()
   [ "$keep_drafts" = true ] && draft_args+=(--include-review-drafts)
+  [ "${FORCE_FULL:-false}" = true ] && draft_args+=(--full)
   normalized=$(tmpfile); result=$(tmpfile)
   jq -e 'type == "array"' "$file" >/dev/null || { echo "Error: required PR evidence is unavailable" >&2; exit 1; }
   jq --arg proto "$(origin_protocol)" --arg host "$BULK_HOST" 'map(. + {origin_protocol:$proto,host:$host})' "$file" > "$normalized"
@@ -201,8 +202,10 @@ classify() {
 
 do_review() {
   local mode=default query="" limit=10 user=""
+  local FORCE_FULL=false
   while [ $# -gt 0 ]; do
     case "$1" in
+      --full) FORCE_FULL=true; shift ;;
       --all-open) mode=all-open; shift ;;
       --search) [ $# -ge 2 ] || { echo "Usage: bulk-select.sh review [--all-open | --search <q>] [--limit <n>] --user <login>" >&2; exit 2; }
         mode=search; query="$2"; shift 2 ;;
@@ -248,8 +251,11 @@ do_review() {
   refetch_truncated_reviews "$requested"
   refetch_truncated_reviews "$reviewed"
   jq -s --arg user "$user" --arg marker "$MARKER" '
-    (.[1] | map(select(.headRefOid as $h | .author.login != $user and any(.reviews[]?;
-      .author.login == $user and ((.body // "") | contains($marker)) and .commit.oid != $h)))) as $rereview
+    (.[1] | map(select(.headRefOid as $h |
+      (.author.login != $user and any(.reviews[]?; .author.login == $user
+        and ((.body // "") | contains($marker)) and .commit.oid != $h))
+      or any(.reviews[]?; .author.login == $user and ((.body // "") | contains($marker))
+        and ((.body // "") | contains("<!-- cc-review-incomplete:v1 -->")))))) as $rereview
     | (.[0] | map(. + {reasons:["review_requested"]}))
       + ($rereview | map(. + {reasons:["reviewed"]})) | unique_by(.number)' "$requested" "$reviewed" > "$candidates"
   classify "$candidates" "$user" "$limit"

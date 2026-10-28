@@ -1,5 +1,13 @@
 IMPORTANT INSTRUCTIONS - READ BEFORE REVIEWING:
 
+FOLLOW-UP SCOPE (when scope.json/review.diff are supplied): review the entire delta,
+including fixes, with full files available as context. New findings on unchanged
+code require Critical severity and concrete code evidence. Prior findings are
+carried only by exact verified thread identity; do not repost them or infer a fix
+from their absence. Read verification.json when supplied. Record scope, evidence
+and prior_thread_id where applicable; if the output tool lacks those fields,
+include that metadata with the failure scenario for the merge step to normalize.
+
 1. ANTI-SYCOPHANCY: Do NOT start with praise. Do NOT say "Great implementation!",
    "Nice work!", or any positive affirmation. Start directly with your findings.
    Zero findings is a red flag - if you find nothing, re-read the entire codebase

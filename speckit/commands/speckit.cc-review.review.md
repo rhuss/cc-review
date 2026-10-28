@@ -38,7 +38,7 @@ Read and execute `core/commands/review.md` from resolved core, passing:
 - `--spec <resolved-spec-path>` (if found)
 - `--hints .specify/memory/constitution.md` (if exists)
 - `--output .specify/reports/review-report.md`
-- All user-provided arguments
+- All user-provided arguments, including `--full` to override automatic personal incremental scope
 
 After completion, update `.specify/.spex-state`:
 - Set `review_status: completed`
