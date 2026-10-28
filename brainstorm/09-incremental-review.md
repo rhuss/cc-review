@@ -2,6 +2,9 @@
 
 **Date:** 2026-10-27
 **Status:** active
+**Issue:** https://github.com/rhuss/cc-review/issues/8
+
+The original exploration below is retained for context. The agreed direction is recorded in the revisit dated 2026-10-28, which supersedes the original proposal and draft requirements.
 
 ## Problem Framing
 
@@ -92,7 +95,7 @@ B's explicit verification replaces 7.5f in every mode, including full reviews.
 **Rebase-only changes**
 - When the range-diff shows no author change (pure rebase), post nothing new; at most report "rebased, no changes since the last review" and leave the earlier verdict standing. Bulk review should exclude such PRs or mark them as such.
 
-## Open Questions
+## Original Open Questions
 
 - Automatic incremental mode with `--full`, or opt-in `--since-last`? What does bulk review default to?
 - Range-diff output is hard for reviewers to read. Is a reconstructed "PR diff at baseline vs PR diff at head" a better input, and how is it produced in a worktree?
@@ -101,3 +104,84 @@ B's explicit verification replaces 7.5f in every mode, including full reviews.
 - Does the meta-review (Skeptic, Calibrator) see the earlier findings, so it can reject duplicates and goalpost-moving findings?
 - Where does the shared verification logic live, so review (follow-up) and triage (Step 11b) do not drift apart?
 - How should the posted review read when it mixes verifications and new findings: one summary with two sections, or verification replies in the threads plus a short summary?
+
+---
+
+## Revisit: 2026-10-28
+
+### Updated Problem Framing
+
+[Issue #8](https://github.com/rhuss/cc-review/issues/8) follows the implemented inbox action alignment work in #7. Review and triage now have independent action assessments, and exact handled-activity checks prevent some duplicate thread actions. Follow-up review still examines the full PR, and its thread reconciliation still infers a fix when an earlier finding has no match in the new review. Freshness checks do not establish that the underlying problem was fixed.
+
+The intended outcome is a cheaper, focused follow-up review that examines all changed author content, verifies earlier findings explicitly, and avoids moving the goalposts through ordinary new findings on unchanged code. Rebases must not make upstream changes appear to be new author work. Review and triage must agree on verification outcomes without either silently clearing separate work.
+
+### New Approaches Considered
+
+1. **A: Delta review plus explicit verification (chosen).** Review the entire delta, including changes intended to fix earlier findings, and verify those findings individually. This reduces repeated review work and checks fixes for regressions, but requires reliable baseline and change evidence.
+2. **B: Full review with filtered findings.** Retain a full PR review and suppress repeated or out-of-scope findings afterward. This simplifies review scope handling but retains the cost and attention demands of a full pass.
+3. **C: Triage first, review additional changes separately.** Verify requested fixes and review only changes judged to go beyond them. This can be cheaper, but depends on distinguishing fixes from other changes and can miss regressions introduced by fixes. The user chose to review the entire delta instead.
+
+### Updated Decision
+
+Choose Approach A for both single-PR and bulk review: automatic incremental review from the authenticated user's latest trustworthy completed cc-review run, with `--full` to request a full PR review. First reviews and runs without reliable baseline or comparison evidence use full review and explain the reason.
+
+The user explicitly confirmed automatic mode, a personal baseline, review of the entire delta including fixes, an evidence-backed critical-only exception for unchanged code, and verification plus acknowledgment for renewed review requests on proven unchanged contributions. The user also accepted the fallback, partial-fix, incomplete-coverage, independent-action and existing-approval defaults below.
+
+### Agreed Key Requirements
+
+**Mode and baseline**
+
+- Apply the same automatic mode rules to single-PR and bulk runs. First reviews are full; follow-ups use the user's latest trustworthy completed cc-review run. Another person's review does not establish the user's baseline.
+- Support `--full` as an explicit override. Incremental review does not require `--since-last`.
+- Missing or unreliable baseline or diff evidence triggers a full review with an explanation. If the full review itself lacks necessary evidence or coverage, report it as incomplete.
+- Incomplete runs cannot establish a completed baseline. Completion means the required review and verification work was performed, not that every finding was fixed or that the result was approval.
+
+**Changed content and scope**
+
+- Review the entire delta, including code changed to address earlier findings. Do not skip review merely because changes appear to be requested fixes.
+- Let reviewers consult the full PR and surrounding code for context, while keeping ordinary new findings within the delta.
+- Permit a new finding in code unchanged since the baseline only for a critical problem supported by concrete evidence. Distinguish such findings from delta findings and carried unresolved findings.
+- Distinguish changes in the author's contribution from upstream movement during a rebase. Conflict resolutions or other substantive changes must not be classified as unchanged merely because a rebase occurred.
+
+**Earlier findings and triage**
+
+- Explicitly verify the user's unresolved earlier cc-review findings against current code, including findings from runs older than the chosen baseline. Record fixed, still present or unclear; absence from the new finding list is never proof of a fix.
+- Resolve only verified fixes, respecting existing triage behavior for accepted explanations, disagreements, deferrals and questions. Partial fixes leave the remaining concern open in its existing thread.
+- Missing or incomplete thread evidence cannot justify resolution or a claim that verification is complete.
+- Review and triage use consistent verification outcomes and handled-activity rules. Either execution order must avoid duplicate replies, resolutions and reposted findings.
+- Triage does not advance the code-review baseline or satisfy a separate review obligation. Review clears overlapping triage work only when the associated thread work was actually handled.
+
+**Rebases and explicit requests**
+
+- Proven unchanged author contribution after a rebase creates no new code-review work by itself and requires no new review post. Keep pending thread work independently actionable.
+- A renewed explicit review request remains actionable even when the author contribution is proven unchanged: verify earlier findings and acknowledge the unchanged contribution. Do not automatically repeat a full review; `--full` remains available.
+- Uncertain contribution equivalence is not proof of a rebase-only change. Use the explained full-review fallback when a trustworthy incremental comparison cannot be established.
+
+**Reporting and boundaries**
+
+- Report the mode, baseline, effective scope, fallback reasons and incomplete coverage. Distinguish new delta findings, carried findings, critical exceptions and verification outcomes.
+- Apply the agreed scope across reviewers and reconciliation. Disclose coverage limitations instead of claiming that unsupported reviewers performed an incremental review.
+- Keep existing posting, approval, worktree and author/reviewer-role restrictions. This feature does not introduce new automatic posting permissions.
+- Keep inbox read-only and retain independent review and triage eligibility from #7. Any contribution evidence used to refine selection must preserve explicit requests, pending thread work and visible uncertainty.
+- This brainstorm agrees behavior only. Formal specification, implementation planning, code, tests and user documentation follow separately under issue #8.
+
+### Success Criteria
+
+- A fix-only follow-up reviews its whole delta and verifies earlier findings without repeating the full PR review.
+- A still-present, partially fixed or unverifiable finding is never resolved solely because a new reviewer did not rediscover it.
+- Repeating review and triage at unchanged code and conversation state causes no duplicate thread actions or reposted findings.
+- A proven rebase-only change avoids another code review while retaining pending thread work; a renewed request receives verification and acknowledgment.
+- History rewrites, missing baselines and incomplete evidence produce explained fallbacks or incomplete results, never unsupported completion claims.
+- Single-PR and bulk runs follow the same mode and baseline rules, and reports make scope and remaining work clear.
+
+### Open Threads
+
+The behavioral direction is agreed. The questions below remain for specification and planning; issue #8 tracks that follow-up work.
+
+## Open Questions
+
+- What evidence establishes a trustworthy completed personal baseline, including no-findings reviews, reviewer/configuration differences and chains of incremental runs?
+- What comparison evidence reliably separates author changes from upstream movement across rebases, force pushes and conflict resolutions, and when is full-review fallback required?
+- How should unsupported command-reviewer scope and incomplete reviewer coverage affect fallback, reporting and baseline completion?
+- What shared verification evidence should review, triage and meta-review receive to preserve findings across moved code, avoid duplicates and enforce the critical-only unchanged-code exception?
+- How should verification outcomes and new findings be presented between existing threads and the review summary, including acknowledgment of a renewed request on unchanged content?
