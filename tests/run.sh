@@ -4120,6 +4120,15 @@ test_bulk_md_pre_decision_refresh() {
 # Main
 # ---------------------------------------------------------------------------
 
+test_review_continuity() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_review_continuity.py" 2>&1)"; then
+    _pass
+  else
+    _fail "review continuity Python suite" "$output"
+  fi
+}
+
 test_review_scope() {
   local output
   if output="$(python3 -B "$ROOT/tests/test_review_scope.py" 2>&1)"; then
@@ -4304,6 +4313,7 @@ main() {
   run_test test_inbox
   run_test test_pr_actions
   run_test test_review_scope
+  run_test test_review_continuity
   run_test test_bulk_apply_marker_validates_completion_evidence
   run_test test_platform_thread_collection_discloses_truncation
   run_test test_bulk_select_full_override

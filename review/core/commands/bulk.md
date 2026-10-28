@@ -17,6 +17,14 @@ This file is executed by the "Bulk Mode" hand-off of `commands/review.md` (`BULK
 
 **The user's checkout is never touched.** Every PR is analyzed in `<run dir>/pr-<n>/wt`, a detached worktree. Nothing in this command checks out, stashes, resets or commits in `PROJECT_DIR` itself, and nothing writes outside `.cc-review/bulk/` in it, apart from the shared triage state `.cc-review/.triage-state.json` that bulk triage updates exactly as single-PR triage does (FR-014a).
 
+## Follow-up Review Continuity
+
+For review runs, each PR follows review.md's Prior Review Context and Follow-up Continuity sections. Keep `history-input.json`, manual summary attribution, `history.json`, candidate/concern assessments and `continuity.json` under `$PR_DIR/scope/` through analysis, fix, apply and resume. Every reviewer, merge, critic, report and fix worker receives the absolute history path. History remains relevant in full fallback and `--full` and never substitutes for a completed baseline.
+
+Decision tables and drill-down reports show linked existing material source conversations and pending questions separately from new findings. An empty new-findings list is not a no-issues result when existing material concerns or uncertainty remain. Do not propose the no-findings marker shortcut for those PRs; use the approved accurate follow-up progress/continuation policy. Optional earlier suggestions are nonblocking and not mandatory bulk fixes.
+
+Before each push/post/reply/resolution or resumed publication, use review.md's fresh history/head comparison as well as the existing head and exact verification checks. Preserve analyzed artifacts for comparison. Changed conversations at the same head require refreshed assessment and approval for changed actions, or withholding them. Reuse only genuinely current decisions and retain existing action idempotency. Manual history supplies no new thread-resolution permission.
+
 ## Prerequisites
 
 ### Shell Blocks

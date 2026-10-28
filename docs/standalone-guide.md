@@ -92,6 +92,14 @@ The report names the mode, baseline, reviewed content, verification outcomes and
 
 Earlier unresolved findings from all your cc-review runs are checked explicitly. Partial fixes remain open in their original threads, including when a new reviewer does not rediscover them. Review and reviewer triage use the same exact activity and verification rules to avoid duplicate replies/resolutions. Triage does not advance a code-review baseline or clear separate changed-code work.
 
+Follow-ups use your earlier manual reviews and cc-review discussions, including relevant resolved threads, summary-only feedback and author replies. Manually written review findings in PR comments are identified from their context; casual participation does not count as an earlier review. This history provides continuity even without a trustworthy code baseline, while code scope still falls back to full review when required.
+
+Author explanations and promised fixes are checked against current code. Existing concerns continue in their conversations, with links; a justified reversal of earlier advice is explained. New follow-up findings need concrete material impact. Minor preferences, optional polish and speculative improvements are suppressed even in changed code, while real regressions in requested fixes remain reportable. The existing Critical-only exception for new unchanged-code findings still applies in incremental mode.
+
+Reports distinguish addressed concerns, existing open material concerns, new material findings, prior nonblocking suggestions and limitations. **No outstanding material concerns** is a valid conclusion only when history, required coverage and verification are complete and no substantive concerns or questions remain. A completed assessment can still report outstanding concerns. Neither a clean conclusion nor a history classification automatically approves, merges or authorizes thread resolution. Large or incomplete histories disclose their limits instead of implying earlier concerns were cleared.
+
+These rules apply to single and bulk follow-ups, full fallbacks and explicit `--full`. Before publication, both head and conversation evidence must still match; changed evidence requires reassessment or withholding stale actions. Posting continues to use existing approval and unattended policies.
+
 Force a full review when needed:
 
 ```text

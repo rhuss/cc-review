@@ -108,6 +108,56 @@ fetch_reviews() {
   esac
 }
 
+# Read-only PR conversation context. Failure preserves valid partial evidence.
+fetch_issue_comments() {
+  local owner="$1" repo="$2" pr_number="$3"
+  local all_comments='[]' cursor='' page result connection has_next
+  local cursor_args=()
+  for ((page=1; page<=20; page++)); do
+    cursor_args=()
+    [ -n "$cursor" ] && cursor_args=(-f "cursor=$cursor")
+    if ! result=$(gh api graphql -f query='
+      query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            comments(first: 100, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes { id databaseId url body author { login } createdAt updatedAt }
+            }
+          }
+        }
+      }' -f owner="$owner" -f repo="$repo" -F number="$pr_number" ${cursor_args[@]+"${cursor_args[@]}"}); then
+      echo 'WARNING: PR issue comment collection is incomplete' >&2
+      printf '%s\n' "$all_comments"
+      return 1
+    fi
+    if ! connection=$(printf '%s' "$result" | jq -ce '
+      select(((.errors // []) | length) == 0)
+      | .data.repository.pullRequest.comments
+      | select(type == "object" and (.nodes | type) == "array"
+        and (.pageInfo.hasNextPage | type) == "boolean")'); then
+      echo 'WARNING: PR issue comment collection is incomplete: invalid GraphQL connection' >&2
+      printf '%s\n' "$all_comments"
+      return 1
+    fi
+    all_comments=$(printf '%s\n%s' "$all_comments" "$connection" | jq -cs '.[0] + .[1].nodes') || return 1
+    has_next=$(printf '%s' "$connection" | jq -r '.pageInfo.hasNextPage')
+    if [ "$has_next" = false ]; then
+      printf '%s\n' "$all_comments"
+      return 0
+    fi
+    cursor=$(printf '%s' "$connection" | jq -r '.pageInfo.endCursor // empty')
+    if [ -z "$cursor" ]; then
+      echo 'WARNING: PR issue comment collection is incomplete: missing cursor' >&2
+      printf '%s\n' "$all_comments"
+      return 1
+    fi
+  done
+  echo 'WARNING: PR issue comment collection is incomplete: pagination limit (20 pages)' >&2
+  printf '%s\n' "$all_comments"
+  return 1
+}
+
 parse_diff_hunks() {
   local pr_number="$1"
   local platform
@@ -180,12 +230,13 @@ _github_fetch_pr_threads() {
                   nodes {
                     id
                     databaseId
+                    url
                     body
                     author { login }
                     createdAt
                     updatedAt
                     originalCommit { oid }
-                    pullRequestReview { author { login } body }
+                    pullRequestReview { author { login } body state }
                   }
                 }
               }
@@ -196,7 +247,15 @@ _github_fetch_pr_threads() {
     ' -f owner="$owner" -f repo="$repo" -F number="$pr_number" $cursor_arg) || return 1
 
     local page_threads
-    page_threads=$(printf '%s' "$result" | jq '.data.repository.pullRequest.reviewThreads.nodes')
+    if ! page_threads=$(printf '%s' "$result" | jq -ce '
+      select(((.errors // []) | length) == 0)
+      | .data.repository.pullRequest.reviewThreads
+      | select(type == "object" and (.nodes | type) == "array"
+        and (.pageInfo.hasNextPage | type) == "boolean") | .nodes'); then
+      echo 'WARNING: reviewThreads collection is incomplete: invalid GraphQL connection' >&2
+      printf '%s\n' "$all_threads"
+      return 1
+    fi
     all_threads=$(printf '%s\n%s' "$all_threads" "$page_threads" | jq -s '.[0] + .[1]')
 
     has_next=$(printf '%s' "$result" | jq -r '.data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage')
@@ -294,6 +353,7 @@ _github_fetch_reviews() {
               }
               nodes {
                 databaseId
+                url
                 body
                 author { login }
                 commit { oid }
@@ -315,7 +375,15 @@ _github_fetch_reviews() {
     ' -f owner="$owner" -f repo="$repo" -F number="$pr_number" $cursor_arg) || return 1
 
     local page_reviews
-    page_reviews=$(printf '%s' "$result" | jq '.data.repository.pullRequest.reviews.nodes')
+    if ! page_reviews=$(printf '%s' "$result" | jq -ce '
+      select(((.errors // []) | length) == 0)
+      | .data.repository.pullRequest.reviews
+      | select(type == "object" and (.nodes | type) == "array"
+        and (.pageInfo.hasNextPage | type) == "boolean") | .nodes'); then
+      echo 'WARNING: reviews collection is incomplete: invalid GraphQL connection' >&2
+      printf '%s\n' "$all_reviews"
+      return 1
+    fi
     all_reviews=$(printf '%s\n%s' "$all_reviews" "$page_reviews" | jq -s '.[0] + .[1]')
 
     has_next=$(printf '%s' "$result" | jq -r '.data.repository.pullRequest.reviews.pageInfo.hasNextPage')

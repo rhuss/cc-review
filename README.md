@@ -117,6 +117,8 @@ Reviews the diff of a specific PR.
 
 PR follow-ups automatically review changes since your latest trustworthy completed cc-review run, including code changed to fix earlier findings. Earlier concerns are verified explicitly and retained in their original threads until addressed; their absence from a new review never proves a fix. In incremental mode, new findings on unchanged code require a critical problem with concrete evidence.
 
+Follow-ups also remember your earlier manual and cc-review discussions, including summary comments and author replies. They assess explanations against code, continue existing concerns without duplicate comments, and explain any reversal of earlier advice. New findings focus on material problems; optional polish does not create another round. Once verification is complete and no substantive concerns remain, the report can conclude **no outstanding material concerns**. Missing history or unanswered substantive questions remain visible. Full scope retains this conversation history, and a clean conclusion never automatically approves or merges a PR.
+
 Use `review --pr 42 --full` or `review --bulk --full` to request full scope. First reviews, legacy markers without completion evidence, changed reviewer coverage/settings and unreliable history comparisons also use full review with an explanation. Proven rebase-only changes avoid another code review; a renewed request receives verification and an acknowledgment under existing posting approval.
 
 ```
