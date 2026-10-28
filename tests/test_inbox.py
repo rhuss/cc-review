@@ -31,6 +31,20 @@ def emit(value):
 def fail(message):
     print(message, file=sys.stderr)
     sys.exit(1)
+def top_level_fields(query):
+    # Names at depth 0 of the "... on <Type> { ... }" selection; nested
+    # selections, arguments and the $id variable do not count.
+    body = query[re.search(r"\.\.\. on \w+ \{", query).end():]
+    names, depth, parens = set(), 0, 0
+    for token in re.findall(r"[{}()]|\w+", body):
+        if token == "{": depth += 1
+        elif token == "}":
+            if depth == 0: break
+            depth -= 1
+        elif token == "(": parens += 1
+        elif token == ")": parens -= 1
+        elif depth == 0 and parens == 0: names.add(token)
+    return names
 if args[:2] == ["repo", "view"]:
     if fixture.get("repo_error"): fail(fixture["repo_error"])
     emit(fixture.get("repository", {"nameWithOwner":"acme/widgets", "url":"https://github.com/acme/widgets", "hasDiscussionsEnabled":True}))
@@ -68,7 +82,11 @@ elif args and args[0] == "api" and "graphql" in args:
         value = fixture.get("details", {}).get(values["id"], {})
         if isinstance(value, str): fail(value)
         if "response" in value: emit(value["response"])
-        else: emit({"data":{"node":value}})
+        else:
+            # Like GitHub, return only the top-level fields the query selects.
+            fields = top_level_fields(query) | {"__typename"}
+            selected = {k: v for k, v in value.items() if k in fields}
+            emit({"data":{"node":selected}})
     else:
         fail("unknown GraphQL query")
 else:
@@ -106,7 +124,7 @@ def detail(kind="issue", number=1):
                      reviewThreads=connection([{"isResolved": True, "isOutdated": False,
                                                 "comments": connection([comment()])}]))
     if kind == "discussion":
-        value.update(isAnswered=True, answer=comment("This is the answer"),
+        value.update(isAnswered=True, category={"isAnswerable": True}, answer=comment("This is the answer"),
                      comments=connection([dict(comment(), replies=connection([comment("Following up")]))]))
     return value
 
@@ -410,6 +428,49 @@ class InboxTests(unittest.TestCase):
         self.assertTrue(entry["detail"]["isAnswered"])
         self.assertEqual("This is the answer", entry["detail"]["answer"]["body"])
         self.assertEqual("Following up", entry["detail"]["comments"]["nodes"][0]["replies"]["nodes"][0]["body"])
+
+    def test_unanswerable_discussion_with_null_is_answered_is_complete(self):
+        value = detail("discussion")
+        value.update(isAnswered=None, category={"isAnswerable": False}, answer=None)
+        snap = self.snapshot("--type", "discussion", fixture={
+            "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
+            "details": {"discussion-1": value}})
+        self.assertTrue(snap["items"][0]["context_complete"], snap["items"][0]["warnings"])
+        queries = [call for call in self.calls() if "InboxDetail_discussion" in json.dumps(call)]
+        self.assertEqual(1, len(queries))
+        self.assertIn("category { isAnswerable }", json.dumps(queries))
+
+    def test_is_answered_required_unless_category_explicitly_unanswerable(self):
+        for category, fields in [({"isAnswerable": True}, ["isAnswered"]), ({"isAnswerable": None}, ["isAnswered"]),
+                                 ({}, ["isAnswered"]), (None, ["category", "isAnswered"])]:
+            with self.subTest(category=category):
+                value = detail("discussion")
+                value.update(isAnswered=None, category=category)
+                snap = self.snapshot("--type", "discussion", fixture={
+                    "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
+                    "details": {"discussion-1": value}})
+                self.assertFalse(snap["items"][0]["context_complete"])
+                warnings = " ".join(snap["items"][0]["warnings"])
+                for field in fields:
+                    self.assertIn("detail." + field + ":", warnings)
+
+    def test_discussion_detail_fields_must_be_selected(self):
+        # The fake returns only selected fields, so a dropped selection loses the field.
+        snap = self.snapshot("--type", "discussion", fixture={
+            "search": {"discussion": {"authored": {"nodes": [item("discussion")]}}},
+            "details": {"discussion-1": detail("discussion")}})
+        entry = snap["items"][0]
+        self.assertTrue(entry["context_complete"], entry["warnings"])
+        for field in ("isAnswered", "closed", "answer", "category", "comments"):
+            self.assertIn(field, entry["detail"])
+
+    def test_discussion_mentions_are_a_disclosed_limit_not_a_query(self):
+        snap = self.snapshot("--type", "discussion")
+        searches = [call for call in self.calls() if "InboxSearch_discussion" in json.dumps(call)]
+        self.assertEqual(1, len(searches))
+        self.assertNotIn("mentions:", json.dumps(searches))
+        self.assertIn("mentioned", " ".join(snap["scope"]["known_limits"]))
+        self.assertEqual([], self.snapshot("--type", "pr,issue")["scope"]["known_limits"])
 
     def test_nested_reply_truncation_marks_context_incomplete(self):
         value = detail("discussion")

@@ -100,7 +100,7 @@ A repository is large, Discussions are disabled or inaccessible, or some activit
 - **FR-002**: Resolve one explicit repository or, by default, the repository of the invoking checkout; resolve the authenticated user from the selected host.
 - **FR-003**: Include PRs, issues, and GitHub Discussions by default and accept any nonempty combination of those types.
 - **FR-004**: Accept `--repo owner/name`, repeatable comma-separated `--type` selections from `pr`, `issue`, and `discussion`, `--limit` from 1 through 100 (default 10 per type), and `--since YYYY-MM-DD`; validate all arguments before service requests. Repeated type selections form a union.
-- **FR-005**: Discover relevance through authorship, applicable assignments and review requests, mentions, ordinary comments, and reviews, independently of cc-review markers.
+- **FR-005**: Discover relevance through authorship, applicable assignments and review requests, mentions, ordinary comments, and reviews, independently of cc-review markers. Discussion mentions are excluded because GitHub Discussion search cannot match them (`mentions:` returns no results and `involves:` covers only author and commenter); the snapshot discloses this as a standing coverage limit.
 - **FR-006**: Preserve all discovered relevance reasons and deduplicate by repository, item type, and item identity.
 - **FR-007**: Consider current item state and relevant conversation activity, including later replies and resolved review threads, when explaining who acts next.
 - **FR-008**: Present "Needs your attention," "Waiting on others," and "No current action" as the default groups, including empty groups.

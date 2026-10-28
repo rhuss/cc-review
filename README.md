@@ -81,7 +81,7 @@ inbox --type issue,discussion --limit 20
 inbox --repo owner/repo --since 2026-10-01
 ```
 
-The inbox explains what needs your attention in one repository. It includes your own items, assignments, review requests (including team requests), mentions, and conversations you commented on or reviewed, including participation outside cc-review.
+The inbox explains what needs your attention in one repository. It includes your own items, assignments, review requests (including team requests), mentions in PRs and issues (GitHub cannot search Discussion mentions), and conversations you commented on or reviewed, including participation outside cc-review.
 
 Results appear under **Needs your attention**, **Waiting on others**, and **No current action**. Each entry explains why it appears, links to supporting activity, and suggests a next step. Inferred or uncertain responsibility is labeled. A PR can suggest review for a first or substantial review, triage for continuing owned feedback, or both; one action does not clear the other. Issues and Discussions get a suggested next step with a conversation link. The report is read-only, and follow-up actions remain suggestions.
 
@@ -97,7 +97,7 @@ By default, PRs and issues are open, including draft PRs, with no recency cutoff
 
 The report states its scope and coverage. Discovery is bounded to 100 matches per relevance reason, and long bodies and conversations are shortened. Reached limits, missing context, failed sources, and disabled or inaccessible Discussions are shown explicitly. Participation or a recent update alone does not mean you owe a response.
 
-The inbox requires Python 3.9+ and `gh` authenticated for the selected repository. It uses the existing plugin installation and works independently of a spec-kit ship pipeline.
+The inbox requires Python 3.9+, `jq`, and `gh` authenticated for the selected repository. It uses the existing plugin installation and works independently of a spec-kit ship pipeline.
 
 Reviewer follow-up activity is stored per GitHub account under `$XDG_STATE_HOME/cc-review/reviewer-activity/`, or `~/.local/state/cc-review/reviewer-activity/` when `XDG_STATE_HOME` is unset. The inbox reads this cache without creating or changing it. Missing or incomplete thread evidence stays visible as uncertain.
 

@@ -27,7 +27,13 @@ REASONS = {
            "commented": "commenter", "reviewed": "reviewed-by", "review_requested": "review-requested",
            "team_review_requested": "team-review-requested-user"},
     "issue": {"authored": "author", "assigned": "assignee", "mentioned": "mentions", "commented": "commenter"},
-    "discussion": {"authored": "author", "mentioned": "mentions", "commented": "commenter"},
+    # Discussion search returns no matches for mentions: (and involves: covers only
+    # author and commenter), so mentions are a known coverage limit.
+    "discussion": {"authored": "author", "commented": "commenter"},
+}
+KNOWN_LIMITS = {
+    "discussion": "Discussions where you were only @-mentioned are not discovered; "
+                  "GitHub Discussion search does not support mentions.",
 }
 TYPENAMES = {"pr": "PullRequest", "issue": "Issue", "discussion": "Discussion"}
 
@@ -247,7 +253,7 @@ def detail_query(kind):
                   + " commits(last: 20) { " + page
                   + " nodes { commit { oid committedDate url messageHeadline statusCheckRollup { state } } } }")
     elif kind == "discussion":
-        fields = (common + " closed isAnswered answer { " + comment + " }"
+        fields = (common + " closed isAnswered category { isAnswerable } answer { " + comment + " }"
                   + " comments(last: 20) { " + page + " nodes { " + comment
                   + " replies(last: 10) { " + page + " nodes { " + comment + " } } } }")
     else:
@@ -319,7 +325,11 @@ def hydrate(entry, github, deadline=None, action_context=None):
         if entry["type"] == "pr":
             required.update(headRefOid=str, reviews=dict, reviewThreads=dict, commits=dict, reviewRequests=dict)
         if entry["type"] == "discussion":
-            required.update(isAnswered=bool, closed=bool)
+            required.update(closed=bool, category=dict)
+            # GitHub returns isAnswered: null for categories that cannot be answered.
+            category = node.get("category")
+            if not isinstance(category, dict) or category.get("isAnswerable") is not False:
+                required["isAnswered"] = bool
         warnings.extend("detail." + name + ": required context is unavailable."
                         for name, expected in required.items() if not isinstance(node.get(name), expected))
         warnings.extend("Partial detail: " + clean_text(str(error.get("message", "GraphQL error")))
@@ -380,6 +390,7 @@ def collect(args, github, now=None):
                                  "include_triage_drafts": True, "bulk_default_limit": 10,
                                  "selection": "eligibility within collected candidates; bulk orders oldest updates first"},
                   "detail_collection_timeout_seconds": DETAIL_COLLECTION_TIMEOUT_SECONDS,
+                  "known_limits": [KNOWN_LIMITS[kind] for kind in args.types if kind in KNOWN_LIMITS],
                   "detail_bounds": {"activity": 20, "replies": 10, "body_characters": 2000,
                                     "activity_body_characters": 1000, "people": 100}},
         "sources": [], "items": [], "warnings": state_warnings,
