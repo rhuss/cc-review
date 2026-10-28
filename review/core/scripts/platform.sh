@@ -173,12 +173,17 @@ _github_fetch_pr_threads() {
                 path
                 line
                 comments(first: 100) {
+                  totalCount
+                  pageInfo { hasNextPage hasPreviousPage }
                   nodes {
+                    id
+                    databaseId
                     body
                     author { login }
-                    databaseId
                     createdAt
-                    url
+                    updatedAt
+                    originalCommit { oid }
+                    pullRequestReview { author { login } body }
                   }
                 }
               }

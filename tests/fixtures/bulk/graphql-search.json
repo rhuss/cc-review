@@ -35,8 +35,14 @@
               {
                 "isResolved": true
               }
-            ]
-          }
+            ],
+            "totalCount": 4,
+            "pageInfo": {
+              "hasNextPage": false,
+              "hasPreviousPage": false
+            }
+          },
+          "state": "OPEN"
         },
         {
           "number": 21,
@@ -61,8 +67,14 @@
               {
                 "isResolved": true
               }
-            ]
-          }
+            ],
+            "totalCount": 1,
+            "pageInfo": {
+              "hasNextPage": false,
+              "hasPreviousPage": false
+            }
+          },
+          "state": "OPEN"
         },
         {
           "number": 22,
@@ -87,8 +99,14 @@
               {
                 "isResolved": false
               }
-            ]
-          }
+            ],
+            "totalCount": 1,
+            "pageInfo": {
+              "hasNextPage": false,
+              "hasPreviousPage": false
+            }
+          },
+          "state": "OPEN"
         }
       ]
     }

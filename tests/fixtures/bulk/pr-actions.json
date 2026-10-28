@@ -1,0 +1,23 @@
+[
+  {
+    "host": "github.com", "repository": "acme/widget", "user": "me", "number": 7,
+    "title": "Reply and new code", "author": "alice", "state": "OPEN", "is_draft": false,
+    "head_oid": "head", "updated_at": "2026-10-21T00:00:00Z",
+    "reasons": ["review_requested", "reviewed"],
+    "reviews": [{"author": {"login": "me"}, "body": "<!-- cc-review:run-id:r -->", "commit": {"oid": "old"}}],
+    "threads": [{
+      "id": "T1", "isResolved": false, "path": "lib.py", "line": 3,
+      "root": {"id": "CT1", "databaseId": 101, "author": {"login": "me", "__typename": "User"},
+        "body": "Unsafe access.\n_Source: correctness agent_", "updatedAt": "2026-10-20T00:00:00Z", "originalCommit": {"oid": "old"}},
+      "comments": {"totalCount": 2, "pageInfo": {"hasNextPage": false, "hasPreviousPage": false}, "nodes": [
+        {"id": "CT1", "databaseId": 101, "author": {"login": "me", "__typename": "User"},
+          "body": "Unsafe access.\n_Source: correctness agent_", "updatedAt": "2026-10-20T00:00:00Z", "originalCommit": {"oid": "old"}},
+        {"id": "RT1", "databaseId": 102, "author": {"login": "alice", "__typename": "User"},
+          "body": "Fixed now", "updatedAt": "2026-10-21T00:00:00Z"}
+      ]}
+    }],
+    "coverage": {"reviews": true, "threads": true},
+    "seed": {"number": 7, "head_ref": "topic-7", "base_ref": "main", "authored_by_user": false,
+             "is_cross_repo": false, "head_repo_url": "https://github.com/acme/widget.git"}
+  }
+]

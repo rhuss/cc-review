@@ -99,7 +99,7 @@ All of these stop before any PR is touched. The last column names where each che
 | bulk flags (`--all-open`, `--search`, `--limit`, `--unattended`) without `--bulk`/`--resume` | `Error: --<flag> requires --bulk` | the Bulk Mode hand-off of `review.md` and `triage.md` (this file only runs with `--bulk` or `--resume`) |
 | `--bulk` with `--pr` | `Error: --bulk and --pr cannot be combined; --pr names a single PR` | the hand-off, and the block below |
 | `--all-open` with `--search` | `Error: --all-open and --search are mutually exclusive` | below |
-| `--all-open` on triage | `Error: --all-open is not supported by triage; bulk triage always selects your own PRs` | below |
+| `--all-open` on triage | `Error: --all-open is not supported by triage; bulk triage uses eligible author and reviewer PRs` | below |
 | `--limit` not a positive integer | `Error: --limit must be a positive integer, got '<v>'` | below |
 | `--search` with `repo:`, `org:`, `user:`, `is:closed`, `is:merged`, `state:` | `Error: --search may not contain '<qualifier>'; bulk mode always uses open PRs of the current repository` | `bulk-select.sh check-query`, called below |
 | `--spec` (bulk review and bulk triage) or `--output` (bulk review) | `Error: --<flag> is not supported with --bulk` | the hand-off, and the block below |
@@ -117,7 +117,7 @@ if [ -n "${PR_FLAG:-}" ]; then
   bulk_fail "--bulk and --pr cannot be combined; --pr names a single PR"
 fi
 if [ "${ALL_OPEN_FLAG:-}" = true ] && [ "$BULK_COMMAND" = triage ]; then
-  bulk_fail "--all-open is not supported by triage; bulk triage always selects your own PRs"
+  bulk_fail "--all-open is not supported by triage; bulk triage uses eligible author and reviewer PRs"
 fi
 if [ "${ALL_OPEN_FLAG:-}" = true ] && [ "${SEARCH_GIVEN:-}" = true ]; then
   bulk_fail "--all-open and --search are mutually exclusive"
@@ -203,12 +203,14 @@ if [ "$RC" -ne 0 ]; then
   exit 1
 fi
 jq -r '"SELECTED=\(.selected | length)", "EXCLUDED=\(.excluded | length)",
+  "COVERAGE_WARNINGS=\((.warnings // []) | length)",
+  ((.warnings // [])[] | "Warning: " + .),
   (.excluded | group_by(.reason) | map("  \(.[0].reason): \(length)") | .[])' "$SELECTION_FILE"
 ```
 
-The selectors (FR-004 to FR-007): bulk review by default takes the PRs that request the user's review plus re-reviews of PRs with new commits since the user's last cc-review review; `--all-open` takes every open PR; `--search` takes the open PRs of the current repository that match the query. Bulk triage takes the user's own open PRs with unresolved threads, narrowed by `--search`. Drafts are dropped unless the query contains `draft:true` or `is:draft`, and bulk review never selects a PR that already has a cc-review review at its current head by someone other than the PR's author (a marker review by the author counts only when the author is the user; bulk triage goes by unresolved threads instead).
+The shared assessor selects review and triage independently. Review retains requested/earlier cc-review marker discovery, broad/search modes and reviewed-at-head ownership policy; a changed head alone is an uncertain possible follow-up unless reliable unchanged-contribution evidence rules it out. Triage selects unresolved feedback on the user's own PRs as `author` and fresh owned cc-review thread/code activity on other authors' PRs as `reviewer`, narrowed by the same `--search`. Triage includes drafts; ordinary review excludes drafts unless the search explicitly opts in. Preserve role, reason, evidence, uncertainty and coverage from selection through state and the decision table.
 
-If `SELECTED` is 0, print `No PRs matched` with the selector used (`default`, `all-open`, or the search query) and the exclusion counts by reason (for example "3 already reviewed at their current head", "2 without open threads", "1 draft"), remove `$SELECTION_FILE`, and stop. No state directory is created.
+Always translate the selection's warnings for the user, identifying affected PRs and collection bounds. If `SELECTED` is 0 with coverage warnings or incomplete assessments, say that no executable action was established in the inspected scope and explain the missing evidence; never describe that as a verified empty queue. Otherwise print `No PRs matched` with the selector used (`default`, `all-open`, or the search query) and exclusion counts by reason. Remove `$SELECTION_FILE` and stop without creating a run directory.
 
 Otherwise create the run:
 
@@ -394,11 +396,39 @@ echo "ANALYSIS ok counts=$COUNTS fixable=$FIXABLE proposed=$PROPOSED keep_worktr
 
 ### Triage Analysis
 
+Before dispatch, read the trusted selection role and write its bounded assessment to the PR directory:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; PR_DIR="$RUN_DIR/pr-$N"
+GH_HOST=$(gh repo view --json url -q '.url | sub("^https?://"; "") | split("/")[0]') || exit 1
+PR_OWNER=$(jq -r '.repo.owner' "$RUN_DIR/state.json")
+PR_REPO=$(jq -r '.repo.name' "$RUN_DIR/state.json")
+GH_USER=$(jq -r '.gh_user' "$RUN_DIR/state.json")
+TRIAGE_ROLE=$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.triage_role // ""')
+case "$TRIAGE_ROLE" in
+  author|reviewer) ;;
+  *) REASON="triage role unavailable; reselect this PR" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.status="failed"' '.reason=env.REASON' >/dev/null
+     echo "TRIAGE_ROLE failed"; exit 0 ;;
+esac
+PR_ASSESSMENT="$PR_DIR/action-assessment.json"
+"$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.assessment // {}' > "$PR_ASSESSMENT"
+echo "TRIAGE_ROLE=$TRIAGE_ROLE PR_ASSESSMENT=$PR_ASSESSMENT"
+```
+
+On `TRIAGE_ROLE failed`, move to the next PR without dispatching a worker. Legacy seeds infer author only when their author equals the authenticated user; a foreign legacy seed never grants mutation authority.
+
 For a PR with `CHECKOUT ok`, dispatch **one triage worker** subagent (triage dispatches no subagents of its own, so this is the only level). Give it the absolute path of `commands/triage.md` and these inputs, and tell it to execute that file in its "Prepare Mode (`TRIAGE_MODE=prepare`)" section:
 
 | Input | Value |
 |---|---|
 | `TRIAGE_MODE` | `prepare` |
+| `TRIAGE_ROLE` | the trusted role from state: `author` or `reviewer` |
+| `GH_HOST` | hostname parsed from the invoking repository URL |
+| `PR_OWNER`, `PR_REPO` | base repository identity from the run state (`.repo.owner`, `.repo.name`) |
+| `GH_USER` | authenticated user from the run state (`.gh_user`) |
+| `PR_ASSESSMENT` | the absolute path to `action-assessment.json`; worker reads shared reasons, evidence and coverage from it |
 | `--pr` | `N` |
 | `TRIAGE_ROOT` | the worktree path from `CHECKOUT ok` |
 | `TRIAGE_PLAN` | `$PR_DIR/triage-plan.json` |
@@ -426,10 +456,18 @@ if ! jq -e 'type == "object" and (.replies | type) == "array" and (.human | type
     "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.status="failed"' '.reason=env.REASON' >/dev/null
   echo "ANALYSIS failed"; exit 0
 fi
-COUNTS=$(jq -c '{bot_valid: ([.replies[] | select(.action == "accepted")] | length),
-  bot_rejected: ([.replies[] | select(.action == "rejected")] | length),
-  deferred: ([.replies[] | select(.action == "deferred")] | length),
-  human: (.human | length)}' "$PLAN")
+TRIAGE_ROLE=$(jq -r '.triage_role // "author"' "$PLAN")
+if [ "$TRIAGE_ROLE" = reviewer ]; then
+  COUNTS=$(jq -c '{bot_valid: ([.cc_review_threads[]? | select(.outcome.status == "confirmed-fixed" or .outcome.status == "accepted-explanation")] | length),
+    bot_rejected: ([.cc_review_threads[]? | select(.outcome.status == "still-present")] | length),
+    deferred: ([.cc_review_threads[]? | select(.outcome.completed != true or .outcome.status == "deferred" or .outcome.status == "unclear")] | length),
+    human: 0}' "$PLAN")
+else
+  COUNTS=$(jq -c '{bot_valid: ([.replies[] | select(.action == "accepted")] | length),
+    bot_rejected: ([.replies[] | select(.action == "rejected")] | length),
+    deferred: ([.replies[] | select(.action == "deferred")] | length),
+    human: (.human | length)}' "$PLAN")
+fi
 PROPOSED=$(jq -r 'if .prepared_commit != null or (.replies | length) > 0 or ((.cc_review_threads // []) | length) > 0
   or ((.stale_resolutions // []) | length) > 0 or (.human | length) > 0 then "apply" else "skip" end' "$PLAN")
 PREPARED=$(jq -r '.prepared_commit // ""' "$PLAN")
@@ -487,7 +525,7 @@ done
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
 S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
 "$S/bulk-state.sh" set-status "$RUN_ID" deciding >/dev/null
-jq -c '.prs[] | {number, title, author, status, reason, counts, report, proposed, decision, flags, authored_by_user}' "$RUN_DIR/state.json"
+jq -c '.prs[] | {number, title, author, triage_role, assessment, status, reason, counts, report, proposed, decision, flags, authored_by_user}' "$RUN_DIR/state.json"
 ```
 
 Only PRs with status `analyzed` and no recorded `decision` are decided; `failed`, `closed`, `stale` and finished PRs appear in the table with their status and no action.
@@ -496,7 +534,7 @@ Only PRs with status `analyzed` and no recorded `decision` are decided; `failed`
 
 **Deferred mode.** The whole decision is one step (SC-001):
 
-1. Print the full table as text, one row per PR in the run, with the command's columns (see its Decision and Apply section) and the per-PR report path, so the user can read full findings before deciding.
+1. Print the full table as text, one row per PR in the run, including the triage role and shared selection reason, the command's columns (see its Decision and Apply section), and the per-PR report path, so the user can read full findings before deciding.
 2. Ask one question with these choices:
    - **Apply proposed actions**: every undecided analyzed PR gets its `proposed` action.
    - **Change actions per PR**: ask per PR, in batches of up to 4 PRs per prompt, offering exactly that PR's allowed actions (see the command's section). PRs the user does not change keep their proposed action.
@@ -679,7 +717,7 @@ With `["fix"]` alone, the PR is done after the push.
 
 A PR that has recorded actions (a push, a review, replies) is never stored as `failed`: `bulk-state.sh pr-set` turns `failed` into `partially-applied` for it, so a resume applies the rest instead of analyzing the PR again and forgetting what was already pushed or posted.
 
-**2. `post`** (when the decision contains it): skip this part when `.actions.review_id` is already recorded (a resumed run). Otherwise run the generic head check immediately before dispatching (always, whether or not the fix part pushed; after a push the expected head is the pushed commit), then dispatch the posting worker of `review.md` "Worker Mode (bulk)" (g) with `EXPECTED_HEAD`, `RUN_MARKER`, `PR_DIR`, `PROJECT_DIR`, `OWNER`, `REPO` and:
+**2. `post`** (when the decision contains it): skip this part when `.actions.review_id` is already recorded (a resumed run). Otherwise run the generic head check immediately before dispatching (always, whether or not the fix part pushed; after a push the expected head is the pushed commit), then dispatch the posting worker of `review.md` "Worker Mode (bulk)" (g) with `EXPECTED_HEAD`, `RUN_MARKER`, `PR_DIR`, `PROJECT_DIR`, `OWNER`, `REPO`, and `GH_USER` from `.gh_user` in the run state, plus:
 - `CAN_REQUEST_CHANGES`: `true` when the PR author is not the authenticated user (`authored_by_user` is false; GitHub does not let authors request changes on their own PR), otherwise `false`. The worker skips Step 5b, so it only knows this value from you; deferred mode then follows the 7.5k rule (a request for changes on someone else's PR with Critical or Important findings).
 - `JUST_PUSHED`: `true` when this run pushed fix commits to the PR (`.actions.pushed_sha` is set), so the worker retries a "head moved" answer briefly while GitHub catches up with the push.
 - in unattended mode `REVIEW_EVENT_OVERRIDE=COMMENT` (it wins over `CAN_REQUEST_CHANGES`, so an unattended run never blocks a PR).
@@ -724,12 +762,12 @@ export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RU
 S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
 jq -r --arg dir "$RUN_DIR" '
   def cell: tostring | gsub("\\|"; "\\|");
-  "| PR | Title | Valid/Rejected/Deferred/Human | Status | Summary | Proposed |",
-  "|---|---|---|---|---|---|",
-  (.prs[] | "| #\(.number) | \(.title | cell) | \(if .counts then "\(.counts.bot_valid)/\(.counts.bot_rejected)/\(.counts.deferred)/\(.counts.human)" else "-" end) | \(.status)\(if .reason then " (\(.reason | cell))" else "" end)\(if (.flags | length) > 0 then " [\(.flags | join(", "))]" else "" end) | \(if .report then "\($dir)/\(.report)" else "-" end) | \(if .status == "analyzed" and .decision == null then .proposed else ((.decision // ["-"]) | join(" + ")) end) |")' "$RUN_DIR/state.json"
+  "| PR | Title | Role | Selection reason | Valid/Rejected/Deferred/Human | Status | Summary | Proposed |",
+  "|---|---|---|---|---|---|---|---|",
+  (.prs[] | "| #\(.number) | \(.title | cell) | \(.triage_role // "-" | cell) | \(.assessment.triage.reason // "-" | cell) | \(if .counts then "\(.counts.bot_valid)/\(.counts.bot_rejected)/\(.counts.deferred)/\(.counts.human)" else "-" end) | \(.status)\(if .reason then " (\(.reason | cell))" else "" end)\(if (.flags | length) > 0 then " [\(.flags | join(", "))]" else "" end) | \(if .report then "\($dir)/\(.report)" else "-" end) | \(if .status == "analyzed" and .decision == null then .proposed else ((.decision // ["-"]) | join(" + ")) end) |")' "$RUN_DIR/state.json"
 ```
 
-Explain the columns once in plain words (valid bot suggestions fixed in a prepared commit, rejected and deferred suggestions with drafted replies, human comments waiting for the user's answer; the summary file holds the details) and the flags (`local-unpushed`: fixes stay unpushed and only replies are posted; `cross-repo`: a fork, the push may be refused, and then only replies are posted).
+Explain the role and shared selection reason separately from execution status. Author counts describe bot suggestions and human comments; reviewer work verifies existing findings and never prepares a fix commit. Questions stay pending in either role. The summary file holds the details. Explain author flags when relevant (`local-unpushed`: fixes stay unpushed; `cross-repo`: a fork, where an author push may be refused).
 
 ### Allowed actions
 

@@ -9,9 +9,8 @@
 # Review selects, by default, the PRs that request the user's review plus
 # re-reviews; --all-open selects every open PR; --search selects the open
 # PRs of the current repository that match the query.
-# Triage selects the user's own open PRs (narrowed by --search) that have at
-# least one unresolved review thread; the others are excluded as
-# no-open-threads.
+# Triage selects author feedback and fresh owned reviewer findings, including
+# drafts. Shared Python assessment decides both action categories.
 #
 # Prints {"selected": [PrEntry seed], "excluded": [Exclusion]} on stdout.
 # Selected PRs are ordered by updatedAt ascending (least recently updated
@@ -66,6 +65,38 @@ gh_json() {
   fi
 }
 
+selection_context() {
+  local tool identity repo_meta err
+  for tool in python3 gh jq; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "Error: $tool is required for bulk selection" >&2; exit 1; }
+  done
+  python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)' || {
+    echo "Error: Python 3.9+ is required for bulk selection" >&2; exit 1;
+  }
+  identity=$(tmpfile); repo_meta=$(tmpfile); err=$(tmpfile)
+  if ! try "$err" gh api user --jq .login > "$identity"; then
+    echo "Error: authentication unavailable; run gh auth login: $(tail -n 1 "$err")" >&2; exit 1
+  fi
+  [ -s "$identity" ] && [ "$(cat "$identity")" != null ] || {
+    echo "Error: authentication is unavailable; run gh auth login" >&2; exit 1;
+  }
+  gh_json "$repo_meta" gh repo view --json nameWithOwner,url
+  BULK_REPOSITORY=$(jq -er '.nameWithOwner | select(type == "string" and length > 0)' "$repo_meta") || {
+    echo "Error: repository identity is unavailable; check access" >&2; exit 1;
+  }
+  BULK_HOST=$(jq -r '(.url // "https://github.com") | sub("^https://"; "") | split("/")[0]' "$repo_meta")
+  COLLECTION_WARNINGS_FILE=$(tmpfile)
+  printf '[]\n' > "$COLLECTION_WARNINGS_FILE"
+}
+
+selection_warning() {
+  local next
+  echo "Warning: $1" >&2
+  next=$(tmpfile)
+  jq --arg warning "$1" '. + [$warning]' "$COLLECTION_WARNINGS_FILE" > "$next"
+  cp "$next" "$COLLECTION_WARNINGS_FILE"
+}
+
 # origin_protocol: the protocol of origin's URL (ssh or https), used for the
 # push URLs of PR head repositories. The configured URL is read without
 # insteadOf expansion, so it reflects what the user typed.
@@ -102,7 +133,7 @@ refetch_truncated_reviews() {
 # warn_cap <file>: a list query that hit LIST_CAP may have missed PRs
 warn_cap() {
   if [ "$(jq 'length' "$1")" -ge "$LIST_CAP" ]; then
-    echo "Warning: the PR list reached $LIST_CAP entries; PRs beyond it were not considered (narrow the selection with --search)" >&2
+    selection_warning "the PR list reached $LIST_CAP entries; PRs beyond it were not considered (narrow the selection with --search)"
   fi
 }
 
@@ -147,33 +178,25 @@ drafts_wanted() {
 # kept) and PRs reviewed at their head are excluded; the rest is ordered,
 # capped and turned into seeds
 classify() {
-  local file="$1" user="$2" limit="$3" keep_drafts="${4:-false}"
-  jq --arg user "$user" --arg marker "$MARKER" --argjson limit "$limit" --arg proto "$(origin_protocol)" \
-    --argjson keep_drafts "$keep_drafts" '
-    def reviewed_at_head: .headRefOid as $h | .author.login as $pr_author
-      | any(.reviews[]?; ((.body // "") | contains($marker)) and .commit.oid == $h
-          and (.author.login != $pr_author or .author.login == $user));
-    def seed: {
-      number, title,
-      author: .author.login,
-      head_ref: .headRefName,
-      base_ref: .baseRefName,
-      head_repo_url: ((.headRepositoryOwner.login // .headRepository.owner.login) as $o | .headRepository.name as $n
-        | if $o and $n then
-            (if $proto == "ssh" then "git@github.com:\($o)/\($n).git" else "https://github.com/\($o)/\($n).git" end)
-          else null end),
-      is_cross_repo: (.isCrossRepository // false),
-      authored_by_user: (.author.login == $user)
-    };
-    sort_by(.updatedAt, .number)
-    | if $keep_drafts then map(.isDraft = false) else . end
-    | (map(select(.isDraft)) | map({number, title, reason: "draft"})) as $drafts
-    | (map(select((.isDraft | not) and reviewed_at_head)) | map({number, title, reason: "reviewed-at-head"})) as $at_head
-    | map(select((.isDraft | not) and (reviewed_at_head | not))) as $open
-    | {
-        selected: ($open[:$limit] | map(seed)),
-        excluded: ($at_head + $drafts + ($open[$limit:] | map({number, title, reason: "over-limit"})))
-      }' "$file"
+  local file="$1" user="$2" limit="$3" keep_drafts="${4:-false}" action="${5:-review}" mode="${6:-default}"
+  local normalized result
+  local draft_args=()
+  [ "$keep_drafts" = true ] && draft_args+=(--include-review-drafts)
+  normalized=$(tmpfile); result=$(tmpfile)
+  jq -e 'type == "array"' "$file" >/dev/null || { echo "Error: required PR evidence is unavailable" >&2; exit 1; }
+  jq --arg proto "$(origin_protocol)" --arg host "$BULK_HOST" 'map(. + {origin_protocol:$proto,host:$host})' "$file" > "$normalized"
+  python3 -B "$SCRIPT_DIR/pr_actions.py" select --source bulk --repo "$BULK_REPOSITORY" --user "$user" \
+    --host "$BULK_HOST" --review-mode "$mode" --action "$action" --limit "$limit" \
+    ${draft_args[@]+"${draft_args[@]}"} < "$normalized" > "$result" || exit $?
+  jq -r '.warnings[] | "Warning: " + .' "$result" >&2
+  jq --slurpfile collection "$COLLECTION_WARNINGS_FILE" '.warnings += $collection[0]' "$result" > "$normalized"
+  cp "$normalized" "$result"
+  if jq -e --arg action "$action" '(.selected|length)==0 and (.excluded|length)>0
+      and all(.excluded[]; .assessment[$action].complete == false)' "$result" >/dev/null; then
+    echo "Error: required $action evidence is unavailable; queue assessment is incomplete" >&2
+    exit 1
+  fi
+  cat "$result"
 }
 
 do_review() {
@@ -192,6 +215,8 @@ do_review() {
   done
   [ -n "$user" ] || { echo "Error: --user is required" >&2; exit 2; }
   [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -gt 0 ] || { echo "Error: --limit must be a positive integer, got '$limit'" >&2; exit 2; }
+  [ "$mode" != search ] || check_query "$query"
+  selection_context
 
   local requested reviewed candidates
   requested=$(tmpfile); reviewed=$(tmpfile); candidates=$(tmpfile)
@@ -200,7 +225,7 @@ do_review() {
       gh_json "$candidates" gh pr list --state open --limit "$LIST_CAP" --json "$PR_FIELDS"
       warn_cap "$candidates"
       refetch_truncated_reviews "$candidates"
-      classify "$candidates" "$user" "$limit"
+      classify "$candidates" "$user" "$limit" false review all-open
       return ;;
     search)
       check_query "$query"
@@ -208,7 +233,7 @@ do_review() {
       gh_json "$candidates" gh pr list --state open --search "$query" --limit "$LIST_CAP" --json "$PR_FIELDS"
       warn_cap "$candidates"
       refetch_truncated_reviews "$candidates"
-      classify "$candidates" "$user" "$limit" "$(drafts_wanted "$query")"
+      classify "$candidates" "$user" "$limit" "$(drafts_wanted "$query")" review search
       return ;;
   esac
   # review-requested:@me includes requests to the user's teams
@@ -225,7 +250,8 @@ do_review() {
   jq -s --arg user "$user" --arg marker "$MARKER" '
     (.[1] | map(select(.headRefOid as $h | .author.login != $user and any(.reviews[]?;
       .author.login == $user and ((.body // "") | contains($marker)) and .commit.oid != $h)))) as $rereview
-    | .[0] + $rereview | unique_by(.number)' "$requested" "$reviewed" > "$candidates"
+    | (.[0] | map(. + {reasons:["review_requested"]}))
+      + ($rereview | map(. + {reasons:["reviewed"]})) | unique_by(.number)' "$requested" "$reviewed" > "$candidates"
   classify "$candidates" "$user" "$limit"
 }
 
@@ -237,14 +263,34 @@ TRIAGE_QUERY='
       issueCount
       nodes {
         ... on PullRequest {
-          number title isDraft headRefOid headRefName baseRefName updatedAt isCrossRepository
+          number title state isDraft headRefOid headRefName baseRefName updatedAt isCrossRepository
           author { login }
           headRepository { name owner { login } }
-          reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } }
+          reviewThreads(first: 100) { totalCount pageInfo { hasNextPage hasPreviousPage } nodes { isResolved } }
         }
       }
     }
   }'
+
+# A separate bounded root alias preserves ownership when the latest-reply
+# window omits the finding. Truncated decisive history stays incomplete.
+REVIEWER_QUERY='query BulkActionContext($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner:$owner,name:$repo) { pullRequest(number:$number) {
+    number title state isDraft headRefOid headRefName baseRefName updatedAt isCrossRepository author { login }
+    headRepository { name owner { login } }
+    reviews(last:20) { totalCount pageInfo { hasNextPage hasPreviousPage } nodes { body author { login } commit { oid } } }
+    reviewRequests(first:100) { totalCount pageInfo { hasNextPage hasPreviousPage } nodes { requestedReviewer { ... on User { login } } } }
+    reviewThreads(last:20) { totalCount pageInfo { hasNextPage hasPreviousPage } nodes {
+      id isResolved path line
+      rootComment: comments(first: 1) { nodes { id databaseId body updatedAt author { login __typename }
+        originalCommit { oid } pullRequestReview { body author { login } commit { oid } } } }
+      comments(last: 10) { totalCount pageInfo { hasNextPage hasPreviousPage } nodes {
+        id databaseId body updatedAt author { login __typename } originalCommit { oid }
+        pullRequestReview { body author { login } commit { oid } }
+      } }
+    } }
+  } }
+}'
 
 do_triage() {
   local usage="Usage: bulk-select.sh triage [--search <q>] [--limit <n>] --user <login>"
@@ -263,27 +309,48 @@ do_triage() {
   [ -n "$user" ] || { echo "Error: --user is required" >&2; exit 2; }
   [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -gt 0 ] || { echo "Error: --limit must be a positive integer, got '$limit'" >&2; exit 2; }
   [ -z "$query" ] || check_query "$query"
+  selection_context
 
-  local repo result candidates threadless rest out
+  local repo result candidates threadless rest out reviewed detail err n record
   repo=$(tmpfile); result=$(tmpfile); candidates=$(tmpfile); rest=$(tmpfile); out=$(tmpfile)
-  gh_json "$repo" gh repo view --json nameWithOwner -q .nameWithOwner
+  printf '%s' "$BULK_REPOSITORY" > "$repo"
   gh_json "$result" gh api graphql -f query="$TRIAGE_QUERY" \
     -f q="repo:$(cat "$repo") is:pr is:open author:@me${query:+ $query}"
   if [ "$(jq '.data.search.issueCount // 0' "$result")" -gt 100 ]; then
-    echo "Warning: the search matched more than 100 of your open PRs; only the first 100 were considered (narrow it with --search)" >&2
+    selection_warning "the search matched more than 100 of your open PRs; only the first 100 were considered (narrow it with --search)"
   fi
-  # A PR with more than 100 threads may have its unresolved ones on a later
-  # page: count it as having one, so it is triaged rather than dropped. Only
-  # the user's own PRs are kept, whatever the query matched (FR-007).
+  jq -e '.data.search.nodes | type == "array"' "$result" >/dev/null || {
+    echo "Error: required author PR evidence is unavailable" >&2; exit 1;
+  }
   jq --arg user "$user" '[.data.search.nodes[]? | select(.number != null and .author.login == $user)
-    | . + {unresolved: (([.reviewThreads.nodes[]? | select(.isResolved | not)] | length)
-        + (if .reviewThreads.pageInfo.hasNextPage then 1 else 0 end)), reviews: []}]' \
+    | . + {reviews: [],reasons:["authored"]}]' \
     "$result" > "$candidates"
-  # PRs without an unresolved thread have nothing to triage (FR-007)
-  threadless=$(jq -c 'sort_by(.updatedAt, .number) | map(select(.unresolved == 0)) | map({number, title, reason: "no-open-threads"})' "$candidates")
-  jq 'map(select(.unresolved > 0))' "$candidates" > "$rest"
-  classify "$rest" "$user" "$limit" "$(drafts_wanted "$query")" > "$out"
-  jq --argjson none "$threadless" '.excluded = $none + .excluded' "$out"
+  reviewed=$(tmpfile); detail=$(tmpfile); err=$(tmpfile)
+  if ! try "$err" gh pr list --state open --search "reviewed-by:@me${query:+ $query}" --limit 100 --json "$PR_FIELDS" > "$reviewed"; then
+    if grep -qiE 'HTTP 401|authentication|not logged in|gh auth login' "$err"; then
+      echo "Error: GitHub authentication is unavailable: $(tail -n 1 "$err")" >&2; exit 1
+    fi
+    selection_warning "reviewer PR discovery unavailable; reviewer triage may be incomplete: $(tail -n 1 "$err")"
+    printf '[]\n' > "$reviewed"
+  fi
+  jq -e 'type == "array"' "$reviewed" >/dev/null || { echo "Error: reviewed PR discovery is unavailable" >&2; exit 1; }
+  if [ "$(jq 'length' "$reviewed")" -ge 100 ]; then
+    selection_warning "reviewed PR discovery reached 100 entries; narrow with --search"
+  fi
+  for n in $(jq -r --arg user "$user" '.[] | select(.author.login != $user) | .number' "$reviewed"); do
+    record=$(tmpfile)
+    if try "$err" gh api graphql -f query="$REVIEWER_QUERY" -f owner="${BULK_REPOSITORY%/*}" \
+        -f repo="${BULK_REPOSITORY#*/}" -F number="$n" > "$detail" \
+        && jq -e --argjson n "$n" '.data.repository.pullRequest | type=="object" and .number==$n' "$detail" >/dev/null; then
+      jq '[.data.repository.pullRequest + {reasons:["reviewed"]}]' "$detail" > "$record"
+    else
+      selection_warning "PR #$n reviewer detail unavailable; assessment incomplete"
+      jq --argjson n "$n" '[.[] | select(.number==$n) | . + {reviewThreads:null,reasons:["reviewed"]}]' "$reviewed" > "$record"
+    fi
+    jq -s '.[0]+.[1] | unique_by(.number)' "$candidates" "$record" > "$rest"
+    cp "$rest" "$candidates"
+  done
+  classify "$candidates" "$user" "$limit" false triage
 }
 
 case "${1:-}" in

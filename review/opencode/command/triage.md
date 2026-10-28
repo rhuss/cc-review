@@ -1,6 +1,6 @@
 # Triage
 
-PR comment triage that classifies bot vs human review comments and handles them.
+PR triage that continues author feedback and owned reviewer feedback on existing threads.
 
 ## Core Resolution
 
@@ -25,8 +25,10 @@ Pass through all arguments from the user's invocation:
 - `--profile <name>`: Profile preset name (ci, thorough, quick)
 - `--no-coverage-fix`: Skip automatic coverage fixes
 - `--idea-inbox <path>`: File path for capturing out-of-scope ideas
-- `--bulk`: Triage all your open PRs with unresolved threads in one run
+- `--bulk`: Triage eligible open PRs with author or reviewer-owned feedback in one run
 - `--search <query>`: Restrict the bulk selection with a PR search
 - `--limit <n>`: Maximum number of PRs in a bulk run
 - `--unattended`: Bulk run without prompts, using the fixed policy
 - `--resume [<run-id>]`: Continue an unfinished bulk run
+
+A PR may need both review and triage. Review assesses a first or substantial code review; triage continues eligible feedback on an existing review. Reviewer triage verifies exact owned threads and never commits or pushes code. Draft PRs remain eligible for triage even though ordinary bulk review skips drafts.

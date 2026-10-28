@@ -106,6 +106,7 @@ case "${positional[0]:-} ${positional[1]:-}" in
     case "$search" in
       "") out=$(fixture pr-list-all.json) || exit 1 ;;
       *review-requested:@me*) out=$(fixture pr-list-review-requested.json) || exit 1 ;;
+      *reviewed-by:@me\ *) out=$(fixture pr-list-reviewed-by-search.json pr-list-reviewed-by.json) || exit 1 ;;
       *reviewed-by:@me*) out=$(fixture pr-list-reviewed-by.json) || exit 1 ;;
       *) out=$(fixture pr-list-search.json) || exit 1 ;;
     esac ;;
@@ -113,6 +114,7 @@ case "${positional[0]:-} ${positional[1]:-}" in
     out=$(fixture "pr-view-${positional[2]:-}.json" pr-view.json) || exit 1 ;;
   "api graphql")
     case "$query" in
+      *ActionContext*) out=$(fixture "graphql-action-$number.json") || exit 1 ;;
       *resolveReviewThread*) out='{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}' ;;
       *search*) out=$(fixture graphql-search.json) || exit 1 ;;
       *reviewThreads*) out=$(fixture "graphql-threads-$number.json" graphql-threads.json) || exit 1 ;;

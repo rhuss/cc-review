@@ -84,6 +84,14 @@ allow_untrusted_checkout:
   codex: true
 ```
 
+## Repository Inbox
+
+Use `/inbox --type pr` to see open PRs and whether your next action is review, triage, or both. Review covers a first or substantial code review. Triage continues eligible feedback already owned by you on another author's PR, or comments on your own PR. A PR can stay eligible for both actions; completing one does not satisfy the other. The inbox is read-only and labels missing or bounded review-thread context as incomplete instead of treating it as a verified empty result.
+
+Inbox collection is bounded to 100 discoveries per reason, 20 activity entries, and 10 replies per displayed thread. The report shows when those limits or service errors leave coverage incomplete. Draft PRs can appear in the inbox and remain eligible for triage; ordinary bulk review skips drafts.
+
+The inbox reads reviewer activity from `$XDG_STATE_HOME/cc-review/reviewer-activity/`, or `~/.local/state/cc-review/reviewer-activity/` by default. It does not create or update this cache. The existing author triage state remains at `.cc-review/.triage-state.json`.
+
 ## Configuration
 
 ### Project-level config
@@ -164,7 +172,7 @@ Or target a specific PR:
 /triage --pr 42
 ```
 
-Triage fetches all review threads via the GitHub GraphQL API, classifies each comment by author (bot vs human), and handles them according to the bot profiles in your config.
+Triage fetches review threads via the GitHub GraphQL API, classifies each comment by author (bot vs human), and handles them according to the bot profiles in your config. It can continue your owned feedback on another author's PR as reviewer triage. That path checks the current code and exact thread, prepares a reply for approval when needed, and never commits or pushes code. Author triage on your own PR keeps its existing fix workflow.
 
 Default bot profiles:
 
@@ -182,7 +190,7 @@ Human comments are presented for interactive review. Out-of-scope ideas can be c
 
 ### Triage State
 
-Triage tracks which comments have been handled in `.cc-review/.triage-state.json` (git-ignored by default). Running triage again skips already-handled comments, so you can run it incrementally as new reviews arrive.
+Author triage tracks handled comments in `.cc-review/.triage-state.json` (git-ignored by default). Reviewer follow-up outcomes are stored per account under `$XDG_STATE_HOME/cc-review/reviewer-activity/`, or `~/.local/state/cc-review/reviewer-activity/` by default. Exact thread, root, head, and conversation activity prevent duplicate replies or resolutions across triage and review; a new head or reply makes the activity eligible again. Questions, deferred work, and incomplete verification remain visible and are not marked handled.
 
 ## Bulk Review and Triage
 
@@ -204,14 +212,16 @@ Each PR is checked out into its own temporary worktree, so your current branch, 
 | `--all-open` | every open PR in the repository |
 | `--search '<query>'` | the open PRs of this repository that match a GitHub search, for example `--search 'label:needs-review'` |
 
-`/triage --bulk` takes your own open PRs that have at least one unresolved review thread. `--search` narrows that list further. `--all-open` is not available for triage.
+`/triage --bulk` takes open PRs with eligible author feedback or reviewer-owned follow-up threads. `--search` narrows that list further. Drafts are included for triage. `--all-open` is not available for triage.
 
 These rules hold for every selector:
 
-- Draft PRs are skipped unless the search asks for them with `draft:true` or `is:draft`.
+- Draft PRs are skipped by ordinary bulk review unless the search explicitly selects them (`is:draft` or `draft:true`). Triage includes drafts because existing feedback can still need action.
 - `/review --bulk` skips a PR that already has a cc-review review at its current head commit. A cc-review marker posted by the PR's own author doesn't count, so nobody can opt their PR out of review that way. The one exception is your own marker on your own PR, which counts. (`/triage --bulk` does not apply this rule; it goes by unresolved threads.)
 - The search always stays inside the current repository and its open PRs, so `repo:`, `org:`, `user:`, `is:closed`, `is:merged` and `state:` are rejected.
 - `--limit <n>` caps the run (10 by default). The PRs that haven't been updated for the longest time come first.
+
+Delta-scoped incremental follow-up review, including rebase handling and explicit verification of prior findings, is still proposed in [brainstorm #09](../brainstorm/09-incremental-review.md). The current shared inbox assessment separates review from triage without replacing the review command's full-review behavior.
 
 Some combinations are rejected before anything runs: `--all-open` with `--search`, `--bulk` with `--pr`, `--spec` with `--bulk`, `--output` with bulk review (each PR's report goes to its run directory), and a `--limit` that isn't a positive whole number.
 

@@ -79,7 +79,7 @@ The snapshot contains:
 - repository, repository_url, host, user, collected_at;
 - scope: types, effective dates, limit_per_type, discovery_limit_per_reason, the shared detail-collection timeout, and detail_bounds;
 - sources: type, status, discovered/selected unique counts, per-reason query counts and warnings;
-- items: identity/type/title/link/author/state/update, reasons, is_draft, detail, context_complete, warnings.
+- items: identity/type/title/link/author/state/update, reasons, is_draft, detail, context_complete, warnings; PRs also carry the shared `assessment` for independent review and triage actions.
 
 Reasons are facts established by separate searches: authored, assigned, mentioned, commented, reviewed, review_requested. Preserve all reasons, and show each item once.
 
@@ -103,11 +103,13 @@ For each item, identify:
 
 Apply these rules:
 
+For PRs, the collector's shared assessment is authoritative for executable review/triage eligibility. Read both actions, including role, linked evidence, uncertainty, completeness and exclusions. A PR may need **both review and triage**; show both without choosing precedence. Reviewer triage verifies the user's owned cc-review findings on another author's PR; author triage handles feedback on their own PR. Explain draft, already-reviewed, query/scope, collection and bulk-limit differences. Inbox discovers recent items under its own per-type limit; bulk defaults to ten eligible PRs ordered by oldest update. An inbox action alone cannot promise inclusion in a differently scoped/limited bulk run. Incomplete assessment means check the missing context, while preserving any independently established action. Never infer executable eligibility from shortened display bodies or a PR-wide marker. The collector reads existing reviewer activity state only.
+
 | Situation | Assessment |
 |---|---|
-| A current PR review request addresses the user or one of their teams | Needs your attention: review, citing request state and the PR link. Label drafts and acknowledge their readiness context. |
+| A current PR review request addresses the user or one of their teams | Needs your attention: explain the shared review assessment, citing request state and the PR link. Explain an independent draft/reviewed-head exclusion and retain triage when eligible. |
 | The user's PR has unresolved actionable feedback | Needs your attention: suggest triage, linking the relevant thread. Resolved/outdated threads alone do not prove an outstanding task. |
-| New commits follow the user's manual review | Explain the head/review difference. Suggest a possible follow-up review with uncertainty unless a current request or context establishes it. Commit recency alone does not prove review is owed. |
+| New commits follow the user's manual review | Explain the head/review difference as context. Recommend executable review only when the shared assessment supports it; otherwise suggest checking context. Changed-head candidates remain uncertain without reliable contribution evidence; detailed incremental review belongs to the separate follow-up. |
 | A live question or assignment explicitly addresses the user | Needs your attention: explain the request and suggest the concrete next step, citing it. Distinguish direct questions from quotations, historical mentions, and questions already answered later. |
 | The user made an outstanding request to someone else | Waiting on others: identify that request and the person/team when supported by context. |
 | The item remains relevant but inspected context shows no outstanding request or task | No current action: briefly explain the state. |

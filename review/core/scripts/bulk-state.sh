@@ -54,7 +54,9 @@ JQ_DEFS="
     | .worktree = null | .counts = null | .report = null | .proposed = null
     | .decision = null | del(.fixable) | .flags = ((.flags // []) - [\"local-unpushed\"]);
   def acted: .actions.pushed_sha != null or .actions.review_id != null
-    or (.actions.replies | length) > 0 or (.actions.resolved | length) > 0;
+    or (.actions.replies | length) > 0 or (.actions.resolved | length) > 0
+    or ((.actions.reviewer_replies // {}) | length) > 0
+    or ((.actions.reviewer_resolved // []) | length) > 0;
   def to_apply: .decision != null
     and (.status == \"analyzed\" or .status == \"applying\" or .status == \"partially-applied\");
 "
@@ -120,7 +122,9 @@ check_state() {
             | check((.number | type) == "number"; "prs[\($i)].number must be a number"),
               check(.status as $s | $pr_statuses | index($s); "prs[\($i)].status \(.status | tojson) is not a PR status"),
               check((.dir | type) == "string"; "prs[\($i)].dir is missing"),
-              check((.actions | type) == "object"; "prs[\($i)].actions must be an object"))
+              check((.actions | type) == "object"; "prs[\($i)].actions must be an object"),
+              check(.triage_role == null or .triage_role == "author" or .triage_role == "reviewer";
+                "prs[\($i)].triage_role must be author, reviewer or null"))
         end
       end' "$file" 2>&1); then
     echo "Error: invalid bulk state $name: not valid JSON ($problems)" >&2
@@ -170,6 +174,7 @@ render_md() {
     def counts: if . == null then "-"
       elif has("critical") then "\(.critical)/\(.important)/\(.minor)/\(.notable)"
       else "\(.bot_valid)/\(.bot_rejected)/\(.deferred)/\(.human)" end;
+    .command as $command |
     "# Bulk \(.command) run \(.run_id)",
     "",
     "- Status: \(.status)",
@@ -181,9 +186,9 @@ render_md() {
     "",
     "Counts are \(if .command == "review" then "Critical/Important/Minor/Notable" else "valid/rejected/deferred/human" end).",
     "",
-    "| PR | Title | Author | Status | Counts | Proposed | Decision | Reason | Report |",
-    "|---|---|---|---|---|---|---|---|---|",
-    (.prs[] | "| #\(.number) | \(.title | cell) | \(.author | cell) | \(.status) | \(.counts | counts) | \(.proposed | dash | cell) | \(.decision | if . == null then "-" else join(", ") end) | \(.reason | dash | cell) | \(.report | dash | cell) |"),
+    "| PR | Title | Author | Role | Status | Counts | Proposed | Decision | Reason | Report |",
+    "|---|---|---|---|---|---|---|---|---|---|",
+    (.prs[] | "| #\(.number) | \(.title | cell) | \(.author | cell) | \(.triage_role | dash | cell) | \(.status) | \(.counts | counts) | \(.proposed | dash | cell) | \(.decision | if . == null then "-" else join(", ") end) | \((.reason // .assessment[$command].reason) | dash | cell) | \(.report | dash | cell) |"),
     "",
     "## Excluded",
     "",
@@ -271,9 +276,12 @@ do_set_prs() {
   printf '%s' "$excluded" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Error: excluded must be a JSON array" >&2; exit 2; }
   dir=$(run_dir "$run")
   update "$run" '
-    .status = "analyzing"
+    .command as $command | .gh_user as $user
+    | .status = "analyzing"
     | .excluded = $excluded
     | .prs = ($prs | map(. + {
+        triage_role: (if $command == "triage" then
+          (.triage_role // (if .author == $user then "author" else null end)) else null end),
         analyzed_head: null, expected_head: null, pending_push: null,
         status: "pending", reason: null, dir: "pr-\(.number)", worktree: null,
         counts: null, report: null,
@@ -324,7 +332,7 @@ do_pr_get() {
 }
 
 do_record() {
-  local usage="Usage: bulk-state.sh record <run> <n> {pending_push <sha>|pushed_sha <sha>|review_id <id>|reply <comment_id> <reply_id>|resolved <thread_id>}"
+  local usage="Usage: bulk-state.sh record <run> <n> {pending_push <sha>|pushed_sha <sha>|review_id <id>|reply <comment_id> <reply_id>|reviewer_reply <activity_key> <reply_id>|reviewer_resolved <activity_key>|resolved <thread_id>}"
   [ $# -ge 4 ] || { echo "$usage" >&2; exit 2; }
   local run="$1" n="$2" form="$3"
   shift 3
@@ -342,6 +350,14 @@ do_record() {
     reply)
       [ $# -eq 2 ] || { echo "$usage" >&2; exit 2; }
       update_pr "$run" "$n" '.actions.replies[$k] = ($v | tonumber? // $v)' --arg k "$1" --arg v "$2" ;;
+    reviewer_reply)
+      [ $# -eq 2 ] || { echo "$usage" >&2; exit 2; }
+      [[ "$1" =~ ^[a-f0-9]{64}$ ]] || { echo "Error: reviewer activity key must be a SHA-256 hex string" >&2; exit 2; }
+      update_pr "$run" "$n" '.actions.reviewer_replies[$k] = ($v | tonumber? // $v)' --arg k "$1" --arg v "$2" ;;
+    reviewer_resolved)
+      [ $# -eq 1 ] || { echo "$usage" >&2; exit 2; }
+      [[ "$1" =~ ^[a-f0-9]{64}$ ]] || { echo "Error: reviewer activity key must be a SHA-256 hex string" >&2; exit 2; }
+      update_pr "$run" "$n" 'if any((.actions.reviewer_resolved // [])[]; . == $v) then . else .actions.reviewer_resolved = ((.actions.reviewer_resolved // []) + [$v]) end' --arg v "$1" ;;
     resolved)
       [ $# -eq 1 ] || { echo "$usage" >&2; exit 2; }
       update_pr "$run" "$n" 'if any(.actions.resolved[]; . == $v) then . else .actions.resolved += [$v] end' --arg v "$1" ;;
@@ -591,6 +607,9 @@ do_summary() {
       [ -f "$plan" ] || continue
       lines=$(jq -r --argjson n "$n" '.human[]? | select(.decision == null)
         | "- #\($n) \(.path):\(.line) (@\(.author)): \(.text | split("\n")[0])"' "$plan" 2>/dev/null || true)
+      if [ -n "$lines" ]; then attention+="$lines"$'\n'; fi
+      lines=$(jq -r --argjson n "$n" 'select(.triage_role == "reviewer") | .cc_review_threads[]? | select(.outcome.completed != true or .outcome.status == "still-present" or .outcome.status == "deferred" or .outcome.status == "unclear")
+        | "- #\($n) reviewer thread \(.thread_id // "-") (\(.path // "-"):\(.line // "-")): \(.outcome.status // "pending")"' "$plan" 2>/dev/null || true)
       if [ -n "$lines" ]; then attention+="$lines"$'\n'; fi
     done
     ci=$(jq -r '.prs[] | select(.actions.pushed_sha != null)

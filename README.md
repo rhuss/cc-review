@@ -83,7 +83,7 @@ inbox --repo owner/repo --since 2026-10-01
 
 The inbox explains what needs your attention in one repository. It includes your own items, assignments, review requests (including team requests), mentions, and conversations you commented on or reviewed, including participation outside cc-review.
 
-Results appear under **Needs your attention**, **Waiting on others**, and **No current action**. Each entry explains why it appears, links to supporting activity, and suggests a next step. Inferred or uncertain responsibility is labeled. PR suggestions can point to review or triage; issues and Discussions get a suggested next step with a conversation link. The report is read-only, and follow-up actions remain suggestions.
+Results appear under **Needs your attention**, **Waiting on others**, and **No current action**. Each entry explains why it appears, links to supporting activity, and suggests a next step. Inferred or uncertain responsibility is labeled. A PR can suggest review for a first or substantial review, triage for continuing owned feedback, or both; one action does not clear the other. Issues and Discussions get a suggested next step with a conversation link. The report is read-only, and follow-up actions remain suggestions.
 
 | Option | Behavior |
 |--------|----------|
@@ -98,6 +98,8 @@ By default, PRs and issues are open, including draft PRs, with no recency cutoff
 The report states its scope and coverage. Discovery is bounded to 100 matches per relevance reason, and long bodies and conversations are shortened. Reached limits, missing context, failed sources, and disabled or inaccessible Discussions are shown explicitly. Participation or a recent update alone does not mean you owe a response.
 
 The inbox requires Python 3.9+ and `gh` authenticated for the selected repository. It uses the existing plugin installation and works independently of a spec-kit ship pipeline.
+
+Reviewer follow-up activity is stored per GitHub account under `$XDG_STATE_HOME/cc-review/reviewer-activity/`, or `~/.local/state/cc-review/reviewer-activity/` when `XDG_STATE_HOME` is unset. The inbox reads this cache without creating or changing it. Missing or incomplete thread evidence stays visible as uncertain.
 
 ### Code Review
 
@@ -164,13 +166,15 @@ With `--pr` on a branch other than the PR's own, the PR is checked out into a se
 /triage
 ```
 
-Fetches PR review threads, classifies them as bot or human, and handles each according to its triage profile.
+Fetches PR review threads, classifies them as bot or human, and handles each according to its triage profile. Triage can continue owned reviewer feedback on another author's PR as well as comments on your own PR. Reviewer triage verifies the current code and exact feedback thread, drafts a response for approval when needed, and never commits or pushes a code fix. Author triage retains its existing fix workflow.
 
 ```
 /triage --pr 42
 ```
 
 Triage comments on a specific PR.
+
+Triage includes draft PRs. Ordinary bulk review skips drafts unless explicitly included. A PR may qualify for both actions, including in the inbox and bulk selection.
 
 ```
 /triage --spec specs/feature/spec.md
@@ -207,7 +211,7 @@ Pick the PRs with a GitHub search, or take every open PR. Drafts and PRs already
 /triage --bulk
 ```
 
-Triages your own open PRs that have unresolved threads. Bot suggestions that cc-review judges valid are fixed in a prepared commit and every bot comment gets a drafted reply; you approve the pushes and replies in one table and answer human comments in the same step.
+Triages open PRs with eligible author or reviewer-owned feedback. Author PRs keep the prepared-fix workflow. Reviewer triage prepares exact-thread replies and verified outcomes without branch changes; answers still requiring judgment remain pending. Review and triage selections are independent.
 
 ```
 /review --bulk --resume --unattended
@@ -216,6 +220,8 @@ Triages your own open PRs that have unresolved threads. Bot suggestions that cc-
 Continues an unfinished run, or starts a new one, without asking anything. This is the form for scheduled jobs. Unattended reviews are posted as plain comments, no code is changed, and human comments in triage are left for you.
 
 Run state and reports live in `.cc-review/bulk/<run-id>/` (git-ignored); `state.md` shows the progress. See the [standalone guide](docs/standalone-guide.md#bulk-review-and-triage) for the details.
+
+The separate [incremental follow-up review proposal](brainstorm/09-incremental-review.md) covers delta-scoped re-review and rebase handling. That behavior remains proposed; inbox action alignment does not replace full review with incremental review.
 
 ## Configuration
 

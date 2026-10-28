@@ -258,6 +258,209 @@ thread_for() {
       end' "$1"
 }
 
+# reviewer_current_check <plan> <item> <pr-view-file> <thread-file>
+# Fetch live PR/thread data and authorize only the exact prepared activity.
+# On success, the exact current thread JSON is written to thread-file.
+reviewer_current_check() {
+  local plan="$1" item="$2" pr_view_file="$3" thread_file="$4"
+  local activity identity expected expected_thread root_db result allow_resolved="${5:-false}"
+  if ! try "$err" gh pr view "$PR" --json state,headRefOid,author > "$pr_view_file"; then
+    echo "PR state unavailable: $(tail -n 1 "$err")"
+    return 1
+  fi
+  if ! try "$err" fetch_pr_threads "$PR" > "$threads"; then
+    echo "review thread detail unavailable: $(tail -n 1 "$err")"
+    return 1
+  fi
+  activity=$(printf '%s' "$item" | jq -c '.activity // empty')
+  expected_thread=$(printf '%s' "$item" | jq -r '.thread_id // ""')
+  root_db=$(printf '%s' "$item" | jq -r '.comment_id // ""')
+  [ -n "$activity" ] && [ -n "$expected_thread" ] && [ -n "$root_db" ] || {
+    echo "reviewer action is missing exact thread, root, or activity identity"
+    return 1
+  }
+  jq -c --arg tid "$expected_thread" --argjson rootdb "$root_db" \
+    'map(select(.id == $tid and .comments.nodes[0].databaseId == $rootdb)) | if length == 1 then .[0] else empty end' \
+    "$threads" > "$thread_file"
+  [ -s "$thread_file" ] || { echo "exact reviewer thread/root is missing or replaced"; return 1; }
+  if [ "$allow_resolved" = true ]; then
+    jq -e '.isResolved == true' "$thread_file" >/dev/null || return 1
+    jq '.isResolved = false' "$thread_file" > "$thread_file.tmp" && mv "$thread_file.tmp" "$thread_file"
+  fi
+  identity=$(jq -c '.activity_identity' "$plan")
+  expected=$(jq -c '.activity' <<<"$item")
+  result=$(jq -nc --argjson identity "$identity" --argjson expected "$expected" \
+    --argjson current_pr "$(jq '{state, head_oid: .headRefOid, author: .author.login}' "$pr_view_file")" \
+    --slurpfile thread "$thread_file" \
+    '{identity:$identity, expected:$expected, current_pr:$current_pr, thread:$thread[0]}')
+  if ! printf '%s\n' "$result" | python3 "$SCRIPT_DIR/reviewer_activity.py" check > "$out" 2>"$err"; then
+    echo "review activity check failed: $(tail -n 1 "$err")"
+    return 1
+  fi
+  jq -e '.allowed == true and .complete == true' "$out" >/dev/null || {
+    echo "$(jq -r '.reason // "review activity is incomplete"' "$out")"
+    return 1
+  }
+  return 0
+}
+
+reviewer_marker_reply() {
+  local thread_file="$1" plan="$2" item="$3" identity activity
+  identity=$(jq -c '.activity_identity' "$plan")
+  activity=$(printf '%s' "$item" | jq -c '.activity')
+  jq -nc --argjson identity "$identity" --argjson activity "$activity" \
+    --slurpfile thread "$thread_file" '{identity:$identity,activity:$activity,thread:$thread[0]}' \
+    | python3 -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; v=json.load(sys.stdin); print(r.matching_activity_reply(v["thread"],v["identity"],v["activity"]) or "")' "$SCRIPT_DIR/reviewer_activity.py"
+}
+
+reviewer_record_outcome() {
+  local plan="$1" item="$2" reply_id="$3" resolved="$4" identity activity outcome
+  identity=$(jq -c '.activity_identity' "$plan")
+  activity=$(printf '%s' "$item" | jq -c '.activity')
+  outcome=$(printf '%s' "$item" | jq -c '.outcome')
+  jq -nc --argjson identity "$identity" --argjson activity "$activity" --argjson outcome "$outcome" \
+    --argjson reply_id "$(if [ -n "$reply_id" ]; then printf '%s' "$reply_id"; else printf null; fi)" \
+    --argjson resolved "$resolved" \
+    '{identity:$identity,activity:$activity,outcome:$outcome,reply_id:$reply_id,resolved:$resolved}' \
+    | python3 "$SCRIPT_DIR/reviewer_activity.py" record > "$out" 2>"$err" || {
+      echo "Error: cannot record completed reviewer activity: $(tail -n 1 "$err")" >&2
+      return 1
+    }
+  jq -e '.complete == true' "$out" >/dev/null || return 1
+}
+
+# Reviewer plans never use the author bot-repair path. Revalidate each exact
+# activity immediately before posting and again before resolving.
+do_reviewer_triage() {
+  local plan="$1" state="$2" item items action_body activity marker current_pr_file current_thread_file identity
+  local comment_id thread_id resolve outcome_status reply_body response_id posted=0 resolved_n=0 stale=0 retriage=0
+  local activity_key local_reply marker_reply local_resolved
+  local reviewer_state="$SCRIPT_DIR/reviewer_activity.py"
+  pr_status applying
+  current_pr_file=$(tmpfile); current_thread_file=$(tmpfile)
+  items=$(tmpfile)
+  jq -c '[((.cc_review_threads // [])[] | select(
+      (.outcome.completed == true and (.outcome.status == "confirmed-fixed" or .outcome.status == "still-present" or .outcome.status == "accepted-explanation"))
+      and ((.body // "") != "" or .outcome.completed == true))
+      | . + {review_item_kind:"cc_review"})]
+      + [((.human // [])[] | select((.decision == "approve" or .decision == "edit")
+      and .outcome.completed == true
+      and (.outcome.status == "confirmed-fixed" or .outcome.status == "still-present" or .outcome.status == "accepted-explanation"))
+      | . + {review_item_kind:"human"})] | .[]' "$plan" > "$items"
+  while IFS= read -r item <&3; do
+    [ -n "$item" ] || continue
+    response_id=""
+    activity_key=$(printf '%s' "$item" | jq -r '.activity.activity_key')
+    local_resolved=$(pr_field ".actions.reviewer_resolved // [] | index(\"$activity_key\") != null")
+    [ "$local_resolved" = true ] && continue
+    resolve=$(printf '%s' "$item" | jq -r '.resolve // false')
+    outcome_status=$(printf '%s' "$item" | jq -r '.outcome.status // "unclear"')
+    if ! reviewer_current_check "$plan" "$item" "$current_pr_file" "$current_thread_file" >/dev/null; then
+      # Recover the crash window after GitHub resolved the exact prepared
+      # activity but before local resolution/cache recording completed.
+      if [ "$resolve" = true ] \
+        && [[ "$outcome_status" == confirmed-fixed || "$outcome_status" == accepted-explanation ]] \
+        && reviewer_current_check "$plan" "$item" "$current_pr_file" "$current_thread_file" true >/dev/null; then
+        local_reply=$(pr_field ".actions.reviewer_replies[\"$activity_key\"] // \"\"")
+        marker_reply=$(reviewer_marker_reply "$current_thread_file" "$plan" "$item")
+        response_id="${local_reply:-$marker_reply}"
+        if [ -z "$response_id" ] && [ -n "$(printf '%s' "$item" | jq -r '.body // .draft // ""')" ]; then
+          echo "Warning: reviewer thread $(printf '%s' "$item" | jq -r '.thread_id') was resolved before the approved reply was posted"
+          stale=$((stale + 1)); continue
+        fi
+        if [ -n "$response_id" ] && [ -z "$local_reply" ]; then
+          "$BULK_STATE" record "$RUN" "$PR" reviewer_reply "$activity_key" "$response_id" >/dev/null
+        fi
+        reviewer_record_outcome "$plan" "$item" "${response_id:-}" true || { stale=$((stale + 1)); continue; }
+        "$BULK_STATE" record "$RUN" "$PR" reviewer_resolved "$activity_key" >/dev/null
+        resolved_n=$((resolved_n + 1))
+        continue
+      fi
+      echo "Warning: reviewer action on PR #$PR needs fresh preparation: $(jq -r '.reason // "incomplete evidence"' "$out" 2>/dev/null || true)"
+      stale=$((stale + 1)); retriage=$((retriage + 1)); continue
+    fi
+    comment_id=$(printf '%s' "$item" | jq -r '.comment_id')
+    thread_id=$(printf '%s' "$item" | jq -r '.thread_id')
+    activity=$(printf '%s' "$item" | jq -c '.activity')
+    local_reply=$(pr_field ".actions.reviewer_replies[\"$activity_key\"] // \"\"")
+    identity=$(jq -c '.activity_identity' "$plan")
+    action_body=$(printf '%s' "$item" | jq -r '.body // .draft // ""')
+    if [[ "$action_body" == *"<!-- cc-review-triage"* ]]; then
+      signed_body="$action_body"
+    else
+      signed_body="$action_body
+
+<!-- cc-review-triage -->"
+    fi
+    marker=$(jq -nc --argjson identity "$identity" --argjson activity "$activity" --arg body "$signed_body" \
+      '{identity:$identity,activity:$activity,body:$body}' | python3 -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; v=json.load(sys.stdin); print(r.activity_marker(v["identity"],v["activity"],v["body"]))' "$reviewer_state")
+    reply_body="$signed_body
+$marker"
+    if [ "$resolve" = true ] && [[ "$outcome_status" != confirmed-fixed && "$outcome_status" != accepted-explanation ]]; then
+      echo "Warning: reviewer action on thread $thread_id cannot resolve outcome '$outcome_status'"
+      stale=$((stale + 1))
+      continue
+    fi
+    if [ -n "$action_body" ]; then
+      if ! reviewer_current_check "$plan" "$item" "$current_pr_file" "$current_thread_file"; then
+        echo "Warning: reviewer thread $thread_id became stale before reply: $(jq -r '.reason // .warnings[0] // "incomplete activity"' "$out")"
+        stale=$((stale + 1)); retriage=$((retriage + 1))
+        continue
+      fi
+      if [ -n "$local_reply" ]; then
+        response_id="$local_reply"
+      else
+        marker_reply=$(reviewer_marker_reply "$current_thread_file" "$plan" "$item")
+        if [ -n "$marker_reply" ]; then
+          response_id="$marker_reply"
+        else
+          if ! try "$err" post_reply "$PR" "$comment_id" "$reply_body" > "$out"; then
+            echo "Warning: reviewer reply to thread $thread_id failed: $(tail -n 1 "$err")"
+            stale=$((stale + 1))
+            continue
+          fi
+          response_id=$(tr -d '[:space:]' < "$out")
+          [ -n "$response_id" ] && posted=$((posted + 1))
+        fi
+      fi
+      if [ -n "$response_id" ]; then
+        "$BULK_STATE" record "$RUN" "$PR" reviewer_reply "$activity_key" "$response_id" >/dev/null
+        if [ "$resolve" != true ] && ! reviewer_record_outcome "$plan" "$item" "$response_id" false; then
+          stale=$((stale + 1))
+          continue
+        fi
+      fi
+    fi
+    if [ "$resolve" = true ]; then
+      if ! reviewer_current_check "$plan" "$item" "$current_pr_file" "$current_thread_file"; then
+        echo "Warning: reviewer thread $thread_id became stale before resolution: $(jq -r '.reason // .warnings[0] // "incomplete activity"' "$out")"
+        stale=$((stale + 1)); retriage=$((retriage + 1))
+        continue
+      fi
+      if ! try "$err" resolve_thread "$thread_id" >/dev/null; then
+        echo "Warning: resolving reviewer thread $thread_id failed: $(tail -n 1 "$err")"
+        stale=$((stale + 1))
+        continue
+      fi
+      resolved_n=$((resolved_n + 1))
+      reviewer_record_outcome "$plan" "$item" "${response_id:-}" true || { stale=$((stale + 1)); continue; }
+      "$BULK_STATE" record "$RUN" "$PR" reviewer_resolved "$activity_key" >/dev/null
+    elif [ -z "$response_id" ]; then
+      reviewer_record_outcome "$plan" "$item" "" false || { stale=$((stale + 1)); continue; }
+    fi
+  done 3< "$items"
+  if [ "$retriage" -gt 0 ]; then
+    pr_status stale "$retriage reviewer actions need fresh preparation because activity changed or evidence was incomplete"
+    echo "STALE needs-retriage=$retriage replies=$posted resolved=$resolved_n"
+  elif [ "$stale" -gt 0 ]; then
+    pr_status partially-applied "$stale reviewer actions failed; resume to retry the remaining writes"
+    echo "PARTIAL stale=$stale replies=$posted resolved=$resolved_n"
+  else
+    pr_status actioned "reviewer activity applied with exact freshness checks"
+    echo "ACTIONED replies=$posted resolved=$resolved_n"
+  fi
+}
+
 # Executes the prepared triage of one PR (pr-<n>/triage-plan.json): push the
 # prepared commit, re-read the threads, post the replies, resolve the threads.
 # Every sub-action is recorded the moment it completes and skipped once
@@ -265,7 +468,7 @@ thread_for() {
 do_triage() {
   check_args "$@"
   RUN="$2" PR="$3"
-  local state plan owner repo root prepared pushed flags wt url branch expected head result rc tip
+  local state plan owner repo root prepared pushed flags wt url branch expected head result rc tip selected_role plan_role author
   local err out threads items item key current cid tid recorded id failed=0 posted=0 resolved_n=0 skipped=0
   local notes=() to_resolve=()
   state=$(state_file "$RUN")
@@ -276,11 +479,51 @@ do_triage() {
   root=$(jq -r '.repo.root' "$state")
   GH_USER=$(jq -r '.gh_user' "$state")
   RUN_STARTED=$(jq -r '.created_at // ""' "$state")
+  selected_role=$(pr_field '.triage_role // ""')
+  plan_role=$(jq -r '.triage_role // ""' "$plan")
+  author=$(pr_field '.author // ""')
+  # The persisted selection is the authority for reviewer operations. The only
+  # legacy fallback is an author plan for a PR whose recorded author is the
+  # authenticated bulk user; a plan cannot promote itself to reviewer.
+  if [ -z "$plan_role" ] && [ "$author" = "$GH_USER" ] \
+    && { [ -z "$selected_role" ] || [ "$selected_role" = author ]; }; then
+    selected_role=author
+    plan_role=author
+  fi
+  if [ -z "$selected_role" ] || [ "$selected_role" != "$plan_role" ]; then
+    echo "Error: PR #$PR triage role is missing or does not match the trusted bulk selection" >&2
+    exit 1
+  fi
+  case "$selected_role" in
+    author) [ "$author" = "$GH_USER" ] || { echo "Error: PR #$PR author role does not match the authenticated user" >&2; exit 1; } ;;
+    reviewer)
+      [ "$author" != "$GH_USER" ] || { echo "Error: PR #$PR reviewer role is invalid for an author-owned PR" >&2; exit 1; }
+      if [ "$(jq -r '.prepared_commit // empty' "$plan")" != "" ] \
+        || [ "$(jq -r '(.replies // []) | length' "$plan")" -gt 0 ] \
+        || [ "$(jq -r '(.stale_resolutions // []) | length' "$plan")" -gt 0 ]; then
+        echo "Error: reviewer triage plan for PR #$PR contains author-only commit, reply, or resolution work" >&2
+        exit 1
+      fi
+      if ! jq -e --arg host "github.com" --arg repository "$owner/$repo" --arg user "$GH_USER" --argjson pr "$PR" \
+        '.activity_identity == {host: $host, repository: $repository, user: $user, pr: $pr}
+         and (.expected_head | type == "string" and length > 0)
+         and ((.cc_review_threads // []) | type == "array")
+         and ((.human // []) | type == "array")' "$plan" >/dev/null; then
+        echo "Error: reviewer triage plan for PR #$PR has missing or mismatched activity identity" >&2
+        exit 1
+      fi
+      ;;
+    *) echo "Error: PR #$PR has unsupported triage role '$selected_role'" >&2; exit 1 ;;
+  esac
   # The invoking repository's triage state, as single-PR triage uses it (FR-014a)
   export TRIAGE_STATE_FILE="${TRIAGE_STATE_FILE:-$root/.cc-review/.triage-state.json}"
   err=$(tmpfile); out=$(tmpfile); threads=$(tmpfile)
   # shellcheck source=platform.sh
   . "$SCRIPT_DIR/platform.sh"
+  if [ "$selected_role" = reviewer ]; then
+    do_reviewer_triage "$plan" "$state"
+    return
+  fi
   pr_status applying
 
   # 1. Push the prepared commit

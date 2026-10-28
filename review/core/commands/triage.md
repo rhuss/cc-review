@@ -16,21 +16,37 @@ Check the arguments before anything else. Each check below stops with its error 
 - `--bulk` (or `--resume`) together with `--spec`: `Error: --spec is not supported with --bulk`
 - neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --search requires --bulk`)
 
-When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk triage of the user's own PRs: set `BULK_COMMAND=triage`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file. `bulk.md` runs this file once per PR in a triage worker (see Prepare Mode).
+When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk triage of the user's own PRs and PRs with fresh reviewer-owned feedback: set `BULK_COMMAND=triage`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file. `bulk.md` runs this file once per PR in a triage worker (see Prepare Mode).
 
 Without `--bulk` and `--resume`, continue below; nothing in single-PR mode changes.
 
+## Reviewer Mode
+
+The selected action role determines whether this is author triage or reviewer triage. In bulk mode, `TRIAGE_ROLE` comes from the persisted, trusted PR selection and must be `author` or `reviewer`; never infer reviewer authority from a plan file. In single-PR mode, resolve the authenticated user's PR ownership and owned cc-review thread evidence before choosing the role. A PR authored by the current user uses author triage. A PR authored by someone else uses reviewer triage only when at least one unresolved cc-review thread is demonstrably owned by this user; otherwise report that no reviewer triage work is eligible.
+
+Reviewer triage verifies only the exact feedback activity that prompted triage. Fetch the current open PR head and complete thread conversations, then work from an isolated checkout at that current PR head. Use `reviewer_activity.py fingerprint` and `check` with the authenticated identity, exact thread and root node IDs, original root author/review provenance, current head, and complete conversation. Never identify a reviewer target by path, line, author, text similarity, or a PR-wide marker. Missing or truncated evidence stays incomplete and visible.
+
+For each owned unresolved thread, inspect the current code and classify the outcome as `confirmed-fixed`, `still-present`, `accepted-explanation`, `deferred`, or `unclear`. Only verified fixes and explanations accepted under the normal approval/unattended policy can be resolved. Draft an exact-thread reply for approval where required. Deferred work, disagreement, unanswered questions, and uncertain verification remain visible and are not recorded as handled. Reviewer triage never edits or commits code, pushes a branch, invokes author bot-fix or CI-repair steps, or advances a full-review baseline.
+
+**Single-PR lifecycle:** Load the identity-scoped cache with `reviewer_activity.py load`, fingerprint each exact owned thread at the live PR head, and compare the full Activity before deciding it is already handled. Immediately before every reply and every resolution, refresh the PR and thread data and require `reviewer_activity.py check` to allow the same exact open PR, other-author ownership, unresolved thread, root and complete conversation. Append `activity_marker(identity, activity, reply_body)` to an actual reviewer reply so a retry can recover the exact post. After the approved reply and any resolution succeed, record the completed outcome with `reviewer_activity.py record`; record a verified no-post `still-present` outcome too. If replying succeeded but resolving failed, retain the reply result and retry only the resolution after a fresh exact check. Never record preparation, skipped work, deferred outcomes, unanswered questions, disagreement, or unclear verification.
+
 ## Prepare Mode (`TRIAGE_MODE=prepare`)
 
-Bulk triage (`commands/bulk.md`) runs this file once per PR in a **triage worker** subagent with `TRIAGE_MODE=prepare`. Without `TRIAGE_MODE=prepare`, skip this section; single-PR triage is unchanged.
+Bulk triage (`commands/bulk.md`) runs this file once per PR in a **triage worker** subagent with `TRIAGE_MODE=prepare`. Without `TRIAGE_MODE=prepare`, skip the bulk preparation instructions in this section and follow the single-PR steps below, including Reviewer Mode when selected.
 
-A prepare run does the thinking of a triage pass (assess every bot thread, apply and commit valid fixes, draft replies, collect human comments with drafted answers) in the PR's isolated worktree, and **records** every action that would touch the PR instead of performing it. Nothing is pushed, posted or resolved, and nothing asks the user anything. The bulk decision step and `bulk-apply.sh triage` act on the recorded plan later.
+A prepare run does the thinking of a triage pass in the PR's isolated worktree, and **records** every action that would touch the PR instead of performing it. Nothing is pushed, posted or resolved, and nothing asks the user anything. The bulk decision step and `bulk-apply.sh triage` act on the recorded plan later. Author-role preparation keeps its existing bot-fix behavior. Reviewer-role preparation follows Reviewer Mode, never edits or commits code, and records only exact owned thread outcomes for later approval/apply.
+
+Before reviewer preparation, fetch and store the **current PR head** as `expected_head`; the detached `TRIAGE_ROOT` must be at that same commit. A stale checkout fails preparation and cannot produce an applicable plan.
 
 **Inputs** (given by `bulk.md`):
 
 | Variable | Meaning |
 |---|---|
 | `TRIAGE_MODE` | `prepare` |
+| `TRIAGE_ROLE` | trusted role from bulk state: `author` or `reviewer` |
+| `GH_HOST` | GitHub hostname from the invoking repository URL |
+| `PR_OWNER`, `PR_REPO` | base repository owner and name from the bulk run state |
+| `GH_USER` | authenticated GitHub user from the bulk run state |
 | `--pr <n>` | the PR to triage (Step 1 uses it directly) |
 | `TRIAGE_ROOT` | absolute path of the PR's worktree, detached at the PR head |
 | `TRIAGE_PLAN` | absolute path of the plan file to write, `<bulk run dir>/pr-<n>/triage-plan.json` |
@@ -48,9 +64,15 @@ A prepare run does the thinking of a triage pass (assess every bot thread, apply
 ```bash
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; export TRIAGE_STATE_FILE="{TRIAGE_STATE_FILE}"
 TRIAGE_PLAN="{TRIAGE_PLAN}"; TRIAGE_ROOT="{TRIAGE_ROOT}"; PR_NUM="{PR_NUM}"
-jq -n --argjson pr "$PR_NUM" --arg base "$(git -C "$TRIAGE_ROOT" rev-parse HEAD)" \
-  '{pr: $pr, prepared_commit: null, base_head: $base, replies: [], cc_review_threads: [],
-    stale_resolutions: [], human: []}' > "$TRIAGE_PLAN"
+TRIAGE_ROLE="{TRIAGE_ROLE}"; GH_HOST="{GH_HOST}"; PR_OWNER="{PR_OWNER}"; PR_REPO="{PR_REPO}"; GH_USER="{GH_USER}"
+EXPECTED_HEAD=$(gh pr view "$PR_NUM" --repo "$GH_HOST/$PR_OWNER/$PR_REPO" --json headRefOid -q .headRefOid) || exit 1
+CHECKOUT_HEAD=$(git -C "$TRIAGE_ROOT" rev-parse HEAD) || exit 1
+[ "$CHECKOUT_HEAD" = "$EXPECTED_HEAD" ] || { echo "STATUS failed reason=stale checkout"; exit 1; }
+jq -n --argjson pr "$PR_NUM" --arg base "$EXPECTED_HEAD" --arg role "$TRIAGE_ROLE" \
+  --arg host "$GH_HOST" --arg repository "$PR_OWNER/$PR_REPO" --arg user "$GH_USER" \
+  '{pr: $pr, triage_role: $role, expected_head: $base, base_head: $base,
+    activity_identity: {host: $host, repository: $repository, user: $user, pr: $pr},
+    prepared_commit: null, replies: [], cc_review_threads: [], stale_resolutions: [], human: []}' > "$TRIAGE_PLAN"
 ```
 
 Add each entry in a block like this one (the example records one Step 8 reply; the other lists work the same way with their fields from the table below):
@@ -75,27 +97,28 @@ plan_add replies "$(jq -n --argjson cid "$COMMENT_DB_ID" --arg tid "$THREAD_NODE
 |---|---|
 | 1 | `PR_NUM` from `--pr`; owner and repo from `PROJECT_DIR`'s `origin` |
 | 2 | runs, with `TRIAGE_STATE_FILE` exported; then create the plan file |
-| 3a, 3b | run unchanged (read only) |
+| 3a, 3b | author role: run unchanged. Reviewer role: collect all pages with comment `id`, `databaseId`, `updatedAt`, `originalCommit`, `pullRequestReview`, `comments.totalCount` and `comments.pageInfo`; any truncated thread is incomplete and cannot produce an applicable outcome |
 | 3c | **skipped**: the local CodeRabbit fallback posts to the PR. The summary says `CodeRabbit: rate-limited (local fallback not run in bulk mode)` when the rate-limit comment exists |
 | 3d | runs unchanged (read only) |
-| 4 to 6 | run unchanged, with reads and edits under `TRIAGE_ROOT` (6e checks `$TRIAGE_ROOT/<path>`) |
-| 7 | stage and commit in the worktree (`git -C "$TRIAGE_ROOT" add ...`, `git -C "$TRIAGE_ROOT" commit` with the Step 7 message), **no push**. Record the commit: `jq --arg c "$(git -C "$TRIAGE_ROOT" rev-parse HEAD)" '.prepared_commit = $c'`. Acceptance replies say `Applied in <short sha of that commit>`: `bulk-apply.sh triage` pushes exactly this commit |
+| 4 to 6 | author role: run unchanged, with reads and edits under `TRIAGE_ROOT` (6e checks `$TRIAGE_ROOT/<path>`). Reviewer role: read current code at `expected_head`, verify each exact owned thread outcome, and do not edit files |
+| 7 | author role: stage and commit in the worktree (`git -C "$TRIAGE_ROOT" add ...`, `git -C "$TRIAGE_ROOT" commit` with the Step 7 message), **no push**. Record the commit as before. Reviewer role: **skip**; `prepared_commit` stays null and no reviewer commit is permitted |
 | 7b | **skipped**: CI is not checked in bulk mode (the bulk summary says so per pushed PR) |
 | 7c | **skipped**: `bulk-apply.sh triage` re-reads the threads after the push and re-maps ids by path, line and author |
-| 8 | each reply is **recorded** in `.replies[]` (`comment_id`, `thread_id`, `author`, `path`, `line`, `body` with its signature, `action`: `accepted`, `rejected`, `deferred` or `fix-failed`), not posted; the triage state is updated by the apply step when the reply is posted |
-| 9 | the Step 9 table decides each reply entry's `resolve` (true or false) and `self_resolves` (the bot profile); nothing is resolved |
-| 9b | stale handled thread ids are **recorded** in `.stale_resolutions[]` |
-| 10, 11 | run unchanged |
-| 11b | assessment runs unchanged; each reply and resolution it would make is **recorded** in `.cc_review_threads[]` (`comment_id`, `thread_id`, `author`, `path`, `line`, `body`, `action`, `resolve`), not posted or resolved; the triage state is **not written** here (including the 11b-2b "Update the state file" step), the apply step updates it when the reply is posted |
-| 12 | **collect instead of prompting**: for each unresolved human thread, assess it as in Step 12 items 1 to 3 and record `.human[]` (`comment_id`, `thread_id`, `path`, `line`, `author`, `text` (the comment), `assessment`, `draft`: the drafted reply with the signature, `decision`: `null`). The bulk decision step asks the user |
+| 8 | author role: each reply is **recorded** in `.replies[]` as before. Reviewer role: record only owned exact-thread work in `.cc_review_threads[]`, with `comment_id` (exact root REST database ID), `thread_id`, exact `activity`, `outcome`, `action`, `resolve`, and signed `body`; retain a verified no-post outcome with an empty body |
+| 9 | author role: the Step 9 table decides each reply entry's `resolve` and `self_resolves`; reviewer role: **skip**, because only exact verified reviewer outcomes may request resolution |
+| 9b | author role: stale handled thread ids are **recorded** in `.stale_resolutions[]`; reviewer role: **skip** and leave `.stale_resolutions[]` empty |
+| 10, 11 | author role: run unchanged; reviewer role: **skip author bot handling** and continue to Step 11b only for exact owned cc-review threads |
+| 11b | author role: assessment runs unchanged and records proposed replies as before. Reviewer role: do not use author bot-fix handling; verify the selected owned threads using the shared helper and record exact thread/root/head/conversation activity plus outcome, not a broad PR-level review state |
+| 12 | author role: **collect instead of prompting** for each unresolved human thread and record `.human[]`; the bulk decision step asks the user. Reviewer role: **skip human-thread collection and drafting**; manual threads are inbox context only and `.human[]` stays empty |
 | 12b | runs unchanged (it only reads and formats); its output goes into `triage-summary.md` |
 | 12c | **skipped**: coverage remediation never runs in bulk mode (FR-014); the summary still flags files below the threshold |
-| 13 | the summary is **written** to `triage-summary.md` next to the plan (`$(dirname "$TRIAGE_PLAN")/triage-summary.md`) instead of printed; human comments count as pending; `CI status: not checked (bulk mode)` |
+| 13 | the summary is **written** to `triage-summary.md` next to the plan (`$(dirname "$TRIAGE_PLAN")/triage-summary.md`) instead of printed; author-role human comments count as pending, reviewer-role deferred/unclear owned outcomes remain visible; `CI status: not checked (bulk mode)` |
 | 14 | **skipped**: `bulk.md` offers the idea-inbox capture once after its decision step |
 | 15 | runs; a low rate limit ends the worker with `STATUS failed reason=rate-limited` |
 
-**Return.** The worker's final reply is exactly one line:
-- `STATUS ok valid=<accepted bot fixes> rejected=<n> deferred=<n> human=<n> commit=<sha or none>`
+**Return.** Reviewer role keeps `prepared_commit: null`; unanswered questions and deferred/unclear outcomes remain visible and are not marked handled. The worker's final reply is exactly one line:
+- Author role: `STATUS ok valid=<accepted bot fixes> rejected=<n> deferred=<n> human=<n> commit=<sha or none>`
+- Reviewer role: `STATUS ok valid=<confirmed fixes and accepted explanations> rejected=<still-present findings> deferred=<deferred or unclear outcomes> human=0 commit=none`
 - `STATUS failed reason=rate-limited` when the hosting service rate-limits a call (`API rate limit exceeded`, `secondary rate limit`, HTTP 403/429 on a page)
 - `STATUS failed reason=<short reason>` for any other stop (the plan file may be incomplete; `bulk.md` marks the PR failed)
 
@@ -214,7 +237,9 @@ while true; do
               isResolved
               path
               line
-              comments(first: 50) {
+              comments(first: 100) {
+                totalCount
+                pageInfo { hasNextPage hasPreviousPage }
                 nodes {
                   id
                   databaseId
@@ -224,6 +249,9 @@ while true; do
                   }
                   body
                   createdAt
+                  updatedAt
+                  originalCommit { oid }
+                  pullRequestReview { author { login } body commit { oid } }
                 }
               }
             }
@@ -250,6 +278,10 @@ done
 
 TOTAL_COUNT=$(printf '%s' "$PAGE_JSON" | jq -r '.data.repository.pullRequest.reviewThreads.totalCount')
 FETCHED_COUNT=$(printf '%s' "$ALL_THREADS" | jq 'length')
+if [ "$TRIAGE_ROLE" = reviewer ]; then
+  INCOMPLETE_THREAD_IDS=$(printf '%s' "$ALL_THREADS" | jq -r '.[] | select(.comments.totalCount != (.comments.nodes | length) or .comments.pageInfo.hasNextPage != false or .comments.pageInfo.hasPreviousPage != false) | .id')
+  [ -z "$INCOMPLETE_THREAD_IDS" ] || echo "Reviewer thread conversations are incomplete; keep these exact thread IDs visible and do not prepare actions for them: $(printf '%s' "$INCOMPLETE_THREAD_IDS" | paste -sd, -)"
+fi
 ```
 
 ### 3b: Verify Complete Fetch
@@ -996,7 +1028,7 @@ If all targeted files were successfully covered, note: "Coverage fixes pushed. C
 
 **Mandatory**: This step MUST execute after every triage pass, even when all threads were already handled or all were resolved. This step surfaces patterns and tracks progress. Skipping it silently discards the feedback loop. (Prepare mode, see Prepare Mode: the summary is written to `triage-summary.md` instead of printed.)
 
-At the end of the triage pass, report a summary:
+At the end of the triage pass, report a summary. Author mode uses the format below. Reviewer mode instead reports counts for confirmed fixes, still-present findings, accepted explanations, deferred outcomes and unclear outcomes, plus the exact PR thread IDs and path/line for anything left open or awaiting a decision. Never count an unclear outcome as handled.
 
 ```
 ## Triage Summary for PR #<PR_NUM>
@@ -1008,14 +1040,23 @@ At the end of the triage pass, report a summary:
 | devin-ai-integration[bot] | N | N | N | N | N |
 | coderabbitai[bot] | N | N | N | N | N |
 
-**Bot totals**:
+**Bot totals** (author role only):
 - Accepted: N (fixes applied)
 - Rejected: N
 - Deferred: N (out of scope)
 - Skipped: N (deleted files, conflicts, summary comments)
 - Already handled: N
 
-**Human comments**:
+**Reviewer-owned cc-review threads** (reviewer role only):
+- Confirmed fixes: N
+- Still present: N (left open)
+- Accepted explanations: N
+- Deferred: N (left open)
+- Unclear or awaiting a decision: N (left open; not marked handled)
+
+List every reviewer thread left open or awaiting a decision by exact thread ID and path/line.
+
+**Human comments** (author role only):
 - Approved: N (replies posted)
 - Edited: N (replies posted with edits)
 - Skipped: N (left open)

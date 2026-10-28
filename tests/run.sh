@@ -1483,6 +1483,7 @@ PR_WORKTREE="$SCRIPTS/pr-worktree.sh"
 # directories (colon-separated) searched before the shared fixtures.
 with_fake_gh() {
   PATH="$BULK_FIXTURES/bin:$PATH" \
+    CC_REVIEW_REVIEWER_STATE_FILE="$TEST_TMP/reviewer-state.json" \
     FAKE_GH_DIR="${FAKE_GH_DIR:+$FAKE_GH_DIR:}$BULK_FIXTURES" \
     FAKE_GH_LOG="${FAKE_GH_LOG:-$TEST_TMP/gh.log}" \
     FAKE_GH_STATE="${FAKE_GH_STATE:-$TEST_TMP/gh-state}" \
@@ -1649,6 +1650,51 @@ test_bulk_state_set_prs_and_pr_set() {
   assert_eq "unknown run status is a usage error" "2" "$rc"
 }
 
+test_bulk_state_mixed_triage_roles() {
+  local run seeds st
+  run="$(bstate init triage deferred "$BULK_SELECTOR" '[]' acme widget me)"
+  seeds='[{"number":7,"title":"Follow up","author":"alice","triage_role":"reviewer","assessment":{"triage":{"reason":"Verify owned finding"}}},
+    {"number":8,"title":"Own legacy","author":"me"},{"number":9,"title":"Foreign legacy","author":"bob"}]'
+  bstate set-prs "$run" "$seeds" '[]' >/dev/null
+  st="$(state_of "$run")"
+  assert_json "explicit reviewer role round trips" "$st" '.prs[0].triage_role' "reviewer"
+  assert_json "legacy own PR infers author role" "$st" '.prs[1].triage_role' "author"
+  assert_json "foreign legacy seed grants no role" "$st" '.prs[2].triage_role' "null"
+  assert_json "assessment evidence survives updates" "$st" '.prs[0].assessment.triage.reason' "Verify owned finding"
+  assert_contains "rendered table identifies roles" "$(cat "$TEST_TMP/bulk/$run/state.md")" "reviewer"
+  assert_contains "rendered table explains selection" "$(cat "$TEST_TMP/bulk/$run/state.md")" "Verify owned finding"
+  bstate pr-set "$run" 7 '.status="analyzed"' >/dev/null
+  assert_eq "role survives status transitions" "reviewer" "$(bstate pr-get "$run" 7 .triage_role)"
+  assert_contains "worker receives trusted role" "$(cat "$BULK_MD")" '`TRIAGE_ROLE`'
+  assert_contains "worker receives bounded evidence file" "$(cat "$BULK_MD")" '`PR_ASSESSMENT`'
+  run="$(bstate init review deferred "$BULK_SELECTOR" '[]' acme widget me)"
+  bstate set-prs "$run" '[{"number":7,"title":"Review","author":"alice","assessment":{"review":{"reason":"Requested review"},"triage":{"reason":"No triage work"}}}]' '[]' >/dev/null
+  assert_contains "review run renders review reason" "$(cat "$TEST_TMP/bulk/$run/state.md")" "Requested review"
+  assert_not_contains "review run does not substitute triage reason" "$(cat "$TEST_TMP/bulk/$run/state.md")" "No triage work"
+  bstate pr-set "$run" 7 '.reason="head moved"' >/dev/null
+  assert_contains "execution reason takes precedence" "$(cat "$TEST_TMP/bulk/$run/state.md")" "head moved"
+  assert_not_contains "execution reason replaces selection reason" "$(cat "$TEST_TMP/bulk/$run/state.md")" "Requested review"
+}
+
+test_bulk_triage_decision_table_roles() {
+  local run block out
+  make_bulk_repo
+  run="$(bstate init triage deferred "$BULK_SELECTOR" '[]' acme widget me)"
+  bstate set-prs "$run" '[{"number":7,"title":"Follow up","author":"alice","triage_role":"reviewer","assessment":{"triage":{"reason":"Verify owned finding"}}},
+    {"number":8,"title":"Own PR","author":"me","assessment":{"triage":{"reason":"Own feedback"}}}]' '[]' >/dev/null
+  bstate pr-set "$run" 7 '.status="analyzed"' '.counts={bot_valid:0,bot_rejected:0,deferred:0,human:1}' '.proposed="apply"' >/dev/null
+  bstate pr-set "$run" 8 '.status="stale"' '.reason="head moved"' >/dev/null
+  mkdir -p "$BULK_REPO/.cc-review/bulk"
+  cp -R "$TEST_TMP/bulk/$run" "$BULK_REPO/.cc-review/bulk/$run"
+  block="$TEST_TMP/decision-table.sh"
+  bulk_md_block 'Valid/Rejected/Deferred/Human' "$run" > "$block"
+  out="$(bash "$block")"
+  assert_contains "actual decision table includes role and selection reason" "$out" "| PR | Title | Role | Selection reason |"
+  assert_contains "reviewer role and reason are rendered together" "$out" "| #7 | Follow up | reviewer | Verify owned finding |"
+  assert_contains "author role and reason are rendered together" "$out" "| #8 | Own PR | author | Own feedback |"
+  assert_contains "status reason remains visible" "$out" "stale (head moved)"
+}
+
 test_bulk_state_record_subactions() {
   local run st
   run="$(new_run review)"
@@ -1713,8 +1759,8 @@ test_bulk_state_render_md() {
   assert_contains "header names the run" "$md" "$run"
   assert_contains "header names the mode" "$md" "deferred"
   assert_contains "header names the selector" "$md" "default"
-  assert_contains "table header" "$md" "| PR | Title | Author | Status | Counts | Proposed | Decision | Reason | Report |"
-  assert_contains "analyzed PR row" "$md" "| #10 | Add parser | alice | analyzed | 1/2/0/3 | post | - | - | pr-10/review-findings.md |"
+  assert_contains "table header" "$md" "| PR | Title | Author | Role | Status | Counts | Proposed | Decision | Reason | Report |"
+  assert_contains "analyzed PR row" "$md" "| #10 | Add parser | alice | - | analyzed | 1/2/0/3 | post | - | - | pr-10/review-findings.md |"
   assert_contains "a pipe in a title is escaped" "$md" 'Fix \| race'
   assert_contains "failed PR with reason" "$md" "| failed | - | - | - | checkout failed |"
   assert_contains "excluded section" "$md" "## Excluded"
@@ -1783,6 +1829,10 @@ test_bulk_state_summary() {
   assert_contains "CI note for the pushed PR" "$md" "#10: CI not checked; run \`/triage --pr 10\` for CI repair"
   assert_contains "triage outcome lists the push" "$md" "| actioned | apply | pushed ccc10 |"
   assert_not_contains "no CI note for a PR without a push" "$md" "/triage --pr 11"
+  jq -n '{pr:10,triage_role:"reviewer",prepared_commit:null,replies:[],human:[],cc_review_threads:[
+    {thread_id:"PRRT_question",path:"a.py",line:7,outcome:{status:"unclear",completed:false}}]}' > "$plan"
+  md="$(cat "$(bstate summary "$run")")"
+  assert_contains "reviewer question needs attention" "$md" "#10 reviewer thread PRRT_question (a.py:7): unclear"
 }
 
 # analyzed_pr <run> <n> <head> [<assignment>...]: marks a seed PR analyzed at
@@ -1966,6 +2016,14 @@ test_bulk_state_reset_drops_push_and_failed_keeps_actions() {
   assert_eq "failed with recorded actions becomes partially-applied" "partially-applied" "$(bstate pr-get "$run" 11 .status)"
   bstate pr-set "$run" 10 '.status="failed"' >/dev/null
   assert_eq "failed with replies only becomes partially-applied" "partially-applied" "$(bstate pr-get "$run" 10 .status)"
+  run="$(new_run triage)"
+  bstate record "$run" 11 reviewer_reply "$(printf '%064d' 0)" 78 >/dev/null
+  bstate pr-set "$run" 11 '.status="failed"' >/dev/null
+  assert_eq "failed with reviewer replies becomes partially-applied" "partially-applied" "$(bstate pr-get "$run" 11 .status)"
+  run="$(new_run triage)"
+  bstate record "$run" 10 reviewer_resolved "$(printf '%064d' 1)" >/dev/null
+  bstate pr-set "$run" 10 '.status="failed"' >/dev/null
+  assert_eq "failed with reviewer resolutions becomes partially-applied" "partially-applied" "$(bstate pr-get "$run" 10 .status)"
   run="$(new_run review)"
   bstate pr-set "$run" 10 '.status="failed"' >/dev/null
   assert_eq "failed without actions stays failed" "failed" "$(bstate pr-get "$run" 10 .status)"
@@ -2209,6 +2267,119 @@ test_platform_fetch_reviews_includes_commit() {
 # bselect <args...>: bulk-select.sh with the fake gh inside the user's clone
 bselect() {
   (cd "$BULK_REPO" && with_fake_gh bash "$BULK_SELECT" "$@")
+}
+
+shared_action_fixture() {
+  mkdir -p "$TEST_TMP/gh"
+  jq '.[0] | . as $p | {number, title, author:{login:.author}, state, isDraft:.is_draft,
+    headRefOid:.head_oid, headRefName:.seed.head_ref, baseRefName:.seed.base_ref,
+    updatedAt:.updated_at, isCrossRepository:false, headRepository:{name:"widget",owner:{login:"acme"}},
+    reviews, reviewThreads:{nodes:.threads,totalCount:(.threads|length),pageInfo:{hasNextPage:false,hasPreviousPage:false}},
+    reviewRequests:{nodes:[{requestedReviewer:{login:"me"}}],totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false}}}
+    | {data:{repository:{pullRequest:.}}}' "$BULK_FIXTURES/pr-actions.json" > "$TEST_TMP/gh/graphql-action-7.json"
+  jq '[.data.repository.pullRequest]' "$TEST_TMP/gh/graphql-action-7.json" > "$TEST_TMP/gh/pr-list-reviewed-by.json"
+}
+
+test_bulk_select_shared_roles_and_scope() {
+  local out expected
+  make_bulk_repo
+  shared_action_fixture
+  jq '.data.search.nodes[2].isDraft=true' "$BULK_FIXTURES/graphql-search.json" > "$TEST_TMP/gh/graphql-search.json"
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --user me)"
+  assert_json "both roles and draft triage are selected, oldest first" "$out" '[.selected[].number]|join(",")' "20,7,22"
+  assert_json "reviewer role survives selection" "$out" '.selected[]|select(.number==7)|.triage_role' "reviewer"
+  assert_json "author role survives selection" "$out" '.selected[]|select(.number==22)|.triage_role' "author"
+  assert_json "review and triage coexist" "$out" '.selected[]|select(.number==7)|.assessment.review.eligible' "true"
+  expected="$(CC_REVIEW_REVIEWER_STATE_FILE="$TEST_TMP/reviewer-state.json" python3 -B "$SCRIPTS/pr_actions.py" assess --source canonical --repo acme/widget --user me --host github.com --review-mode default < "$BULK_FIXTURES/pr-actions.json")"
+  assert_eq "bulk shares canonical action contract" "$(printf '%s' "$expected" | jq -Sc '.assessments[0]')" "$(printf '%s' "$out" | jq -Sc '.selected[]|select(.number==7)|.assessment')"
+  assert_contains "reviewer roots are collected separately" "$(cat "$TEST_TMP/gh.log")" "rootComment: comments(first: 1)"
+  assert_contains "reviewer replies stay bounded" "$(cat "$TEST_TMP/gh.log")" "comments(last: 10)"
+  printf '[]\n' > "$TEST_TMP/gh/pr-list-reviewed-by-search.json"
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --user me --search label:own-only)"
+  assert_json "search narrows reviewer discovery" "$out" '[.selected[]|select(.number==7)]|length' "0"
+  assert_contains "reviewed discovery applies the same search" "$(cat "$TEST_TMP/gh.log")" "reviewed-by:@me label:own-only"
+}
+
+test_bulk_select_reviewer_discovery_failure_keeps_authors() {
+  local out
+  make_bulk_repo
+  shared_action_fixture
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" FAKE_GH_FAIL='pr list*reviewed-by*' FAKE_GH_FAIL_MSG='HTTP 500' bselect triage --user me 2>"$TEST_TMP/select-warnings")"
+  assert_json "author triage candidates survive reviewer discovery failure" "$out" '.selected[]|select(.number==22)|.triage_role' 'author'
+  assert_contains "reviewer discovery failure is made visible" "$(cat "$TEST_TMP/select-warnings")" "reviewer PR discovery unavailable"
+}
+
+test_bulk_select_handled_activity_workflow_order() {
+  local activity identity envelope cache out
+  make_bulk_repo
+  shared_action_fixture
+  cache="$TEST_TMP/reviewer-state.json"
+  identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
+  activity="$(jq -nc --argjson identity "$identity" --slurpfile pr "$BULK_FIXTURES/pr-actions.json" \
+    '{identity:$identity,head_oid:"head",thread:$pr[0][0].threads[0]}' \
+    | CC_REVIEW_REVIEWER_STATE_FILE="$cache" python3 -B "$SCRIPTS/reviewer_activity.py" fingerprint | jq -c '.activity')"
+  envelope="$(jq -nc --argjson identity "$identity" --argjson activity "$activity" \
+    '{identity:$identity,activity:$activity,outcome:{status:"still-present",completed:true},reply_id:null,resolved:false}')"
+  printf '%s\n' "$envelope" | CC_REVIEW_REVIEWER_STATE_FILE="$cache" python3 -B "$SCRIPTS/reviewer_activity.py" record >/dev/null
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --user me)"
+  assert_json "triage skips only the exact handled reviewer activity" "$out" '[.selected[]|select(.number==7)]|length' "0"
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect review --user me)"
+  assert_json "review remains independently eligible after triage" "$out" '[.selected[]|select(.number==7)]|length' "1"
+  jq '.data.repository.pullRequest.reviewThreads.nodes[0].comments.nodes[1].body="New author reply"' \
+    "$TEST_TMP/gh/graphql-action-7.json" > "$TEST_TMP/gh/graphql-action-7.tmp" && mv "$TEST_TMP/gh/graphql-action-7.tmp" "$TEST_TMP/gh/graphql-action-7.json"
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --user me)"
+  assert_json "new reply reactivates reviewer triage after review selection" "$out" '[.selected[]|select(.number==7)]|length' "1"
+}
+
+test_bulk_select_partial_evidence_and_prerequisites() {
+  local out rc
+  make_bulk_repo
+  shared_action_fixture
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" FAKE_GH_FAIL='api graphql*BulkActionContext*' bselect triage --user me 2>"$TEST_TMP/warnings")"; rc=$?
+  assert_eq "partial reviewer detail failure retains usable author results" "0" "$rc"
+  assert_json "author results survive detail failure" "$out" '[.selected[].number]|join(",")' "20,22"
+  assert_contains "failed PR is named" "$(cat "$TEST_TMP/warnings")" "PR #7"
+  assert_json "unavailable reviewer detail remains incomplete" "$out" '.excluded[]|select(.number==7)|.assessment.triage.complete' "false"
+  out="$(FAKE_GH_FAIL='api user*' bselect review --user me 2>&1)"; rc=$?
+  assert_eq "authentication failure exits nonzero" "1" "$rc"
+  assert_contains "authentication error is actionable" "$out" "auth"
+  out="$(FAKE_GH_FAIL='repo view*' bselect triage --user me 2>&1)"; rc=$?
+  assert_eq "inaccessible repository exits nonzero" "1" "$rc"
+  for missing in python3 gh jq; do
+    out="$(cd "$BULK_REPO" && with_fake_gh bash -c 'command() { if [ "$1" = -v ] && [ "$2" = "$MISSING" ]; then return 1; fi; builtin command "$@"; }; export -f command; MISSING="$1" bash "$2" review --user me' _ "$missing" "$BULK_SELECT" 2>&1)"; rc=$?
+    assert_eq "$missing is required" "1" "$rc"
+    assert_contains "$missing dependency is named" "$out" "$missing"
+  done
+}
+
+test_bulk_select_default_limit_and_ties() {
+  local out
+  make_bulk_repo
+  mkdir -p "$TEST_TMP/gh"
+  jq '.data.search.nodes[0] as $p | .data.search.nodes=[range(30;42)|$p+{number:.,updatedAt:"same"}] | .data.search.issueCount=101' "$BULK_FIXTURES/graphql-search.json" > "$TEST_TMP/gh/graphql-search.json"
+  printf '[]\n' > "$TEST_TMP/gh/pr-list-reviewed-by.json"
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --user me 2>"$TEST_TMP/warnings")"
+  assert_json "default limit is ten with stable number tie ordering" "$out" '[.selected[].number]|join(",")' "30,31,32,33,34,35,36,37,38,39"
+  assert_json "over-limit exclusions are explicit" "$out" '[.excluded[]|select(.reason=="over-limit")|.number]|join(",")' "40,41"
+  assert_contains "discovery cap warning remains visible" "$(cat "$TEST_TMP/warnings")" "100"
+  assert_json "cap warning survives in the selection artifact" "$out" 'any(.warnings[]; contains("100"))' "true"
+}
+
+test_bulk_select_partial_zero_selection_report() {
+  local out block
+  make_bulk_repo
+  mkdir -p "$TEST_TMP/gh"
+  jq '.data.search.nodes=[.data.search.nodes[1],(.data.search.nodes[1] + {number:22})]
+      | .data.search.issueCount=2
+      | .data.search.nodes[1].reviewThreads.pageInfo.hasNextPage=true' "$BULK_FIXTURES/graphql-search.json" > "$TEST_TMP/gh/graphql-search.json"
+  printf '[]\n' > "$TEST_TMP/gh/pr-list-reviewed-by.json"
+  block="$TEST_TMP/selection.sh"
+  bulk_md_block 'SELECTED=' '' > "$block"
+  out="$(cd "$BULK_REPO" && BULK_COMMAND=triage GH_USER=me FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh bash "$block" 2>"$TEST_TMP/warnings")"
+  assert_contains "partial empty selection is explicit" "$out" "SELECTED=0"
+  assert_contains "coordinator carries warning count" "$out" "COVERAGE_WARNINGS=1"
+  assert_contains "coordinator surfaces the affected PR" "$out" "PR #22"
+  assert_contains "selector emits a named warning too" "$(cat "$TEST_TMP/warnings")" "PR #22"
 }
 
 test_bulk_select_review_default_union() {
@@ -2560,6 +2731,159 @@ test_bulk_apply_triage_full() {
   assert_json "both threads resolved" "$out" '.actions.resolved | sort | join(",")' "PRRT_1,PRRT_2"
   assert_json "status actioned" "$out" '.status' "actioned"
   assert_json "the triage state knows the replies" "$(cat "$TEST_TMP/triage-state.json")" '."7".comments | "\(."101".action) \(."102".action)"' "accepted rejected"
+}
+
+test_bulk_apply_reviewer_plan_rejected_before_writes() {
+  local sha run plan out
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(triage_run_pr7 "$sha")"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  bstate pr-set "$run" 7 '.triage_role="reviewer"' '.author="alice"' '.authored_by_user=false' >/dev/null
+  triage_plan "$run" null
+  jq '.triage_role="reviewer" | .expected_head="'"$sha"'" | .prepared_commit="forbidden"' "$plan" > "$plan.tmp" && mv "$plan.tmp" "$plan"
+  : > "$TEST_TMP/gh.log"
+  if out="$(btriage "$run" 2>&1)"; then _fail "reviewer plan with a prepared commit is rejected"; else _pass; fi
+  assert_contains "prepared reviewer commit rejection is explicit" "$out" "reviewer"
+  assert_not_contains "reviewer commit rejection happens before push" "$(cat "$TEST_TMP/gh.log")" "git/refs"
+  assert_not_contains "reviewer commit rejection happens before posting" "$(cat "$TEST_TMP/gh.log")" "replies"
+
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  bstate pr-set "$run" 7 '.triage_role="reviewer"' '.author="alice"' '.authored_by_user=false' >/dev/null
+  triage_plan "$run" null
+  : > "$TEST_TMP/gh.log"
+  if out="$(btriage "$run" 2>&1)"; then _fail "reviewer state rejects mismatched author plan"; else _pass; fi
+  assert_contains "role mismatch rejection is explicit" "$out" "role"
+  assert_eq "role mismatch has zero service writes" "" "$(cat "$TEST_TMP/gh.log")"
+}
+
+test_bulk_apply_reviewer_stale_activity_has_zero_writes() {
+  local sha run plan identity activity
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(triage_run_pr7 "$sha")"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  bstate pr-set "$run" 7 '.triage_role="reviewer"' '.author="alice"' '.authored_by_user=false' >/dev/null
+  identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
+  activity="$(jq -nc --arg head "$sha" '{thread_id:"PRRT_expected",root_comment_id:"PRRC_root",head_oid:$head,conversation_digest:("a"*64),activity_key:("b"*64)}')"
+  jq -n --argjson identity "$identity" --argjson activity "$activity" --arg head "$sha" \
+    '{pr:7,triage_role:"reviewer",expected_head:$head,activity_identity:$identity,prepared_commit:null,
+      replies:[],stale_resolutions:[],human:[],cc_review_threads:[{comment_id:101,thread_id:"PRRT_expected",
+      activity:$activity,outcome:{status:"confirmed-fixed",completed:true},body:"Verified fixed.",resolve:true}]}' > "$plan"
+  mkdir -p "$TEST_TMP/gh"
+  jq -n --arg head "moved-head" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
+  jq -n '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:[
+    {id:"PRRT_expected",isResolved:false,comments:{nodes:[{databaseId:101}]}}]}}}}}' \
+    > "$TEST_TMP/gh/graphql-threads-7.json"
+  local out
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "moved reviewer activity requires fresh preparation" "$out" "STALE needs-retriage=1 replies=0 resolved=0"
+  assert_not_contains "stale reviewer activity is not replied to" "$(cat "$TEST_TMP/gh.log")" "replies"
+  assert_not_contains "stale reviewer activity is not resolved" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+  assert_json "stale reviewer outcome requires fresh analysis" "$(bstate pr-get "$run" 7)" '.status' "stale"
+}
+
+test_bulk_apply_reviewer_no_post_outcome_is_recorded() {
+  local sha run plan identity activity root thread cache
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(triage_run_pr7 "$sha")"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  bstate pr-set "$run" 7 '.triage_role="reviewer"' '.author="alice"' '.authored_by_user=false' >/dev/null
+  mkdir -p "$TEST_TMP/gh"
+  jq -n --arg head "$sha" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
+  root="$(jq -nc '{id:"PRRC_root",databaseId:101,author:{login:"me"},body:"Unsafe access.\n_Source: correctness agent_",updatedAt:"2026-10-20T00:00:00Z",originalCommit:{oid:"old"},pullRequestReview:null}')"
+  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
+  jq -n --argjson thread "$thread" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:[$thread]}}}}}' \
+    > "$TEST_TMP/gh/graphql-threads-7.json"
+  activity="$(printf '%s' "$thread" | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; t=json.load(sys.stdin); print(json.dumps(r.fingerprint(t,sys.argv[2],"me")))' "$SCRIPTS/reviewer_activity.py" "$sha")"
+  identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
+  jq -n --argjson identity "$identity" --argjson activity "$activity" --arg head "$sha" \
+    '{pr:7,triage_role:"reviewer",expected_head:$head,activity_identity:$identity,prepared_commit:null,
+      replies:[],stale_resolutions:[],human:[],cc_review_threads:[{comment_id:101,thread_id:"PRRT_owned",
+      activity:$activity,outcome:{status:"still-present",completed:true},body:"",resolve:false}]}' > "$plan"
+  local out
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "verified no-post reviewer outcome completes" "$out" "ACTIONED replies=0 resolved=0"
+  assert_not_contains "no-post reviewer outcome does not create a reply" "$(cat "$TEST_TMP/gh.log")" "replies"
+  assert_not_contains "no-post reviewer outcome does not resolve" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+  cache="$TEST_TMP/reviewer-state.json"
+  assert_json "completed no-post outcome is durable" "$(cat "$cache")" '.records["7/PRRT_owned"] | "\(.outcome.status) \(.reply_id) \(.resolved)"' "still-present null false"
+  jq '.cc_review_threads[0].resolve=true' "$plan" > "$plan.tmp" && mv "$plan.tmp" "$plan"
+  : > "$TEST_TMP/gh.log"
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "still-present no-post outcome cannot resolve" "$out" "PARTIAL stale=1 replies=0 resolved=0"
+  assert_not_contains "still-present no-post outcome makes no resolution call" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+
+  jq '.cc_review_threads[0].outcome.status="confirmed-fixed" | .cc_review_threads[0].body="Approved reply"' "$plan" > "$plan.tmp" && mv "$plan.tmp" "$plan"
+  jq '.data.repository.pullRequest.reviewThreads.nodes[0].isResolved=true' "$TEST_TMP/gh/graphql-threads-7.json" > "$TEST_TMP/gh/graphql-threads-7.tmp" && mv "$TEST_TMP/gh/graphql-threads-7.tmp" "$TEST_TMP/gh/graphql-threads-7.json"
+  : > "$TEST_TMP/gh.log"
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "external resolution without the approved reply remains incomplete" "$out" "PARTIAL stale=1 replies=0 resolved=0"
+  assert_not_contains "unposted reply recovery does not mutate the thread again" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+  assert_json "unposted reply is not recorded locally as resolved" "$(bstate pr-get "$run" 7)" '.actions.reviewer_resolved | length' "0"
+  assert_json "unposted reply is not cached as completed" "$(cat "$cache")" '.records["7/PRRT_owned"] | "\(.outcome.status) \(.resolved)"' "still-present false"
+}
+
+test_bulk_apply_reviewer_cache_failure_does_not_mark_resolution_done() {
+  local sha run plan root thread activity identity out
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(triage_run_pr7 "$sha")"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  bstate pr-set "$run" 7 '.triage_role="reviewer"' '.author="alice"' '.authored_by_user=false' >/dev/null
+  mkdir -p "$TEST_TMP/gh"
+  jq -n --arg head "$sha" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
+  root="$(jq -nc '{id:"PRRC_root",databaseId:101,author:{login:"me"},body:"Unsafe access.\n_Source: correctness agent_",updatedAt:"2026-10-20T00:00:00Z",originalCommit:{oid:"old"},pullRequestReview:null}')"
+  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
+  identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
+  activity="$(printf '%s' "$thread" | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; t=json.load(sys.stdin); print(json.dumps(r.fingerprint(t,sys.argv[2],"me",json.loads(sys.argv[3]))))' "$SCRIPTS/reviewer_activity.py" "$sha" "$identity")"
+  jq -n --argjson thread "$thread" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:[$thread]}}}}}' > "$TEST_TMP/gh/graphql-threads-7.json"
+  jq -n --argjson identity "$identity" --argjson activity "$activity" --arg head "$sha" \
+    '{pr:7,triage_role:"reviewer",expected_head:$head,activity_identity:$identity,prepared_commit:null,replies:[],stale_resolutions:[],human:[],
+      cc_review_threads:[{comment_id:101,thread_id:"PRRT_owned",activity:$activity,outcome:{status:"confirmed-fixed",completed:true},body:"Verified.",resolve:true}]}' > "$plan"
+  printf 'malformed cache' > "$TEST_TMP/reviewer-state.json"
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "durable recording failure leaves the PR retryable" "$out" "PARTIAL stale=1 replies=1 resolved=1"
+  assert_json "failed cache write does not record local resolution" "$(bstate pr-get "$run" 7)" '.actions.reviewer_resolved | length' "0"
+  assert_contains "remote resolution was attempted" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+}
+
+test_bulk_apply_reviewer_exact_marker_recovers_post_before_local_record() {
+  local sha run plan identity root thread activity marker reply
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(triage_run_pr7 "$sha")"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  bstate pr-set "$run" 7 '.triage_role="reviewer"' '.author="alice"' '.authored_by_user=false' >/dev/null
+  mkdir -p "$TEST_TMP/gh"
+  jq -n --arg head "$sha" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
+  identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
+  root="$(jq -nc '{id:"PRRC_root",databaseId:101,author:{login:"me"},body:"Unsafe access.\n_Source: correctness agent_",updatedAt:"2026-10-20T00:00:00Z",originalCommit:{oid:"old"},pullRequestReview:null}')"
+  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
+  activity="$(printf '%s' "$thread" | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; t=json.load(sys.stdin); print(json.dumps(r.fingerprint(t,sys.argv[2],"me",json.loads(sys.argv[3]))))' "$SCRIPTS/reviewer_activity.py" "$sha" "$identity")"
+  signed_body="$(printf 'Verified.\n\n<!-- cc-review-triage -->')"
+  marker="$(jq -nc --argjson identity "$identity" --argjson activity "$activity" --arg body "$signed_body" '{identity:$identity,activity:$activity,body:$body}' \
+    | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; v=json.load(sys.stdin); print(r.activity_marker(v["identity"],v["activity"],v["body"]))' "$SCRIPTS/reviewer_activity.py")"
+  reply="$(jq -nc --arg marker "$marker" '{id:"PRRC_reply",databaseId:202,author:{login:"me"},body:("Verified.\n\n<!-- cc-review-triage -->\n"+$marker),updatedAt:"2026-10-21T00:00:00Z"}')"
+  thread="$(printf '%s' "$thread" | jq --argjson reply "$reply" '.comments.nodes += [$reply] | .comments.totalCount=2')"
+  jq -n --argjson thread "$thread" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:[$thread]}}}}}' \
+    > "$TEST_TMP/gh/graphql-threads-7.json"
+  jq -n --argjson identity "$identity" --argjson activity "$activity" --arg head "$sha" \
+    '{pr:7,triage_role:"reviewer",expected_head:$head,activity_identity:$identity,prepared_commit:null,
+      replies:[],stale_resolutions:[],human:[],cc_review_threads:[{comment_id:101,thread_id:"PRRT_owned",
+      activity:$activity,outcome:{status:"confirmed-fixed",completed:true},body:"Verified.",resolve:false}]}' > "$plan"
+  local out cache
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "exact marker recovers a reply posted before local recording" "$out" "ACTIONED replies=0 resolved=0"
+  assert_not_contains "marker recovery does not post a duplicate reply" "$(cat "$TEST_TMP/gh.log")" "replies"
+  local key
+  key="$(printf '%s' "$activity" | jq -r '.activity_key')"
+  assert_json "recovered reply ID is recorded separately" "$(bstate pr-get "$run" 7)" \
+    ".actions.reviewer_replies[\"$key\"]" "202"
+  cache="$TEST_TMP/reviewer-state.json"
+  assert_json "recovered outcome reaches the durable activity cache" "$(cat "$cache")" \
+    '.records["7/PRRT_owned"] | "\(.outcome.status) \(.reply_id) \(.resolved)"' "confirmed-fixed 202 false"
 }
 
 test_bulk_apply_triage_rerun_skips_recorded() {
@@ -2992,7 +3316,8 @@ test_bulk_select_triage_keeps_only_own_prs() {
     | .data.search.nodes[1].reviewThreads.pageInfo = {hasNextPage: true}' "$ROOT/tests/fixtures/bulk/graphql-search.json" > "$TEST_TMP/gh/graphql-search.json"
   out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --user me)"
   assert_json "a PR by someone else is neither selected nor excluded" "$out" '[.selected[].number, .excluded[].number] | index(22)' "null"
-  assert_json "a PR with more thread pages is selected" "$out" '[.selected[].number] | join(",")' "21,20"
+  assert_json "known open feedback stays selected" "$out" '[.selected[].number] | join(",")' "20"
+  assert_json "unseen thread pages cannot invent unresolved work" "$out" '.excluded[] | select(.number==21) | .assessment.triage.complete' "false"
 }
 
 test_bulk_md_checkout_block() {
@@ -3070,6 +3395,11 @@ test_shims_pass_bulk_flags() {
     assert_contains "$(basename "$(dirname "$f")")/$(basename "$f") passes --resume" "$(cat "$f")" '`--resume [<run-id>]`'
     assert_contains "$(basename "$(dirname "$f")")/$(basename "$f") passes --unattended" "$(cat "$f")" '`--unattended`'
   done
+  for f in "$ROOT/review/skills/triage/SKILL.md" "$ROOT/review/opencode/command/triage.md"; do
+    assert_contains "$(basename "$f") describes reviewer-owned feedback" "$(cat "$f")" "reviewer-owned feedback"
+    assert_contains "$(basename "$f") explains both PR actions" "$(cat "$f")" "A PR may need both review and triage"
+    assert_contains "$(basename "$f") explains draft triage" "$(cat "$f")" "Draft PRs remain eligible for triage"
+  done
   for f in "$ROOT/review/skills/review/SKILL.md" "$ROOT/review/opencode/command/review.md"; do
     assert_contains "review shim passes --all-open" "$(cat "$f")" '`--all-open`'
   done
@@ -3087,7 +3417,7 @@ test_bulk_md_validation_errors() {
   for fragment in \
     "--bulk and --pr cannot be combined; --pr names a single PR" \
     "--all-open and --search are mutually exclusive" \
-    "--all-open is not supported by triage; bulk triage always selects your own PRs" \
+    "--all-open is not supported by triage; bulk triage uses eligible author and reviewer PRs" \
     "--limit must be a positive integer, got '" \
     "--search may not contain '" \
     "'; bulk mode always uses open PRs of the current repository" \
@@ -3112,7 +3442,7 @@ test_bulk_md_validation_errors() {
     out="$(BULK_COMMAND=review PR_FLAG=5 "$sh" "$block" 2>&1)"
     assert_eq "$sh: --pr rejected" "Error: --bulk and --pr cannot be combined; --pr names a single PR" "$out"
     out="$(BULK_COMMAND=triage ALL_OPEN_FLAG=true "$sh" "$block" 2>&1)"
-    assert_eq "$sh: --all-open rejected for triage" "Error: --all-open is not supported by triage; bulk triage always selects your own PRs" "$out"
+    assert_eq "$sh: --all-open rejected for triage" "Error: --all-open is not supported by triage; bulk triage uses eligible author and reviewer PRs" "$out"
     out="$(BULK_COMMAND=review ALL_OPEN_FLAG=true SEARCH_GIVEN=true SEARCH_QUERY=x "$sh" "$block" 2>&1)"
     assert_eq "$sh: --all-open with --search" "Error: --all-open and --search are mutually exclusive" "$out"
     out="$(BULK_COMMAND=review LIMIT_FLAG=0 "$sh" "$block" 2>&1)"
@@ -3181,6 +3511,20 @@ test_review_md_payload_has_commit_id() {
   assert_contains "recovery search uses RUN_MARKER" "$(md_section "$REVIEW_MD" "7.5m: Error Recovery")" '--arg id "$RUN_MARKER"'
   assert_contains "event override" "$(md_section "$REVIEW_MD" "7.5k: Assemble Review Submission")" "REVIEW_EVENT_OVERRIDE"
   assert_contains "no-findings markers are not the previous run" "$(md_section "$REVIEW_MD" "7.5d: Detect Previous cc-review Runs")" "cc-review found no issues at"
+  local overlap
+  overlap="$(md_section "$REVIEW_MD" "7.5e: Match Against Previous Findings")"
+  for needle in 'Handled reviewer activity guard' 'reviewer_activity.py load' 'fetch_pr_threads' \
+    'compare the entire `Activity`' 'exact candidate thread ID' 'review-level run marker' \
+    'complete changed-code review scope'; do
+    assert_contains "review overlap handling includes $needle" "$overlap" "$needle"
+  done
+  overlap="$(md_section "$REVIEW_MD" "7.5f: Resolve Fixed Threads")"
+  for needle in 'activity_marker(identity, activity, reply_body)' 'reviewer_activity.py record' \
+    'Only after the reply and resolution succeed'; do
+    assert_contains "resolved review thread lifecycle includes $needle" "$overlap" "$needle"
+  done
+  assert_contains "posted review records only verified own roots" "$(md_section "$REVIEW_MD" "7.5l: Post Review")" \
+    "thread contains exactly the posted root comment"
   assert_contains "a moved head is reported" "$(md_section "$REVIEW_MD" "7.5l: Post Review")" "PR head moved; review not posted"
   # The payload block as written puts commit_id in the payload
   block="$TEST_TMP/payload.sh"
@@ -3297,6 +3641,8 @@ test_triage_md_prepare_mode_section() {
   section="$(md_section "$TRIAGE_MD" 'Prepare Mode (`TRIAGE_MODE=prepare`)')"
   for needle in 'TRIAGE_PLAN' 'TRIAGE_ROOT' 'TRIAGE_STATE_FILE' 'git -C "$TRIAGE_ROOT"' 'prepared_commit' \
     '.replies[]' '.stale_resolutions[]' '.cc_review_threads[]' '.human[]' 'triage-summary.md' \
+    'TRIAGE_ROLE' 'triage_role' 'expected_head' 'activity_identity' 'outcome' 'no reviewer commit' \
+    'unanswered questions' 'current PR head' 'Reviewer Mode' \
     'STATUS ok valid=<accepted bot fixes> rejected=<n> deferred=<n> human=<n> commit=<sha or none>' \
     'STATUS failed reason=rate-limited'; do
     assert_contains "prepare mode names $needle" "$section" "$needle"
@@ -3305,6 +3651,17 @@ test_triage_md_prepare_mode_section() {
     assert_contains "prepare mode skips: $needle" "$section" "$needle"
   done
   assert_contains "prepare mode never pushes" "$section" "Never push, post a reply, post a review, or resolve a thread"
+  assert_contains "reviewer preparation requires a current PR head" "$section" "current PR head"
+  assert_contains "reviewer preparation requires detached head equality" "$section" 'detached `TRIAGE_ROOT` must be at that same commit'
+  section="$(md_section "$TRIAGE_MD" 'Reviewer Mode')"
+  assert_contains "bulk PR lookup includes the GitHub host" "$(cat "$TRIAGE_MD")" 'GH_HOST/$PR_OWNER/$PR_REPO'
+  for needle in 'TRIAGE_ROLE' 'persisted, trusted PR selection' 'reviewer_activity.py fingerprint' \
+    'and `check`' 'isolated checkout' 'unresolved cc-review thread' \
+    'unanswered questions' 'never edits or commits code' 'Never identify a reviewer target by path' \
+    'Single-PR lifecycle' 'activity_marker(identity, activity, reply_body)' 'reviewer_activity.py record' \
+    'Immediately before every reply and every resolution' 'verified no-post `still-present` outcome'; do
+    assert_contains "reviewer mode contract includes $needle" "$section" "$needle"
+  done
   local first_step prepare_line
   prepare_line="$(grep -n '^## Prepare Mode' "$TRIAGE_MD" | cut -d: -f1)"
   first_step="$(grep -n '^## Step 1:' "$TRIAGE_MD" | cut -d: -f1)"
@@ -3355,6 +3712,13 @@ test_bulk_md_triage_blocks() {
     DECISION=skip "$sh" "$block"
     assert_json "$sh: skip records no body" "$(cat "$plan")" '.human[0] | "\(.decision) \(.body)"' "skip null"
   done
+  jq -n '{pr:7,triage_role:"reviewer",prepared_commit:null,replies:[],human:[],cc_review_threads:[
+    {outcome:{status:"confirmed-fixed",completed:true}},
+    {outcome:{status:"still-present",completed:true}},
+    {outcome:{status:"unclear",completed:false}}]}' > "$plan"
+  bulk_md_block 'triage-summary.md' "$run" > "$block"
+  bash "$block" >/dev/null 2>&1
+  assert_json "reviewer outcomes populate role-specific counts" "$(cat "$BULK_REPO/.cc-review/bulk/$run/state.json")"     '.prs[0].counts | "\(.bot_valid)/\(.bot_rejected)/\(.deferred)/\(.human)"' "1/1/1/0"
 }
 
 test_bulk_md_resume_section() {
@@ -3667,6 +4031,15 @@ test_bulk_md_pre_decision_refresh() {
 # Main
 # ---------------------------------------------------------------------------
 
+test_pr_actions() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_pr_actions.py" 2>&1)"; then
+    _pass
+  else
+    _fail "PR action Python suite" "$output"
+  fi
+}
+
 test_inbox() {
   local output
   if output="$(python3 -B "$ROOT/tests/test_inbox.py" 2>&1)"; then
@@ -3721,6 +4094,8 @@ main() {
   run_test test_bulk_fake_gh_and_repo_helpers
   run_test test_bulk_state_init_creates_run_and_gitignore
   run_test test_bulk_state_set_prs_and_pr_set
+  run_test test_bulk_state_mixed_triage_roles
+  run_test test_bulk_triage_decision_table_roles
   run_test test_bulk_state_record_subactions
   run_test test_bulk_state_record_forms
   run_test test_bulk_state_find_unfinished
@@ -3752,6 +4127,12 @@ main() {
   run_test test_pr_worktree_cross_repo_branch_names
   run_test test_platform_fetch_reviews_includes_commit
   run_test test_bulk_select_review_default_union
+  run_test test_bulk_select_shared_roles_and_scope
+  run_test test_bulk_select_reviewer_discovery_failure_keeps_authors
+  run_test test_bulk_select_handled_activity_workflow_order
+  run_test test_bulk_select_partial_evidence_and_prerequisites
+  run_test test_bulk_select_default_limit_and_ties
+  run_test test_bulk_select_partial_zero_selection_report
   run_test test_bulk_select_excludes_reviewed_at_head
   run_test test_bulk_select_drops_drafts
   run_test test_bulk_select_limit_and_order
@@ -3771,6 +4152,11 @@ main() {
   run_test test_bulk_apply_marker_head_moved
   run_test test_bulk_apply_review_push_records_sha
   run_test test_bulk_apply_triage_full
+  run_test test_bulk_apply_reviewer_plan_rejected_before_writes
+  run_test test_bulk_apply_reviewer_stale_activity_has_zero_writes
+  run_test test_bulk_apply_reviewer_no_post_outcome_is_recorded
+  run_test test_bulk_apply_reviewer_cache_failure_does_not_mark_resolution_done
+  run_test test_bulk_apply_reviewer_exact_marker_recovers_post_before_local_record
   run_test test_bulk_apply_triage_rerun_skips_recorded
   run_test test_bulk_apply_triage_stale_stops
   run_test test_bulk_apply_triage_human_decisions
@@ -3818,6 +4204,7 @@ main() {
   run_test test_bulk_state_find_unfinished_lists_corrupt_run
   run_test test_bulk_state_abandon_removes_worktrees
   run_test test_inbox
+  run_test test_pr_actions
 
   if [ -n "$FILTER" ] && [ "$RAN" -eq 0 ]; then
     echo "Error: no test matches filter '$FILTER'" >&2

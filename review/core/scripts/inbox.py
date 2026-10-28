@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Collect a read-only, bounded repository inbox snapshot using authenticated gh.
 
-Contextual assessment is performed by commands/inbox.md, not by metadata rules.
-Requires Python 3.9+ and gh; uses no third-party packages or project state.
+Contextual assessment uses commands/inbox.md; PR action eligibility is shared.
+Requires Python 3.9+ and gh; reviewer state is read without creating any paths.
 """
 
 import argparse
@@ -14,6 +14,9 @@ import sys
 import time
 import unicodedata
 from urllib.parse import urlsplit
+
+from pr_actions import normalize_pr, assess_pr
+from reviewer_activity import load_activity
 
 
 TYPES = ("pr", "issue", "discussion")
@@ -223,7 +226,7 @@ def discover(kind, repository, login, since, limit, github):
 
 def detail_query(kind):
     actor = "author { login __typename }"
-    comment = "body url createdAt updatedAt " + actor
+    comment = "id databaseId body url createdAt updatedAt " + actor
     page = "totalCount pageInfo { hasNextPage hasPreviousPage }"
     common = "id number title url updatedAt body " + actor
     comments = "comments(last: 20) { " + page + " nodes { " + comment + " } }"
@@ -235,8 +238,12 @@ def detail_query(kind):
                   + " reviews(last: 20) { " + page + " nodes { body url submittedAt " + actor
                   + " state commit { oid committedDate } } }"
                   + " reviewThreads(last: 20) { " + page
-                  + " nodes { isResolved isOutdated path line comments(last: 10) { " + page
-                  + " nodes { " + comment + " } } } }"
+                  + " nodes { id isResolved isOutdated path line"
+                  + " rootComment: comments(first: 1) { nodes { " + comment
+                  + " originalCommit { oid } pullRequestReview { body author { login } commit { oid } } } }"
+                  + " comments(last: 10) { " + page
+                  + " nodes { " + comment + " originalCommit { oid }"
+                  + " pullRequestReview { body author { login } commit { oid } } } } } }"
                   + " commits(last: 20) { " + page
                   + " nodes { commit { oid committedDate url messageHeadline statusCheckRollup { state } } } }")
     elif kind == "discussion":
@@ -262,7 +269,7 @@ def normalize_detail(value):
         if isinstance(current, dict):
             if "nodes" in current and not isinstance(current["nodes"], list):
                 warnings.append(path + ": activity is unavailable.")
-            elif isinstance(current.get("nodes"), list):
+            elif isinstance(current.get("nodes"), list) and connection_name != "rootComment":
                 page = current.get("pageInfo")
                 if not isinstance(page, dict):
                     page = {}
@@ -289,13 +296,24 @@ def normalize_detail(value):
     return visit(value, "detail"), warnings
 
 
-def hydrate(entry, github, deadline=None):
+def attach_assessment(entry, raw, context):
+    value = dict(entry, detail=raw, host=context["host"])
+    evidence = normalize_pr(value, "inbox", context["repository"], context["user"])
+    evidence["handled_complete"] = context["handled_complete"]
+    entry["assessment"] = assess_pr(evidence, context["handled"])
+
+
+def hydrate(entry, github, deadline=None, action_context=None):
     try:
         response = github.graphql(detail_query(entry["type"]), {"id": entry["id"]}, deadline=deadline)
         node = (response.get("data") or {}).get("node")
         if (not isinstance(node, dict) or node.get("__typename") != TYPENAMES[entry["type"]]
                 or node.get("id") != entry["id"]):
             raise InboxError("Conversation is unavailable or the item type changed.")
+        if entry["type"] == "pr" and action_context:
+            # Fingerprints must use original bodies and exact identities,
+            # before display sanitization or the 1000-character body cap.
+            attach_assessment(entry, node, action_context)
         detail, warnings = normalize_detail(node)
         required = {"body": str, "comments": dict}
         if entry["type"] == "pr":
@@ -309,6 +327,13 @@ def hydrate(entry, github, deadline=None):
         entry.update(detail=detail, warnings=warnings, context_complete=not warnings)
     except InboxError as exc:
         entry.update(detail=None, context_complete=False, warnings=["Could not read conversation: " + str(exc)])
+        if entry["type"] == "pr" and action_context:
+            attach_assessment(entry, None, action_context)
+    if entry.get("assessment"):
+        for action in ("review", "triage"):
+            if not entry["assessment"][action]["complete"]:
+                entry["warnings"].append(action + ": " + entry["assessment"][action]["reason"])
+                entry["context_complete"] = False
 
 
 def collect(args, github, now=None):
@@ -342,16 +367,22 @@ def collect(args, github, now=None):
         raise InboxError("Cannot identify the authenticated user; run gh auth login --hostname "
                          + github.host + ". " + str(exc)) from exc
     discussion_since = args.since or (now.date() - timedelta(days=90)).isoformat()
+    handled, state_warnings = load_activity(github.host, repository, login) if "pr" in args.types else ({}, [])
+    action_context = dict(host=github.host, repository=repository, user=login,
+                          handled=handled, handled_complete=not state_warnings)
     snapshot = {
         "schema_version": 1, "repository": repository, "repository_url": repo["url"],
         "host": github.host, "user": login, "collected_at": now.isoformat(),
         "scope": {"types": args.types, "limit_per_type": args.limit, "since": args.since,
                   "discussion_since": discussion_since, "pr_issue_state": "open",
                   "discovery_limit_per_reason": 100,
+                  "pr_actions": {"review_mode": "default", "include_review_drafts": False,
+                                 "include_triage_drafts": True, "bulk_default_limit": 10,
+                                 "selection": "eligibility within collected candidates; bulk orders oldest updates first"},
                   "detail_collection_timeout_seconds": DETAIL_COLLECTION_TIMEOUT_SECONDS,
                   "detail_bounds": {"activity": 20, "replies": 10, "body_characters": 2000,
                                     "activity_body_characters": 1000, "people": 100}},
-        "sources": [], "items": [], "warnings": [],
+        "sources": [], "items": [], "warnings": state_warnings,
     }
     detail_deadline = None
     for kind in args.types:
@@ -365,7 +396,7 @@ def collect(args, github, now=None):
         for entry in entries:
             if detail_deadline is None:
                 detail_deadline = time.monotonic() + DETAIL_COLLECTION_TIMEOUT_SECONDS
-            hydrate(entry, github, deadline=detail_deadline)
+            hydrate(entry, github, deadline=detail_deadline, action_context=action_context)
             snapshot["warnings"].extend(kind + " #" + str(entry["number"]) + ": " + warning
                                         for warning in entry["warnings"])
         snapshot["sources"].append(source)
