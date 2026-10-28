@@ -74,12 +74,3 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: Bulk worktrees and run state live inside the user's working tree, and finished or abandoned runs are kept forever with no retention.
 
 > Tools that ignore nested .gitignore files (linters, test runners, IDE indexers) see full nested checkouts while a run keeps them; placing worktrees under the git common dir and offering a prune option for old runs would bound disk use and avoid that.
-
-### review-round-convergence
-
-- **Source**: user
-- **Date**: 2026-10-28
-- **Reference**: Issue #8 (incremental PR review)
-- **Summary**: Later review rounds should converge on a reasonable level of diligence instead of uncovering progressively smaller nits after a successful first round.
-
-> Tighten the filter against nitpicks in follow-up rounds: focus on verifying earlier findings, meaningful problems introduced by changes, and material regressions. Once the first round's substantive concerns are addressed, avoid reopening unchanged code for minor style preferences, optional polish, or speculative improvements. Keep reporting material correctness and security issues whenever discovered. The goal is sufficient confidence to merge, not perfection; consider an explicit stopping criterion so repeated rounds can conclude successfully.
