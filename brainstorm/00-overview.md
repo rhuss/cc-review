@@ -15,6 +15,7 @@ Last updated: 2026-10-28
 | 07 | 2026-10-26 | repository-inbox | active | - | [#4](https://github.com/rhuss/cc-review/issues/4) |
 | 08 | 2026-10-27 | inbox-action-alignment | active | - | [#7](https://github.com/rhuss/cc-review/issues/7) |
 | 09 | 2026-10-27 | incremental-review | active | - | [#8](https://github.com/rhuss/cc-review/issues/8) |
+| 10 | 2026-10-28 | review-convergence | active | - | [#11](https://github.com/rhuss/cc-review/issues/11) |
 
 ## Open Threads
 
@@ -65,6 +66,12 @@ Last updated: 2026-10-28
 - How should unsupported command-reviewer scope and incomplete reviewer coverage affect fallback, reporting and baseline completion? (from #09)
 - What shared verification evidence should review, triage and meta-review receive to preserve findings across moved code, avoid duplicates and enforce the critical-only unchanged-code exception? (from #09)
 - How should verification outcomes and new findings be presented between existing threads and the review summary, including acknowledgment of a renewed request on unchanged content? (from #09)
+- What evidence identifies a follow-up when earlier reviews are manual, summary-only or lack a trustworthy incremental baseline, without confusing conversation history with completed code coverage? (from #10)
+- How should materiality map to existing severity and gate settings, including older findings whose severity or blocking status was misclassified? (from #10)
+- How should summary-only concerns and their replies retain identity and decision history when no inline thread exists? (from #10)
+- What evidence distinguishes an accepted explanation or agreed deferral from an unaccepted author claim, and when does new evidence justify revisiting it? (from #10)
+- How should incomplete or very large review histories be bounded and disclosed without silently omitting relevant decisions? (from #10)
+- What minimum conversation context and final checks ensure the same policy for prompt and command reviewers, meta-review and reporting? (from #10)
 
 ## Parked Ideas
 
