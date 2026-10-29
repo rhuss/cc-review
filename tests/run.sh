@@ -2046,9 +2046,25 @@ test_bulk_state_find_unfinished_unknown_id_error() {
 # pr-worktree.sh
 # ---------------------------------------------------------------------------
 
-# prwt <args...>: runs pr-worktree.sh inside the user's clone
+# prwt <args...>: runs pr-worktree.sh inside the user's clone, with the fake gh
+# (gh repo view resolves the base repository to acme/widget)
 prwt() {
-  (cd "$BULK_REPO" && bash "$PR_WORKTREE" "$@")
+  (cd "$BULK_REPO" && with_fake_gh bash "$PR_WORKTREE" "$@")
+}
+
+# make_fork_origin: turns the user's clone into a fork checkout. origin becomes
+# the user's fork me/widget (a bare repository without pull refs) and the base
+# repository acme/widget moves to upstream. Sets BULK_FORK.
+make_fork_origin() {
+  BULK_FORK="$TEST_TMP/remote/github.com/me/widget.git"
+  git clone -q --bare "$BULK_BARE" "$BULK_FORK"
+  git -C "$BULK_FORK" for-each-ref --format='%(refname)' refs/pull | while read -r ref; do
+    git -C "$BULK_FORK" update-ref -d "$ref"
+  done
+  git -C "$BULK_REPO" config "url.$BULK_FORK.insteadOf" https://github.com/me/widget.git
+  git -C "$BULK_REPO" remote rename origin upstream
+  git -C "$BULK_REPO" remote add origin https://github.com/me/widget.git
+  git -C "$BULK_REPO" fetch -q origin
 }
 
 # bulk_wt <n>: a worktree path inside the clone's ignored bulk directory
@@ -2074,7 +2090,8 @@ test_pr_worktree_add_detached() {
   wt="$(bulk_wt 7)"
   status_before="$(git -C "$BULK_REPO" status --porcelain)"
   out="$(prwt add 7 "$sha" "$wt" main)"
-  assert_eq "prints the absolute worktree path" "$(cd "$wt" && pwd)" "$out"
+  assert_eq "prints the absolute worktree path" "$(cd "$wt" && pwd)" "$(printf '%s\n' "$out" | sed -n 1p)"
+  assert_eq "prints the base ref" "origin/main" "$(printf '%s\n' "$out" | sed -n 2p)"
   assert_eq "worktree is at the PR head" "$sha" "$(git -C "$wt" rev-parse HEAD)"
   git -C "$wt" symbolic-ref -q HEAD >/dev/null && _fail "worktree HEAD is detached" || _pass
   assert_eq "PR file present in the worktree" "change for 7" "$(cat "$wt/pr-7.txt")"
@@ -2083,6 +2100,39 @@ test_pr_worktree_add_detached() {
   assert_eq "user's uncommitted edit kept" "base
 local edit" "$(cat "$BULK_REPO/README.md")"
   assert_eq "the base ref is fetched" "$(git -C "$BULK_OTHER" rev-parse main)" "$(git -C "$BULK_REPO" rev-parse origin/main)"
+}
+
+test_pr_worktree_add_from_fork() {
+  local sha wt out fork_main
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  make_fork_origin
+  # The base repository moves on; the fork's main stays behind
+  printf 'more base\n' >> "$BULK_OTHER/README.md"
+  git -C "$BULK_OTHER" commit -q -am "base moves"
+  git -C "$BULK_OTHER" push -q origin main
+  fork_main="$(git -C "$BULK_REPO" rev-parse origin/main)"
+  wt="$(bulk_wt 7)"
+  out="$(prwt add 7 "$sha" "$wt" main 2>&1)"
+  assert_eq "fork checkout: worktree at the PR head" "$sha" "$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  assert_eq "fork checkout: the base ref is on upstream" "upstream/main" "$(printf '%s\n' "$out" | sed -n 2p)"
+  assert_eq "fork checkout: upstream's base is fetched" "$(git -C "$BULK_OTHER" rev-parse main)" "$(git -C "$BULK_REPO" rev-parse upstream/main)"
+  assert_eq "fork checkout: origin/main is untouched" "$fork_main" "$(git -C "$BULK_REPO" rev-parse origin/main)"
+  assert_eq "base-remote names upstream" "upstream" "$(prwt base-remote)"
+}
+
+test_pr_worktree_add_url_fallback() {
+  local sha wt out
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  make_fork_origin
+  git -C "$BULK_REPO" remote remove upstream
+  wt="$(bulk_wt 7)"
+  out="$(prwt add 7 "$sha" "$wt" main 2>&1)"
+  assert_eq "no base remote: worktree at the PR head" "$sha" "$(git -C "$wt" rev-parse HEAD 2>/dev/null)"
+  assert_eq "no base remote: the base goes to an own ref" "refs/cc-review/base/main" "$(printf '%s\n' "$out" | sed -n 2p)"
+  assert_eq "no base remote: the base is fetched by URL" "$(git -C "$BULK_OTHER" rev-parse main)" "$(git -C "$BULK_REPO" rev-parse refs/cc-review/base/main)"
+  assert_eq "base-remote falls back to the URL" "https://github.com/acme/widget.git" "$(prwt base-remote)"
 }
 
 test_pr_worktree_add_while_branch_checked_out() {
@@ -2173,7 +2223,11 @@ test_pr_worktree_rate_limit_exit_75() {
   mkdir -p "$fake"
   printf '#!/bin/sh\ncase "$*" in *fetch*) echo "remote: You have exceeded a secondary rate limit" >&2; exit 128 ;; esac\nexec "%s" "$@"\n' "$real_git" > "$fake/git"
   chmod +x "$fake/git"
-  out="$(cd "$BULK_REPO" && PATH="$fake:$PATH" bash "$PR_WORKTREE" add 7 0000000000000000000000000000000000000007 "$(bulk_wt 7)" 2>&1)"; rc=$?
+  out="$(cd "$BULK_REPO" && PATH="$fake:$PATH" with_fake_gh bash "$PR_WORKTREE" add 7 0000000000000000000000000000000000000007 "$(bulk_wt 7)" 2>&1)"; rc=$?
+  assert_eq "git rate limit exits 75" "75" "$rc"
+  assert_contains "git rate limit message" "$out" "Error: RATE_LIMITED"
+  # gh repo view, which resolves the base repository before the fetch
+  out="$(cd "$BULK_REPO" && FAKE_GH_FAIL='repo view*' FAKE_GH_FAIL_MSG='API rate limit exceeded' with_fake_gh bash "$PR_WORKTREE" add 7 0000000000000000000000000000000000000007 "$(bulk_wt 7)" 2>&1)"; rc=$?
   assert_eq "git rate limit exits 75" "75" "$rc"
   assert_contains "git rate limit message" "$out" "Error: RATE_LIMITED"
 }
@@ -3691,6 +3745,12 @@ test_review_md_isolated_pr_checkout() {
   git -C "$BULK_REPO" checkout -q -b topic-7 "$sha"
   out="$(cd "$BULK_REPO" && CORE_DIR="$ROOT/review/core" PR_NUMBER=7 REVIEW_ROOT="$BULK_REPO" FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh bash "$block" 2>&1)"
   assert_contains "on the PR's branch the local tree is reviewed" "$out" "ISOLATED_PR=false"
+  git -C "$BULK_REPO" checkout -q main
+  # In a fork checkout, the base comes from the base repository's remote
+  make_fork_origin
+  out="$(cd "$BULK_REPO" && CORE_DIR="$ROOT/review/core" PR_NUMBER=7 REVIEW_ROOT="$BULK_REPO" FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh bash "$block" 2>&1)"
+  assert_contains "fork checkout: the PR is reviewed in its own worktree" "$out" "ISOLATED_PR=true"
+  assert_contains "fork checkout: the base is on upstream" "$out" "BASE_REF=upstream/main"
 }
 
 # bulk_md_block <pattern> <run-id>: a bulk.md shell block with its header
@@ -3724,6 +3784,19 @@ test_bulk_md_fix_rounds_use_max_rounds() {
 }
 
 TRIAGE_MD="$ROOT/review/core/commands/triage.md"
+
+test_md_owner_repo_from_base_repository() {
+  local section
+  # In a fork checkout origin is the fork: the PR's repository comes from gh
+  for section in "$(md_section "$TRIAGE_MD" "Step 1: Resolve PR Context")" \
+                 "$(md_section "$REVIEW_MD" "7.5a: Extract PR Context")"; do
+    assert_contains "owner from gh repo view" "$section" 'gh repo view --json owner -q .owner.login'
+    assert_contains "repo from gh repo view" "$section" 'gh repo view --json name -q .name'
+    assert_not_contains "no owner/repo from origin" "$section" 'git remote get-url origin'
+  done
+  assert_not_contains "scope fetch does not assume origin" "$(cat "$REVIEW_MD")" 'fetch --no-tags -- origin'
+  assert_not_contains "bulk checkout does not assume origin" "$(cat "$BULK_MD")" 'base=origin/$BASE'
+}
 
 test_triage_md_prepare_mode_section() {
   local section needle
@@ -4232,6 +4305,8 @@ main() {
   run_test test_bulk_state_find_unfinished_unknown_id_error
   run_test test_pr_worktree_add_detached
   run_test test_pr_worktree_add_while_branch_checked_out
+  run_test test_pr_worktree_add_from_fork
+  run_test test_pr_worktree_add_url_fallback
   run_test test_pr_worktree_local_ahead
   run_test test_pr_worktree_push_ff
   run_test test_pr_worktree_push_stale
@@ -4304,6 +4379,7 @@ main() {
   run_test test_bulk_md_fix_rounds_use_max_rounds
   run_test test_bulk_md_review_apply_checks_and_inputs
   run_test test_triage_md_prepare_mode_section
+  run_test test_md_owner_repo_from_base_repository
   run_test test_triage_md_mandatory_steps_have_prepare_exception
   run_test test_bulk_md_triage_blocks
   run_test test_bulk_md_resume_section

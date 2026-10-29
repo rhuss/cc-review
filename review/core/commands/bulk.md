@@ -272,7 +272,9 @@ find "$PR_DIR" -mindepth 1 -maxdepth 1 ! -name wt -exec rm -rf {} +
 HEAD_SHA=$("$S/pr-worktree.sh" head "$N" 2>"$PR_DIR/checkout.err"); RC=$?
 if [ "$RC" -eq 0 ]; then
   BASE=$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" .base_ref)
-  WT=$("$S/pr-worktree.sh" add "$N" "$HEAD_SHA" "$PR_DIR/wt" "$BASE" 2>"$PR_DIR/checkout.err"); RC=$?
+  # Prints the worktree path, then the base ref on the base repository's remote
+  CHECKOUT=$("$S/pr-worktree.sh" add "$N" "$HEAD_SHA" "$PR_DIR/wt" "$BASE" 2>"$PR_DIR/checkout.err"); RC=$?
+  WT=$(printf '%s\n' "$CHECKOUT" | sed -n 1p); BASE_REF=$(printf '%s\n' "$CHECKOUT" | sed -n 2p)
 fi
 case "$RC" in
   0)
@@ -289,7 +291,7 @@ case "$RC" in
     if [ "${AHEAD:-0}" -gt 0 ]; then
       "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.flags=((.flags + ["local-unpushed"]) | unique)' >/dev/null
     fi
-    echo "CHECKOUT ok wt=$WT head=$HEAD_SHA base=origin/$BASE" ;;
+    echo "CHECKOUT ok wt=$WT head=$HEAD_SHA base=$BASE_REF" ;;
   75)
     echo "CHECKOUT rate-limited" ;;
   *)
@@ -349,7 +351,7 @@ For a PR with `CHECKOUT ok`, run `commands/review.md` in worker mode: read its s
 | `PR_NUMBER` | `N` |
 | `PR_DIR` | `$RUN_DIR/pr-$N` |
 | `EXPECTED_HEAD` | the analyzed head from `CHECKOUT ok` |
-| `BASE_REF` | `origin/<base_ref>` from `CHECKOUT ok` |
+| `BASE_REF` | the `base=` value from `CHECKOUT ok` (`origin/<base_ref>`, or the base repository's remote in a fork checkout) |
 | `RUN_MARKER` | `$RUN_ID/pr-$N` |
 | `MIN_CONFIDENCE` | from Config Resolution |
 | `UNTRUSTED_CHECKOUT` | `true` when the PR comes from a fork (`"$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.is_cross_repo // false'`), otherwise `false`: command reviewers then run only with `allow_untrusted_checkout.<name>: true` (`review.md` Step 2, Untrusted Checkout) |

@@ -226,6 +226,7 @@ if args[:2] == ['api', 'user']: print('me')
 elif args[:2] == ['repo', 'view']:
     fields = args[args.index('--json')+1]
     if 'nameWithOwner' in fields: print(json.dumps({'nameWithOwner':'acme/widget','url':'https://github.com/acme/widget'}))
+    elif fields == 'url': print('https://github.com/acme/widget')
     else: print('acme' if fields == 'owner' else 'widget')
 elif args[:2] == ['pr', 'view']: print(os.environ['SCOPE_TEST_META'])
 elif args[:2] == ['api', 'graphql']:

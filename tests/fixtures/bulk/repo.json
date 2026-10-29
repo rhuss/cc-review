@@ -3,5 +3,6 @@
     "login": "acme"
   },
   "name": "widget",
-  "nameWithOwner": "acme/widget"
+  "nameWithOwner": "acme/widget",
+  "url": "https://github.com/acme/widget"
 }

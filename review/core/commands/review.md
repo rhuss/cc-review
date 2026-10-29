@@ -113,7 +113,7 @@ MAIN_BRANCH="${MAIN_BRANCH:-main}"
 
 ### Review Root
 
-`REVIEW_ROOT` is the absolute path of the tree under review. Every step that reads, tests or edits the code uses it; configuration, review hints and project reviewers keep coming from the invoking repository (`PROJECT_DIR`, Step 2). By default it is the repository's top level, which is exactly today's behavior. Bulk mode sets it to the PR's worktree and also sets `BASE_REF` (`origin/<base branch>`, kept current by the worktree setup):
+`REVIEW_ROOT` is the absolute path of the tree under review. Every step that reads, tests or edits the code uses it; configuration, review hints and project reviewers keep coming from the invoking repository (`PROJECT_DIR`, Step 2). By default it is the repository's top level, which is exactly today's behavior. Bulk mode sets it to the PR's worktree and also sets `BASE_REF` (the base branch on the remote of the PR's base repository, such as `origin/main` or, in a fork checkout, `upstream/main`, kept current by the worktree setup):
 
 ```bash
 REVIEW_ROOT="${REVIEW_ROOT:-$(git rev-parse --show-toplevel)}"
@@ -162,12 +162,15 @@ if [ "${WORKER_MODE:-false}" != true ] && [ -n "${PR_NUMBER:-}" ] \
   UNTRUSTED_CHECKOUT=$(printf '%s' "$PR_INFO" | jq -r '.isCrossRepository // false')
   mkdir -p "$PROJECT_DIR/.cc-review/pr-worktrees"
   [ -f "$PROJECT_DIR/.cc-review/pr-worktrees/.gitignore" ] || printf '*\n' > "$PROJECT_DIR/.cc-review/pr-worktrees/.gitignore"
-  # add replaces a worktree left over from a crashed run
-  REVIEW_ROOT=$("$CORE_DIR/scripts/pr-worktree.sh" add "$PR_NUMBER" "$PR_HEAD" \
+  # add replaces a worktree left over from a crashed run. It prints the
+  # worktree path, then the base ref on the base repository's remote (in a
+  # fork checkout that is not origin).
+  PR_CHECKOUT=$("$CORE_DIR/scripts/pr-worktree.sh" add "$PR_NUMBER" "$PR_HEAD" \
     "$PROJECT_DIR/.cc-review/pr-worktrees/pr-$PR_NUMBER" "$PR_BASE") || {
     echo "Error: cannot check out PR #$PR_NUMBER for review (see the message above)" >&2; exit 1
   }
-  BASE_REF="origin/$PR_BASE"
+  REVIEW_ROOT=$(printf '%s\n' "$PR_CHECKOUT" | sed -n 1p)
+  BASE_REF=$(printf '%s\n' "$PR_CHECKOUT" | sed -n 2p)
   REVIEWED_HEAD="$PR_HEAD"
   ISOLATED_PR=true
 fi
@@ -407,7 +410,7 @@ if [ -n "${PR_CONTEXT_NUMBER:-}" ]; then
   for scope_oid in $(printf '%s' "$SCOPE_META" | jq -r '.headRefOid,.baseRefOid'); do
     case "$scope_oid" in ''|*[!0-9a-f]*) echo 'Invalid current PR commit ID' >&2; exit 1 ;; esac
     if ! git -C "$REVIEW_ROOT" cat-file -e "$scope_oid^{commit}" 2>/dev/null; then
-      git -C "$REVIEW_ROOT" fetch --no-tags -- origin "$scope_oid" || {
+      git -C "$REVIEW_ROOT" fetch --no-tags -- "$("$CORE_DIR/scripts/pr-worktree.sh" base-remote)" "$scope_oid" || {
         echo 'Current PR head/base unavailable; review inputs are incomplete' >&2; exit 1;
       }
     fi
@@ -1109,13 +1112,14 @@ This step runs when `PR_NUMBER` is set AND `ACTION` is `"comment"` or `"both"`. 
 
 ### 7.5a: Extract PR Context
 
+The PR lives in the base repository as `gh` resolves it, which in a fork checkout is not `origin`:
+
 ```bash
-REMOTE_URL=$(git remote get-url origin 2>/dev/null)
-OWNER=$(echo "$REMOTE_URL" | sed -n 's|.*github.com[:/]\([^/]*\)/.*|\1|p')
-REPO=$(echo "$REMOTE_URL" | sed -n 's|.*github.com[:/][^/]*/\(.*\)\.git$|\1|p; s|.*github.com[:/][^/]*/\(.*\)$|\1|p')
+OWNER=$(gh repo view --json owner -q .owner.login 2>/dev/null) || OWNER=""
+REPO=$(gh repo view --json name -q .name 2>/dev/null) || REPO=""
 ```
 
-**Validate extracted values**: If `OWNER` or `REPO` is empty, report "Could not extract owner/repo from origin URL. Ensure the remote points to a GitHub repository." and skip PR posting. The local findings report is still written in Step 7.
+**Validate extracted values**: If `OWNER` or `REPO` is empty, report "Could not resolve the PR's GitHub repository. Ensure the repository has a GitHub remote and gh is authenticated." and skip PR posting. The local findings report is still written in Step 7.
 
 Source platform functions:
 
@@ -1503,7 +1507,7 @@ esac
 
 `commands/bulk.md` runs this file's pipeline once per PR of a bulk review, in worker mode. The goal is a bounded coordinator context (FR-010): every subagent reads its inputs from and writes its result to the PR's directory, and returns exactly one status line. This section is the whole protocol the coordinator executes.
 
-**Inputs** (set by `bulk.md` for each PR): `WORKER_MODE=true`, `CORE_DIR`, `RUNTIME` (`$CORE_DIR/scripts/reviewer-runtime.sh`), `PROJECT_DIR` (the invoking repository), `REVIEW_ROOT` (the PR's worktree), `PR_NUMBER`, `PR_DIR` (`<bulk run dir>/pr-<n>`), `EXPECTED_HEAD` (the analyzed head), `BASE_REF` (`origin/<base branch>`), `RUN_MARKER` (`<bulk run id>/pr-<n>`), `MIN_CONFIDENCE`, `UNTRUSTED_CHECKOUT` (`true` for a fork PR, see Untrusted Checkout in Step 2), `GH_USER` (authenticated user from the bulk run state), for the posting worker also `CAN_REQUEST_CHANGES`, `JUST_PUSHED` and (unattended) `REVIEW_EVENT_OVERRIDE`, and the run's per-PR options (reviewer selection, `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential`, `--parallel`, `--config`, `--profile`).
+**Inputs** (set by `bulk.md` for each PR): `WORKER_MODE=true`, `CORE_DIR`, `RUNTIME` (`$CORE_DIR/scripts/reviewer-runtime.sh`), `PROJECT_DIR` (the invoking repository), `REVIEW_ROOT` (the PR's worktree), `PR_NUMBER`, `PR_DIR` (`<bulk run dir>/pr-<n>`), `EXPECTED_HEAD` (the analyzed head), `BASE_REF` (the base branch ref from the checkout, such as `origin/<base branch>`), `RUN_MARKER` (`<bulk run id>/pr-<n>`), `MIN_CONFIDENCE`, `UNTRUSTED_CHECKOUT` (`true` for a fork PR, see Untrusted Checkout in Step 2), `GH_USER` (authenticated user from the bulk run state), for the posting worker also `CAN_REQUEST_CHANGES`, `JUST_PUSHED` and (unattended) `REVIEW_EVENT_OVERRIDE`, and the run's per-PR options (reviewer selection, `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential`, `--parallel`, `--config`, `--profile`).
 
 **Rules for worker mode:**
 - **The coordinator never reads a findings file into its own context.** It reads counts with `jq` only. The one exception is the interactive "review findings" drill-down in `bulk.md`, which presents one PR's findings to the user.

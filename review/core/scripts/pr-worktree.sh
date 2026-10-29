@@ -8,6 +8,7 @@
 #   pr-worktree.sh push <path> <url> <branch> <expected-sha>
 #   pr-worktree.sh head <pr>
 #   pr-worktree.sh is-pr-branch <pr>
+#   pr-worktree.sh base-remote
 #
 # Runs in the invoking repository (the current directory). The user's branch,
 # index and working tree are never touched: worktrees are detached at the PR
@@ -53,21 +54,31 @@ remove_worktree() {
 
 do_add() {
   [ $# -ge 3 ] && [ $# -le 4 ] || { echo "Usage: pr-worktree.sh add <pr> <sha> <path> [<base_ref>]" >&2; exit 2; }
-  local pr="$1" sha="$2" path="$3" base="${4:-}" err
+  local pr="$1" sha="$2" path="$3" base="${4:-}" err remote base_ref=""
   [[ "$pr" =~ ^[0-9]+$ ]] || { echo "Error: PR number must be a positive integer, got '$pr'" >&2; exit 2; }
   err=$(tmpfile)
+  remote=$(base_remote "$err")
   remove_worktree "$path"
   mkdir -p "$(dirname "$path")"
-  # pull/<n>/head works for fork PRs too; the base ref keeps origin/<base>
-  # current for the diff
+  # pull/<n>/head of the base repository works for fork PRs too; the base ref
+  # keeps <remote>/<base> current for the diff. Without a remote for the base
+  # repository, the base goes to a ref of our own.
   local refspecs=("pull/$pr/head")
-  [ -n "$base" ] && refspecs+=("+refs/heads/$base:refs/remotes/origin/$base")
-  if ! try "$err" git fetch -q origin "${refspecs[@]}"; then
-    echo "Error: cannot fetch PR #$pr: $(last_line "$err")" >&2
+  if [ -n "$base" ]; then
+    if git config --get "remote.$remote.url" >/dev/null 2>&1; then
+      refspecs+=("+refs/heads/$base:refs/remotes/$remote/$base")
+      base_ref="$remote/$base"
+    else
+      refspecs+=("+refs/heads/$base:refs/cc-review/base/$base")
+      base_ref="refs/cc-review/base/$base"
+    fi
+  fi
+  if ! try "$err" git fetch -q "$remote" "${refspecs[@]}"; then
+    echo "Error: cannot fetch PR #$pr from $remote: $(last_line "$err")" >&2
     exit 1
   fi
   git cat-file -e "$sha^{commit}" 2>/dev/null || {
-    echo "Error: commit $sha of PR #$pr is not available after fetching pull/$pr/head" >&2
+    echo "Error: commit $sha of PR #$pr is not available after fetching pull/$pr/head from $remote" >&2
     exit 1
   }
   if ! try "$err" git worktree add -q --detach "$path" "$sha"; then
@@ -75,6 +86,7 @@ do_add() {
     exit 1
   fi
   (cd "$path" && pwd)
+  [ -z "$base_ref" ] || printf '%s\n' "$base_ref"
 }
 
 do_remove() {
@@ -104,6 +116,37 @@ tracks_repo() {
     [ -n "$url" ] && [ "$(repo_id "$url")" = "$want" ] && return 0
   done
   return 1
+}
+
+# base_remote <errfile>: the git remote that points at the base repository of
+# this checkout (as gh resolves it), or that repository's URL when no remote
+# does. In a fork checkout, origin is the fork and the base is usually upstream.
+base_remote() {
+  local err="$1" base want remote url rc=0
+  base=$(try "$err" gh repo view --json url -q .url) || rc=$?
+  # try reports a rate limit itself, from the command substitution's subshell
+  [ "$rc" -ne 75 ] || exit 75
+  if [ "$rc" -ne 0 ]; then
+    echo "Error: cannot resolve the base repository of this checkout: $(last_line "$err")" >&2
+    exit 1
+  fi
+  want=$(repo_id "$base")
+  [ -n "$want" ] || { echo "Error: cannot resolve the base repository of this checkout" >&2; exit 1; }
+  for remote in $(git remote); do
+    url=$(git config --get "remote.$remote.url" 2>/dev/null || true)
+    if [ -n "$url" ] && [ "$(repo_id "$url")" = "$want" ]; then
+      printf '%s\n' "$remote"
+      return
+    fi
+  done
+  printf '%s.git\n' "$(printf '%s' "$base" | sed -e 's|/*$||' -e 's|\.git$||')"
+}
+
+do_base_remote() {
+  [ $# -eq 0 ] || { echo "Usage: pr-worktree.sh base-remote" >&2; exit 2; }
+  local err
+  err=$(tmpfile)
+  base_remote "$err"
 }
 
 do_local_ahead() {
@@ -204,7 +247,9 @@ case "${1:-}" in
     shift; do_head "$@" ;;
   is-pr-branch)
     shift; do_is_pr_branch "$@" ;;
+  base-remote)
+    shift; do_base_remote "$@" ;;
   *)
-    echo "Usage: pr-worktree.sh {add|remove|local-ahead|push|head|is-pr-branch}" >&2
+    echo "Usage: pr-worktree.sh {add|remove|local-ahead|push|head|is-pr-branch|base-remote}" >&2
     exit 2 ;;
 esac

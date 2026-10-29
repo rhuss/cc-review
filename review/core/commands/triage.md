@@ -61,7 +61,7 @@ Before reviewer preparation, fetch and store the **current PR head** as `expecte
 | `--config`, `--profile` | as in single-PR triage (`--spec` is rejected in bulk mode) |
 
 **Rules:**
-- Every shell block runs in `PROJECT_DIR` (configuration, `origin` and `gh` come from the invoking repository) and starts with `export TRIAGE_STATE_FILE="<value>"`, so every `triage-state.sh` call reads and writes the invoking repository's state, never a file inside the worktree.
+- Every shell block runs in `PROJECT_DIR` (configuration, git remotes and `gh` come from the invoking repository) and starts with `export TRIAGE_STATE_FILE="<value>"`, so every `triage-state.sh` call reads and writes the invoking repository's state, never a file inside the worktree.
 - Every file you read or edit is addressed by its absolute path under `TRIAGE_ROOT` (`$TRIAGE_ROOT/<thread.path>`), and every git command runs as `git -C "$TRIAGE_ROOT" ...`. Never edit, stage or commit in `PROJECT_DIR`.
 - Never push, post a reply, post a review, or resolve a thread. Never ask the user.
 
@@ -101,7 +101,7 @@ plan_add replies "$(jq -n --argjson cid "$COMMENT_DB_ID" --arg tid "$THREAD_NODE
 
 | Step | In prepare mode |
 |---|---|
-| 1 | `PR_NUM` from `--pr`; owner and repo from `PROJECT_DIR`'s `origin` |
+| 1 | `PR_NUM` from `--pr`; owner and repo from `gh repo view` in `PROJECT_DIR` |
 | 2 | runs, with `TRIAGE_STATE_FILE` exported; then create the plan file |
 | 3a, 3b | author role: run unchanged. Reviewer role: collect all pages with comment `id`, `databaseId`, `updatedAt`, `originalCommit`, `pullRequestReview`, `comments.totalCount` and `comments.pageInfo`; any truncated thread is incomplete and cannot produce an applicable outcome |
 | 3c | **skipped**: the local CodeRabbit fallback posts to the PR. The summary says `CodeRabbit: rate-limited (local fallback not run in bulk mode)` when the rate-limit comment exists |
@@ -188,13 +188,14 @@ Verify `gh` authentication by checking the exit code. If it fails, report "gh CL
 
 Extract owner and repo:
 
+The PR lives in the base repository as `gh` resolves it, which in a fork checkout is not `origin`:
+
 ```bash
-REMOTE_URL=$(git remote get-url origin 2>/dev/null)
-OWNER=$(echo "$REMOTE_URL" | sed -n 's|.*github.com[:/]\([^/]*\)/.*|\1|p')
-REPO=$(echo "$REMOTE_URL" | sed -n 's|.*github.com[:/][^/]*/\(.*\)\.git$|\1|p; s|.*github.com[:/][^/]*/\(.*\)$|\1|p')
+OWNER=$(gh repo view --json owner -q .owner.login 2>/dev/null) || OWNER=""
+REPO=$(gh repo view --json name -q .name 2>/dev/null) || REPO=""
 ```
 
-**Validate extracted values**: If `OWNER` or `REPO` is empty (e.g., remote URL is not a GitHub URL), report "Could not extract owner/repo from origin URL. Ensure the remote points to a GitHub repository." and stop.
+**Validate extracted values**: If `OWNER` or `REPO` is empty (e.g., no remote points to a GitHub repository), report "Could not resolve the PR's GitHub repository. Ensure the repository has a GitHub remote and gh is authenticated." and stop.
 
 ## Step 2: Initialize State
 
