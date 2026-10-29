@@ -1,6 +1,6 @@
 # Brainstorm Overview
 
-Last updated: 2026-10-28
+Last updated: 2026-10-29
 
 ## Sessions
 
@@ -16,6 +16,7 @@ Last updated: 2026-10-28
 | 08 | 2026-10-27 | inbox-action-alignment | active | - | [#7](https://github.com/rhuss/cc-review/issues/7) |
 | 09 | 2026-10-27 | incremental-review | active | - | [#8](https://github.com/rhuss/cc-review/issues/8) |
 | 10 | 2026-10-28 | review-convergence | active | - | [#11](https://github.com/rhuss/cc-review/issues/11) |
+| 11 | 2026-10-29 | issue-assessment | active | - | - |
 
 ## Open Threads
 
@@ -72,6 +73,12 @@ Last updated: 2026-10-28
 - What evidence distinguishes an accepted explanation or agreed deferral from an unaccepted author claim, and when does new evidence justify revisiting it? (from #10)
 - How should incomplete or very large review histories be bounded and disclosed without silently omitting relevant decisions? (from #10)
 - What minimum conversation context and final checks ensure the same policy for prompt and command reviewers, meta-review and reporting? (from #10)
+- What should the command be named, and what issue-number, URL, and repository inputs should it accept? (from #11)
+- What precedence and discovery rules should apply to project principles, contribution guidance, review hints, and maintainer decisions when sources conflict or are incomplete? (from #11)
+- What bounded investigation and evidence presentation are sufficient to check issue claims without turning assessment into an implementation or full code review? (from #11)
+- What should happen when the prose plugin is unavailable, and should issue replies use a dedicated maintainer voice? (from #11)
+- How should later invocations incorporate new use-case evidence and prior maintainer answers without repeating questions or contradicting earlier decisions? (from #11)
+- Should the inbox eventually suggest this command for relevant issues? Automatic invocation and bulk issue assessment are outside the initial agreed workflow. (from #11)
 
 ## Parked Ideas
 
