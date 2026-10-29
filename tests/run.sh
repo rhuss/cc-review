@@ -4156,6 +4156,15 @@ test_inbox() {
   fi
 }
 
+test_issue_assessment() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_issue_assessment.py" 2>&1)"; then
+    _pass
+  else
+    _fail "issue assessment behavior suite" "$output"
+  fi
+}
+
 main() {
   run_test test_discovery_exit_code_and_shape
   run_test test_discovery_valid_file_form
@@ -4311,6 +4320,7 @@ main() {
   run_test test_bulk_state_find_unfinished_lists_corrupt_run
   run_test test_bulk_state_abandon_removes_worktrees
   run_test test_inbox
+  run_test test_issue_assessment
   run_test test_pr_actions
   run_test test_review_scope
   run_test test_review_continuity

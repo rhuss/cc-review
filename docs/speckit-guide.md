@@ -13,29 +13,36 @@ The delegation is transparent: cc-spex detects cc-review at runtime and delegate
 ### As a spec-kit extension
 
 ```bash
-specify extension add /path/to/cc-review/adapters/speckit
+specify extension add /path/to/cc-review/speckit
 ```
 
 Or symlink into the extensions directory:
 
 ```bash
-ln -s /path/to/cc-review/adapters/speckit ~/.specify/extensions/cc-review
+ln -s /path/to/cc-review/speckit ~/.specify/extensions/cc-review
 ```
 
-The extension registers two commands:
+The extension registers four commands:
 - `speckit.cc-review.review` (replaces the built-in `review-code` gate)
 - `speckit.cc-review.triage` (adds PR comment triage to the ship pipeline)
+- `speckit.cc-review.inbox` (read-only repository action overview)
+- `speckit.cc-review.assess` (initial-issue assessment and a welcoming reply draft)
+
+In Codex, invoke issue assessment as `$speckit-cc-review-assess 42` or pass an issue URL and optional `--repo owner/project`. It works outside ship mode and does not require a feature spec. The adapter forwards the issue target unchanged to the shared assess workflow, without adding PR review flags.
+
+Assessment checks concrete use cases, project fit, and whether implementation is worthwhile. It asks the maintainer about material uncertainty and produces a public draft using prose when available or a bundled fallback. Publishing and implementation remain separate actions.
 
 ### Core access
 
 The spec-kit adapter resolves cc-review core by checking:
-1. `.cc-review/core` in the project root
-2. `~/.cc-review/core` in the home directory
+1. The installed cc-review plugin's core directory
+2. `.cc-review/core` in the project root
+3. `~/.cc-review/core` in the home directory
 
 Ensure the core is accessible at one of these paths. The simplest approach:
 
 ```bash
-ln -s /path/to/cc-review/core ~/.cc-review/core
+ln -s /path/to/cc-review/review/core ~/.cc-review/core
 ```
 
 ## How cc-spex Delegates to cc-review

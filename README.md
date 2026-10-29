@@ -13,6 +13,7 @@ cc-review dispatches a set of specialized reviewers against your code changes, m
 - **Gator reviewer (opt-in)**: a pragmatic principal-engineer review persona ported from NVIDIA OpenShell, with an evidence contract for every blocking finding
 - **PR comment triage**: classify and handle bot review comments (CodeRabbit, Copilot, Devin) and human reviewer feedback
 - **Repository inbox**: see relevant PRs, issues, and Discussions grouped by who acts next, with evidence and suggested actions
+- **Issue assessment**: evaluate concrete need, project fit, and whether to implement; draft a welcoming maintainer reply
 - **Spec-aware review**: pass a specification file to cross-check implementation against functional requirements
 - **Multi-harness support**: thin adapter layer for Claude Code, spec-kit, and AGENTS.md-based tools (Codex, OpenCode)
 
@@ -33,7 +34,7 @@ claude plugin install cc-review@cc-review-plugin-development
 make install
 ```
 
-This registers the local marketplace and installs the plugin. The `/review`, `/triage`, and `/inbox` commands become available immediately.
+This registers the local marketplace and installs the plugin. The `/review`, `/triage`, `/inbox`, and `/assess` commands become available immediately.
 
 ### Codex
 
@@ -45,7 +46,7 @@ codex plugin marketplace add /path/to/cc-review
 codex plugin install cc-review@cc-review-plugin-development
 ```
 
-The `review`, `triage`, and `inbox` skills are discovered from `review/skills/`.
+The `review`, `triage`, `inbox`, and `assess` skills are discovered from `review/skills/`.
 
 ### OpenCode
 
@@ -100,6 +101,23 @@ The report states its scope and coverage. Discovery is bounded to 100 matches pe
 The inbox requires Python 3.9+, `jq`, and `gh` authenticated for the selected repository. It uses the existing plugin installation and works independently of a spec-kit ship pipeline.
 
 Reviewer follow-up activity is stored per GitHub account under `$XDG_STATE_HOME/cc-review/reviewer-activity/`, or `~/.local/state/cc-review/reviewer-activity/` when `XDG_STATE_HOME` is unset. The inbox reads this cache without creating or changing it. Missing or incomplete thread evidence stays visible as uncertain.
+
+### Issue Assessment
+
+Use the `assess` command or skill to decide whether an initial issue warrants work in the project:
+
+```text
+assess 42
+assess 42 --repo owner/project
+assess https://github.com/owner/project/issues/42
+assess --help
+```
+
+Assessment reads the issue conversation and available matching project guidance, then separates the concrete need, project fit, and whether implementation is justified. Missing use-case evidence leads to a request for one real example before discussing a solution. Material uncertainty about project direction prompts a question to you. A supported offer to contribute usually receives a small, bounded outline; a real need outside project scope can receive a respectful recommendation against implementation.
+
+You receive maintainer reasoning and a separate friendly reply draft. The prose humanizer shapes wording when available; otherwise the bundled maintainer voice supplies the fallback. Assessment never posts comments, edits code, or changes the issue.
+
+Requires Python 3.9+, jq, and authenticated gh. GitHub.com only; explicit issue target required; PRs are rejected. The opening body and latest 50 comments are bounded to 20,000 and 4,000 characters respectively, with omissions disclosed. A missing or unrelated checkout is reported as unavailable project context.
 
 ### Code Review
 

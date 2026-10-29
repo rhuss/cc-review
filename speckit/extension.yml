@@ -18,6 +18,9 @@ provides:
     - name: speckit.cc-review.inbox
       file: commands/speckit.cc-review.inbox.md
       description: "Personal repository inbox for PRs, issues, and Discussions"
+    - name: speckit.cc-review.assess
+      file: commands/speckit.cc-review.assess.md
+      description: "Assess an issue's concrete need, project fit, and implementation value"
 
 hooks:
   after_implement:
