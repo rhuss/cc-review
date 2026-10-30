@@ -26,9 +26,9 @@ The extension registers four commands:
 - `speckit.cc-review.review` (replaces the built-in `review-code` gate)
 - `speckit.cc-review.triage` (adds PR comment triage to the ship pipeline)
 - `speckit.cc-review.inbox` (read-only repository action overview)
-- `speckit.cc-review.assess` (initial-issue assessment and a welcoming reply draft)
+- `speckit.cc-review.issue` (initial-issue assessment and a welcoming reply draft)
 
-In Codex, invoke issue assessment as `$speckit-cc-review-assess 42` or pass an issue URL and optional `--repo owner/project`. It works outside ship mode and does not require a feature spec. The adapter forwards the issue target unchanged to the shared assess workflow, without adding PR review flags.
+In Codex, invoke issue assessment as `$speckit-cc-review-issue 42` or pass an issue URL and optional `--repo owner/project`. It works outside ship mode and does not require a feature spec. The adapter forwards the issue target unchanged to the shared issue workflow, without adding PR review flags.
 
 Assessment checks concrete use cases, project fit, and whether implementation is worthwhile. It asks the maintainer about material uncertainty and produces a public draft using prose when available or a bundled fallback. Publishing and implementation remain separate actions.
 

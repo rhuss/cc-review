@@ -14,6 +14,7 @@ cc-review dispatches a set of specialized reviewers against your code changes, m
 - **PR comment triage**: classify and handle bot review comments (CodeRabbit, Copilot, Devin) and human reviewer feedback
 - **Repository inbox**: see relevant PRs, issues, and Discussions grouped by who acts next, with evidence and suggested actions
 - **Issue assessment**: evaluate concrete need, project fit, and whether to implement; draft a welcoming maintainer reply
+- **Need and fit in PR review**: the Goal Alignment reviewer checks the PR description and its linked issues against the same criteria as issue assessment
 - **Spec-aware review**: pass a specification file to cross-check implementation against functional requirements
 - **Multi-harness support**: thin adapter layer for Claude Code, spec-kit, and AGENTS.md-based tools (Codex, OpenCode)
 
@@ -34,7 +35,7 @@ claude plugin install cc-review@cc-review-plugin-development
 make install
 ```
 
-This registers the local marketplace and installs the plugin. The `/review`, `/triage`, `/inbox`, and `/assess` commands become available immediately.
+This registers the local marketplace and installs the plugin. The `/review`, `/triage`, `/inbox`, and `/issue` commands become available immediately.
 
 ### Codex
 
@@ -46,7 +47,7 @@ codex plugin marketplace add /path/to/cc-review
 codex plugin install cc-review@cc-review-plugin-development
 ```
 
-The `review`, `triage`, `inbox`, and `assess` skills are discovered from `review/skills/`.
+The `review`, `triage`, `inbox`, and `issue` skills are discovered from `review/skills/`.
 
 ### OpenCode
 
@@ -104,13 +105,13 @@ Reviewer follow-up activity is stored per GitHub account under `$XDG_STATE_HOME/
 
 ### Issue Assessment
 
-Use the `assess` command or skill to decide whether an initial issue warrants work in the project:
+Use the `issue` command or skill to decide whether an initial issue warrants work in the project:
 
 ```text
-assess 42
-assess 42 --repo owner/project
-assess https://github.com/owner/project/issues/42
-assess --help
+issue 42
+issue 42 --repo owner/project
+issue https://github.com/owner/project/issues/42
+issue --help
 ```
 
 Assessment reads the issue conversation and available matching project guidance, then separates the concrete need, project fit, and whether implementation is justified. Missing use-case evidence leads to a request for one real example before discussing a solution. Material uncertainty about project direction prompts a question to you. A supported offer to contribute usually receives a small, bounded outline; a real need outside project scope can receive a respectful recommendation against implementation.
@@ -118,6 +119,8 @@ Assessment reads the issue conversation and available matching project guidance,
 You receive maintainer reasoning and a separate friendly reply draft. The prose humanizer shapes wording when available; otherwise the bundled maintainer voice supplies the fallback. Assessment never posts comments, edits code, or changes the issue.
 
 Requires Python 3.9+, jq, and authenticated gh. GitHub.com only; explicit issue target required; PRs are rejected. The opening body and latest 50 comments are bounded to 20,000 and 4,000 characters respectively, with omissions disclosed. A missing or unrelated checkout is reported as unavailable project context.
+
+PR review applies the same need and fit criteria (`core/templates/need-and-fit.md`). The Goal Alignment reviewer reads the PR description and every linked issue (closing keywords and issues linked in the PR sidebar), with their comments, and reports a missing use case or a conflict with documented project scope as an Important finding.
 
 ### Code Review
 
@@ -366,7 +369,7 @@ A higher layer replaces a lower one by name, except that a project reviewer edit
 | Security | prompt | on | Injection, secrets, auth, path traversal, deserialization, rate limiting |
 | Production Readiness | prompt | on | Resource leaks, unbounded growth, error amplification, graceful shutdown |
 | Test Quality | prompt | on | Coverage gaps, weak assertions, edge cases, spec-anchored validation |
-| Goal Alignment | prompt | on (needs PR) | Goal delivery verification, undeclared change detection, scope assessment |
+| Goal Alignment | prompt | on (needs PR) | Need and fit of the PR description and linked issues, goal delivery verification, undeclared change detection, scope assessment |
 | CodeRabbit | command | on | CodeRabbit CLI findings |
 | Copilot | command | off | GitHub Copilot CLI findings |
 | Codex | command | on | Codex CLI findings |

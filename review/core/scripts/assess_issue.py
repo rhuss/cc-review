@@ -185,7 +185,7 @@ def main(argv=None):
     try:
         snapshot = collect(args)
     except InboxError as exc:
-        print("assess: " + str(exc), file=sys.stderr)
+        print("issue: " + str(exc), file=sys.stderr)
         return 1
     print(json.dumps(snapshot, ensure_ascii=True))
     return 0

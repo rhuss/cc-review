@@ -38,7 +38,7 @@ All three shims resolve the cc-review core at runtime: the plugin's own `core/` 
 
 ## Assessing an Issue
 
-Run `assess 42`, `assess 42 --repo owner/project`, or `assess https://github.com/owner/project/issues/42` through your harness. Use the assess skill in Codex and the assess command in Claude Code or OpenCode.
+Run `issue 42`, `issue 42 --repo owner/project`, or `issue https://github.com/owner/project/issues/42` through your harness. Use the issue skill in Codex and the issue command in Claude Code or OpenCode.
 
 The workflow evaluates whether the issue demonstrates a concrete need, fits the project's documented direction, and warrants implementation. It can recommend against proceeding. Missing use-case evidence earns a focused question before any solution plan; uncertain project direction earns a question to the maintainer. An offered contribution usually gets a bounded welcome once the need and fit are established.
 

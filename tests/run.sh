@@ -3798,6 +3798,55 @@ test_md_owner_repo_from_base_repository() {
   assert_not_contains "bulk checkout does not assume origin" "$(cat "$BULK_MD")" 'base=origin/$BASE'
 }
 
+test_issue_command_renamed_from_assess() {
+  local f
+  for f in "$ROOT/review/skills/assess/SKILL.md" "$ROOT/review/opencode/command/assess.md" \
+           "$ROOT/review/core/commands/assess.md" "$ROOT/speckit/commands/speckit.cc-review.assess.md"; do
+    assert_eq "old assess entry point is gone: ${f#$ROOT/}" "no" "$([ -e "$f" ] && echo yes || echo no)"
+  done
+  for f in "$ROOT/review/skills/issue/SKILL.md" "$ROOT/review/opencode/command/issue.md" \
+           "$ROOT/speckit/commands/speckit.cc-review.issue.md"; do
+    assert_contains "${f#$ROOT/} runs the issue command" "$(cat "$f")" "commands/issue.md"
+    assert_contains "${f#$ROOT/} verifies the shared criteria" "$(cat "$f")" "templates/need-and-fit.md"
+  done
+  assert_contains "skill name is issue" "$(sed -n '/^name:/p' "$ROOT/review/skills/issue/SKILL.md")" "name: issue"
+  assert_contains "spec-kit registers the issue command" "$(cat "$ROOT/speckit/extension.yml")" "file: commands/speckit.cc-review.issue.md"
+  assert_contains "issue command applies the shared criteria" "$(cat "$ROOT/review/core/commands/issue.md")" 'templates/need-and-fit.md'
+  assert_eq "shared criteria template exists" "yes" "$([ -s "$ROOT/review/core/templates/need-and-fit.md" ] && echo yes || echo no)"
+}
+
+test_review_md_goals_block_collects_linked_issues() {
+  local block="$TEST_TMP/goals.sh" bin="$TEST_TMP/goals-bin" sh out
+  md_block "$REVIEW_MD" 'GOALS_AVAILABLE=false' > "$block"
+  assert_contains "goals block found" "$(cat "$block")" "closingIssuesReferences"
+  mkdir -p "$bin"
+  # PR #5 links #4 twice (sidebar and body), #12 in another repository, and an
+  # unreadable #9
+  cat > "$bin/gh" <<'EOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+  "pr view") printf '%s' '{"body":"Adds X.\nFixes #4 and closes #9\n","url":"https://github.com/acme/widget/pull/5","closingIssuesReferences":[{"number":4,"url":"https://github.com/acme/widget/issues/4"},{"number":12,"url":"https://github.com/other/lib/issues/12"}]}' ;;
+  "issue view")
+    case "$3" in *issues/9) exit 1 ;; esac
+    printf '{"number":%s,"url":"%s","state":"OPEN","title":"T","body":"need","comments":[{"author":{"login":"a"},"createdAt":"t","body":"c"}]}' "${3##*/}" "$3" ;;
+  *) exit 2 ;;
+esac
+EOF
+  chmod +x "$bin/gh"
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    out="$(cd "$TEST_TMP" && PATH="$bin:$PATH" PR_CONTEXT_NUMBER=5 "$sh" -c '. "$1"; printf "%s" "$LINKED_ISSUES" | jq -c "[.[].url]"' _ "$block" 2>&1)"
+    assert_contains "$sh: goals available" "$out" "GOALS_AVAILABLE=true"
+    assert_contains "$sh: linked issues deduplicated, other repositories kept" "$out" '["https://github.com/acme/widget/issues/4","https://github.com/other/lib/issues/12"]'
+    assert_contains "$sh: an unreadable linked issue is disclosed" "$out" "UNREADABLE_ISSUES=https://github.com/acme/widget/issues/9"
+  done
+  out="$(cd "$TEST_TMP" && PATH="$bin:$PATH" PR_CONTEXT_NUMBER= bash "$block" 2>&1)"
+  assert_contains "no PR: no goals" "$out" "GOALS_AVAILABLE=false"
+  assert_contains "the goals block carries the shared criteria" "$(md_section "$REVIEW_MD" "PR Metadata and Goal Extraction (\`goals\` context block)")" '$CORE_DIR/templates/need-and-fit.md'
+  assert_contains "goal alignment checks need and fit" "$(cat "$ROOT/review/core/reviewers/goal-alignment.md")" "PASS 0 - NEED AND FIT"
+  assert_contains "goal alignment reports a need and fit summary" "$(cat "$ROOT/review/core/reviewers/goal-alignment.md")" "Need and Fit Summary:"
+}
+
 test_triage_md_prepare_mode_section() {
   local section needle
   section="$(md_section "$TRIAGE_MD" 'Prepare Mode (`TRIAGE_MODE=prepare`)')"
@@ -4380,6 +4429,8 @@ main() {
   run_test test_bulk_md_review_apply_checks_and_inputs
   run_test test_triage_md_prepare_mode_section
   run_test test_md_owner_repo_from_base_repository
+  run_test test_issue_command_renamed_from_assess
+  run_test test_review_md_goals_block_collects_linked_issues
   run_test test_triage_md_mandatory_steps_have_prepare_exception
   run_test test_bulk_md_triage_blocks
   run_test test_bulk_md_resume_section
