@@ -2927,7 +2927,7 @@ test_bulk_apply_reviewer_no_post_outcome_is_recorded() {
   mkdir -p "$TEST_TMP/gh"
   jq -n --arg head "$sha" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
   root="$(jq -nc '{id:"PRRC_root",databaseId:101,author:{login:"me"},body:"Unsafe access.\n_Source: correctness agent_",updatedAt:"2026-10-20T00:00:00Z",originalCommit:{oid:"old"},pullRequestReview:null}')"
-  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
+  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,viewerCanResolve:true,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
   jq -n --argjson thread "$thread" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:[$thread]}}}}}' \
     > "$TEST_TMP/gh/graphql-threads-7.json"
   activity="$(printf '%s' "$thread" | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; t=json.load(sys.stdin); print(json.dumps(r.fingerprint(t,sys.argv[2],"me")))' "$SCRIPTS/reviewer_activity.py" "$sha")"
@@ -2969,7 +2969,7 @@ test_bulk_apply_reviewer_cache_failure_does_not_mark_resolution_done() {
   mkdir -p "$TEST_TMP/gh"
   jq -n --arg head "$sha" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
   root="$(jq -nc '{id:"PRRC_root",databaseId:101,author:{login:"me"},body:"Unsafe access.\n_Source: correctness agent_",updatedAt:"2026-10-20T00:00:00Z",originalCommit:{oid:"old"},pullRequestReview:null}')"
-  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
+  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,viewerCanResolve:true,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
   identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
   activity="$(printf '%s' "$thread" | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; t=json.load(sys.stdin); print(json.dumps(r.fingerprint(t,sys.argv[2],"me",json.loads(sys.argv[3]))))' "$SCRIPTS/reviewer_activity.py" "$sha" "$identity")"
   jq -n --argjson thread "$thread" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:[$thread]}}}}}' > "$TEST_TMP/gh/graphql-threads-7.json"
@@ -2994,7 +2994,7 @@ test_bulk_apply_reviewer_exact_marker_recovers_post_before_local_record() {
   jq -n --arg head "$sha" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
   identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
   root="$(jq -nc '{id:"PRRC_root",databaseId:101,author:{login:"me"},body:"Unsafe access.\n_Source: correctness agent_",updatedAt:"2026-10-20T00:00:00Z",originalCommit:{oid:"old"},pullRequestReview:null}')"
-  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
+  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,viewerCanResolve:true,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
   activity="$(printf '%s' "$thread" | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; t=json.load(sys.stdin); print(json.dumps(r.fingerprint(t,sys.argv[2],"me",json.loads(sys.argv[3]))))' "$SCRIPTS/reviewer_activity.py" "$sha" "$identity")"
   signed_body="$(printf 'Verified.\n\n<!-- cc-review-triage -->')"
   marker="$(jq -nc --argjson identity "$identity" --argjson activity "$activity" --arg body "$signed_body" '{identity:$identity,activity:$activity,body:$body}' \
@@ -4287,6 +4287,153 @@ test_issue_assessment() {
   fi
 }
 
+reviewer_permission_fixture() {
+  local sha run plan root thread activity identity out
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(triage_run_pr7 "$sha")"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  bstate pr-set "$run" 7 '.triage_role="reviewer"' '.author="alice"' '.authored_by_user=false' >/dev/null
+  mkdir -p "$TEST_TMP/gh"
+  jq -n --arg head "$sha" '{state:"OPEN",headRefOid:$head,author:{login:"alice"}}' > "$TEST_TMP/gh/pr-view-7.json"
+  root="$(jq -nc '{id:"PRRC_root",databaseId:101,author:{login:"me"},body:"Unsafe access.\n_Source: correctness agent_",updatedAt:"2026-10-20T00:00:00Z",originalCommit:{oid:"old"},pullRequestReview:null}')"
+  thread="$(jq -nc --argjson root "$root" '{id:"PRRT_owned",isResolved:false,viewerCanResolve:true,isOutdated:false,path:"a.py",line:3,comments:{totalCount:1,pageInfo:{hasNextPage:false,hasPreviousPage:false},nodes:[$root]}}')"
+  identity='{"host":"github.com","repository":"acme/widget","user":"me","pr":7}'
+  activity="$(printf '%s' "$thread" | python3 -B -c 'import json,sys; from pathlib import Path; p=Path(sys.argv[1]); sys.path.insert(0,str(p.parent)); import reviewer_activity as r; t=json.load(sys.stdin); print(json.dumps(r.fingerprint(t,sys.argv[2],"me",json.loads(sys.argv[3]))))' "$SCRIPTS/reviewer_activity.py" "$sha" "$identity")"
+  jq -n --argjson thread "$thread" '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:[$thread]}}}}}' > "$TEST_TMP/gh/graphql-threads-7.json"
+  jq -n --argjson identity "$identity" --argjson activity "$activity" --arg head "$sha" \
+    '{pr:7,triage_role:"reviewer",expected_head:$head,activity_identity:$identity,prepared_commit:null,replies:[],stale_resolutions:[],human:[],
+      cc_review_threads:[{comment_id:101,thread_id:"PRRT_owned",activity:$activity,outcome:{status:"confirmed-fixed",completed:true},body:"Verified.",resolve:true}]}' > "$plan"
+  REVIEWER_RUN="$run"
+}
+
+test_bulk_apply_reviewer_permission_is_terminal() {
+  reviewer_permission_fixture
+  local run plan out
+  run="$REVIEWER_RUN"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  jq '.data.repository.pullRequest.reviewThreads.nodes[0].viewerCanResolve=false' "$TEST_TMP/gh/graphql-threads-7.json" > "$TEST_TMP/t.json"
+  mv "$TEST_TMP/t.json" "$TEST_TMP/gh/graphql-threads-7.json"
+  # An older resolve-only plan must finish without inventing a new reply.
+  jq '.cc_review_threads[0].body=""' "$plan" > "$plan.tmp"
+  mv "$plan.tmp" "$plan"
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "permission loss finishes" "$out" "ACTIONED"
+  assert_not_contains "false permission makes no resolution call" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+  assert_not_contains "legacy plan never gains an unapproved publication" "$(cat "$TEST_TMP/gh.log")" "/replies"
+  assert_eq "unnotified skip remains eligible for fresh triage" "false" "$([ -e "$TEST_TMP/reviewer-state.json" ] && echo true || echo false)"
+  assert_json "permission skip is durable" "$(bstate pr-get "$run" 7)" '.actions.reviewer_resolution_skipped | length' "1"
+  : > "$TEST_TMP/gh.log"
+  btriage "$run" >/dev/null
+  assert_not_contains "resume never retries permission skips" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+  assert_eq "run can finish" "finished" "$(bstate finish "$run")"
+}
+
+test_bulk_apply_reviewer_permission_denied_mutation_is_terminal() {
+  reviewer_permission_fixture
+  local run out
+  run="$REVIEWER_RUN"
+  jq '.data.repository.pullRequest.reviewThreads.nodes[0].viewerCanResolve=true' "$TEST_TMP/gh/graphql-threads-7.json" > "$TEST_TMP/t.json"
+  mv "$TEST_TMP/t.json" "$TEST_TMP/gh/graphql-threads-7.json"
+  out="$(FAKE_GH_FAIL='api graphql*resolveReviewThread*' FAKE_GH_FAIL_MSG='gh: me does not have the correct permissions to execute ResolveReviewThread' btriage "$run" 2>&1)"
+  assert_contains "explicit denial is terminal" "$out" "ACTIONED"
+  assert_json "denial recorded" "$(bstate pr-get "$run" 7)" '.actions.reviewer_resolution_skipped | length' "1"
+  : > "$TEST_TMP/gh.log"
+  btriage "$run" >/dev/null
+  assert_not_contains "denied mutation is never retried" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+}
+
+test_bulk_apply_reviewer_summary_posts_once() {
+  reviewer_permission_fixture
+  local run plan out
+  run="$REVIEWER_RUN"
+  plan="$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  python3 -B "$SCRIPTS/reviewer_summary.py" prepare < "$plan" > "$plan.tmp"
+  mv "$plan.tmp" "$plan"
+  printf '{"data":{"repository":{"pullRequest":{"comments":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}}' > "$TEST_TMP/gh/graphql-comments-7.json"
+  out="$(btriage "$run" 2>&1)"
+  assert_contains "summary completes" "$out" "ACTIONED"
+  assert_contains "summary posts as one PR comment" "$(cat "$TEST_TMP/gh.log")" "issues/7/comments --method POST"
+  assert_not_contains "summary has no inline replies" "$(cat "$TEST_TMP/gh.log")" "/replies"
+  assert_not_contains "summary does not resolve" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+  assert_json "summary ID recorded" "$(bstate pr-get "$run" 7)" '.actions.reviewer_summaries | length' "1"
+  assert_json "notification leaves thread unresolved" "$(cat "$TEST_TMP/reviewer-state.json")" '.records["7/PRRT_owned"] | "\(.resolved) \(.summary_comment_id)"' "false 1001"
+  : > "$TEST_TMP/gh.log"
+  btriage "$run" >/dev/null
+  assert_not_contains "resume does not post twice" "$(cat "$TEST_TMP/gh.log")" "--method POST"
+}
+
+
+reviewer_summary_fixture() {
+  reviewer_permission_fixture
+  local plan="$TEST_TMP/bulk/$REVIEWER_RUN/pr-7/triage-plan.json"
+  python3 -B "$SCRIPTS/reviewer_summary.py" prepare < "$plan" > "$plan.tmp"
+  mv "$plan.tmp" "$plan"
+  printf '{"data":{"repository":{"pullRequest":{"comments":{"pageInfo":{"hasNextPage":false},"nodes":[]}}}}}' > "$TEST_TMP/gh/graphql-comments-7.json"
+}
+
+test_bulk_apply_reviewer_summary_failure_and_recovery() {
+  reviewer_summary_fixture
+  local out plan="$TEST_TMP/bulk/$REVIEWER_RUN/pr-7/triage-plan.json" input
+  out="$(FAKE_GH_FAIL='api repos/acme/widget/issues/7/comments*' btriage "$REVIEWER_RUN" 2>&1)"
+  assert_contains "summary failure is retryable" "$out" "PARTIAL"
+  assert_eq "failed publication creates no activity cache" "false" "$([ -e "$TEST_TMP/reviewer-state.json" ] && echo true || echo false)"
+  # Recover a remote post whose local action record was never saved.
+  # Failure injection runs before payload logging, so obtain the exact prepared body.
+  input=$(jq -n --slurpfile plan "$plan" --slurpfile pr "$TEST_TMP/gh/pr-view-7.json" \
+    --slurpfile threads "$TEST_TMP/gh/graphql-threads-7.json" \
+    '{plan:$plan[0],current_pr:($pr[0]|{state,head_oid:.headRefOid,author:.author.login}),threads:$threads[0].data.repository.pullRequest.reviewThreads.nodes,comments:[]}' \
+    | python3 -B "$SCRIPTS/reviewer_summary.py" check)
+  jq -n --arg body "$(printf '%s' "$input" | jq -r .body)" \
+    '{data:{repository:{pullRequest:{comments:{pageInfo:{hasNextPage:false},nodes:[{databaseId:222,author:{login:"me"},body:$body}]}}}}}' > "$TEST_TMP/gh/graphql-comments-7.json"
+  : > "$TEST_TMP/gh.log"
+  out="$(btriage "$REVIEWER_RUN" 2>&1)"
+  assert_contains "remote summary is recovered" "$out" "ACTIONED"
+  assert_not_contains "recovery never posts twice" "$(cat "$TEST_TMP/gh.log")" "--method POST"
+  assert_json "recovered notification is durable" "$(cat "$TEST_TMP/reviewer-state.json")" '.records["7/PRRT_owned"].summary_comment_id' "222"
+  assert_contains "final summary links the PR comment" "$(cat "$(bstate summary "$REVIEWER_RUN")")" "#issuecomment-222"
+}
+
+test_bulk_apply_reviewer_summary_stale_withholds_group() {
+  reviewer_summary_fixture
+  local out
+  jq '.data.repository.pullRequest.reviewThreads.nodes[0].comments.nodes[0].body="Changed finding"' "$TEST_TMP/gh/graphql-threads-7.json" > "$TEST_TMP/t.json"
+  mv "$TEST_TMP/t.json" "$TEST_TMP/gh/graphql-threads-7.json"
+  out="$(btriage "$REVIEWER_RUN" 2>&1)"
+  assert_contains "stale activity requires fresh triage" "$out" "STALE"
+  assert_not_contains "stale summary has no publication" "$(cat "$TEST_TMP/gh.log")" "--method POST"
+  assert_eq "stale summary is never cached" "false" "$([ -e "$TEST_TMP/reviewer-state.json" ] && echo true || echo false)"
+}
+
+test_bulk_apply_reviewer_summary_cache_failure_recovers() {
+  reviewer_summary_fixture
+  local out
+  printf 'broken' > "$TEST_TMP/reviewer-state.json"
+  out="$(btriage "$REVIEWER_RUN" 2>&1)"
+  assert_contains "cache failure after posting is retryable" "$out" "PARTIAL"
+  assert_json "published comment is retained before cache writes" "$(bstate pr-get "$REVIEWER_RUN" 7)" '.actions.reviewer_summaries | length' "1"
+  rm "$TEST_TMP/reviewer-state.json"
+  : > "$TEST_TMP/gh.log"
+  out="$(btriage "$REVIEWER_RUN" 2>&1)"
+  assert_contains "cache retry finishes" "$out" "ACTIONED"
+  assert_not_contains "cache recovery cannot repeat publication" "$(cat "$TEST_TMP/gh.log")" "--method POST"
+}
+
+test_bulk_apply_reviewer_transient_resolution_stays_retryable() {
+  reviewer_permission_fixture
+  local out rc=0
+  out="$(FAKE_GH_FAIL='api graphql*resolveReviewThread*' FAKE_GH_FAIL_MSG='HTTP 500' btriage "$REVIEWER_RUN" 2>&1)"
+  assert_contains "transient resolution failure stays partial" "$out" "PARTIAL"
+  out="$(FAKE_GH_FAIL='api graphql*resolveReviewThread*' FAKE_GH_FAIL_MSG='API rate limit exceeded' btriage "$REVIEWER_RUN" 2>&1)" || rc=$?
+  assert_eq "resolution rate limit pauses rather than skips" "75" "$rc"
+  assert_json "transient failures record no permission skip" "$(bstate pr-get "$REVIEWER_RUN" 7)" '(.actions.reviewer_resolution_skipped // {}) | length' "0"
+}
+
+test_reviewer_summary() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_reviewer_summary.py" 2>&1)"; then _pass; else _fail "reviewer summary tests" "$output"; fi
+}
+
 main() {
   run_test test_discovery_exit_code_and_shape
   run_test test_discovery_valid_file_form
@@ -4449,6 +4596,14 @@ main() {
   run_test test_inbox
   run_test test_issue_assessment
   run_test test_pr_actions
+  run_test test_reviewer_summary
+  run_test test_bulk_apply_reviewer_permission_is_terminal
+  run_test test_bulk_apply_reviewer_permission_denied_mutation_is_terminal
+  run_test test_bulk_apply_reviewer_summary_posts_once
+  run_test test_bulk_apply_reviewer_summary_failure_and_recovery
+  run_test test_bulk_apply_reviewer_summary_stale_withholds_group
+  run_test test_bulk_apply_reviewer_summary_cache_failure_recovers
+  run_test test_bulk_apply_reviewer_transient_resolution_stays_retryable
   run_test test_review_scope
   run_test test_review_continuity
   run_test test_bulk_apply_marker_validates_completion_evidence

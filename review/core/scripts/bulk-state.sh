@@ -56,7 +56,9 @@ JQ_DEFS="
   def acted: .actions.pushed_sha != null or .actions.review_id != null
     or (.actions.replies | length) > 0 or (.actions.resolved | length) > 0
     or ((.actions.reviewer_replies // {}) | length) > 0
-    or ((.actions.reviewer_resolved // []) | length) > 0;
+    or ((.actions.reviewer_resolved // []) | length) > 0
+    or ((.actions.reviewer_summaries // {}) | length) > 0
+    or ((.actions.reviewer_resolution_skipped // {}) | length) > 0;
   def to_apply: .decision != null
     and (.status == \"analyzed\" or .status == \"applying\" or .status == \"partially-applied\");
 "
@@ -332,7 +334,7 @@ do_pr_get() {
 }
 
 do_record() {
-  local usage="Usage: bulk-state.sh record <run> <n> {pending_push <sha>|pushed_sha <sha>|review_id <id>|reply <comment_id> <reply_id>|reviewer_reply <activity_key> <reply_id>|reviewer_resolved <activity_key>|resolved <thread_id>}"
+  local usage="Usage: bulk-state.sh record <run> <n> {pending_push <sha>|pushed_sha <sha>|review_id <id>|reply <comment_id> <reply_id>|reviewer_reply <activity_key> <reply_id>|reviewer_resolved <activity_key>|reviewer_summary <summary_key> <comment_id>|reviewer_resolution_skipped <activity_key> <reason>|resolved <thread_id>}"
   [ $# -ge 4 ] || { echo "$usage" >&2; exit 2; }
   local run="$1" n="$2" form="$3"
   shift 3
@@ -358,6 +360,15 @@ do_record() {
       [ $# -eq 1 ] || { echo "$usage" >&2; exit 2; }
       [[ "$1" =~ ^[a-f0-9]{64}$ ]] || { echo "Error: reviewer activity key must be a SHA-256 hex string" >&2; exit 2; }
       update_pr "$run" "$n" 'if any((.actions.reviewer_resolved // [])[]; . == $v) then . else .actions.reviewer_resolved = ((.actions.reviewer_resolved // []) + [$v]) end' --arg v "$1" ;;
+    reviewer_summary|reviewer_resolution_skipped)
+      [ $# -eq 2 ] || { echo "$usage" >&2; exit 2; }
+      [[ "$1" =~ ^[a-f0-9]{64}$ ]] || { echo "Error: reviewer action key must be a SHA-256 hex string" >&2; exit 2; }
+      if [ "$form" = reviewer_summary ]; then
+        [[ "$2" =~ ^[1-9][0-9]*$ ]] || { echo "Error: summary comment ID must be positive" >&2; exit 2; }
+        update_pr "$run" "$n" '.actions.reviewer_summaries[$k] = ($v | tonumber)' --arg k "$1" --arg v "$2"
+      else
+        update_pr "$run" "$n" '.actions.reviewer_resolution_skipped[$k] = $v' --arg k "$1" --arg v "$2"
+      fi ;;
     resolved)
       [ $# -eq 1 ] || { echo "$usage" >&2; exit 2; }
       update_pr "$run" "$n" 'if any(.actions.resolved[]; . == $v) then . else .actions.resolved += [$v] end' --arg v "$1" ;;
@@ -582,7 +593,11 @@ do_summary() {
         | [(if .actions.review_id != null then "review https://github.com/\($r.owner)/\($r.name)/pull/\(.number)#pullrequestreview-\(.actions.review_id)" else empty end),
            (if .actions.pushed_sha != null then "pushed \(.actions.pushed_sha[:7])" else empty end),
            (if (.actions.replies | length) > 0 then "\(.actions.replies | length) replies" else empty end),
-           (if (.actions.resolved | length) > 0 then "\(.actions.resolved | length) threads resolved" else empty end)]
+           (if (.actions.resolved | length) > 0 then "\(.actions.resolved | length) threads resolved" else empty end),
+           (if ((.actions.reviewer_replies // {}) | length) > 0 then "\(.actions.reviewer_replies | length) reviewer replies" else empty end),
+           (if ((.actions.reviewer_resolved // []) | length) > 0 then "\(.actions.reviewer_resolved | length) reviewer threads resolved" else empty end),
+           ((.actions.reviewer_summaries // {})[] | "summary https://github.com/\($r.owner)/\($r.name)/pull/\($p.number)#issuecomment-\(.)"),
+           (if ((.actions.reviewer_resolution_skipped // {}) | length) > 0 then "\(.actions.reviewer_resolution_skipped | length) resolutions skipped; threads left open" else empty end)]
         | join("; ") as $done
         | "| #\($p.number) | \($p.title | cell) | \($p.status) | \($p.decision | if . == null then "-" else join(", ") end) | \($done | dash) | \($p.reason | dash | cell) |")) end),
     "",

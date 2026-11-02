@@ -221,6 +221,7 @@ _github_fetch_pr_threads() {
               nodes {
                 id
                 isResolved
+                viewerCanResolve
                 isOutdated
                 path
                 line

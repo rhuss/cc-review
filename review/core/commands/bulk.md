@@ -493,8 +493,11 @@ PREPARED=$(jq -r '.prepared_commit // ""' "$PLAN")
 # for an intact analysis means something
 REPORT=""
 if [ -s "$PR_DIR/triage-summary.md" ]; then REPORT="pr-$N/triage-summary.md"; fi
-COUNTS="$COUNTS" PROPOSED="$PROPOSED" REPORT="$REPORT" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" \
-  '.status="analyzed"' '.counts=(env.COUNTS | fromjson)' '.report=(if env.REPORT == "" then null else env.REPORT end)' '.proposed=env.PROPOSED' >/dev/null
+EXECUTION=$(jq -c '{resolutions:([.cc_review_threads[]? | select(.resolve == true)] | length),
+  summary_threads:((.resolution_summary.activity_keys // []) | length),
+  summaries:(if .resolution_summary == null then 0 else 1 end)}' "$PLAN")
+COUNTS="$COUNTS" PROPOSED="$PROPOSED" REPORT="$REPORT" EXECUTION="$EXECUTION" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" \
+  '.status="analyzed"' '.counts=(env.COUNTS | fromjson)' '.triage_execution=(env.EXECUTION | fromjson)' '.report=(if env.REPORT == "" then null else env.REPORT end)' '.proposed=env.PROPOSED' >/dev/null
 # The worktree holds the prepared commit until the PR is decided and pushed (FR-012)
 if [ -z "$PREPARED" ]; then
   "$S/pr-worktree.sh" remove "$PR_DIR/wt" && "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.worktree=null' >/dev/null
@@ -780,12 +783,12 @@ export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RU
 S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
 jq -r --arg dir "$RUN_DIR" '
   def cell: tostring | gsub("\\|"; "\\|");
-  "| PR | Title | Role | Selection reason | Valid/Rejected/Deferred/Human | Status | Summary | Proposed |",
-  "|---|---|---|---|---|---|---|---|",
-  (.prs[] | "| #\(.number) | \(.title | cell) | \(.triage_role // "-" | cell) | \(.assessment.triage.reason // "-" | cell) | \(if .counts then "\(.counts.bot_valid)/\(.counts.bot_rejected)/\(.counts.deferred)/\(.counts.human)" else "-" end) | \(.status)\(if .reason then " (\(.reason | cell))" else "" end)\(if (.flags | length) > 0 then " [\(.flags | join(", "))]" else "" end) | \(if .report then "\($dir)/\(.report)" else "-" end) | \(if .status == "analyzed" and .decision == null then .proposed else ((.decision // ["-"]) | join(" + ")) end) |")' "$RUN_DIR/state.json"
+  "| PR | Title | Role | Selection reason | Valid/Rejected/Deferred/Human | Status | Resolution actions | Summary | Proposed |",
+  "|---|---|---|---|---|---|---|---|---|",
+  (.prs[] | "| #\(.number) | \(.title | cell) | \(.triage_role // "-" | cell) | \(.assessment.triage.reason // "-" | cell) | \(if .counts then "\(.counts.bot_valid)/\(.counts.bot_rejected)/\(.counts.deferred)/\(.counts.human)" else "-" end) | \(.status)\(if .reason then " (\(.reason | cell))" else "" end)\(if (.flags | length) > 0 then " [\(.flags | join(", "))]" else "" end) | \(if .triage_role == "reviewer" then "\(.triage_execution.resolutions // 0) resolutions; \(.triage_execution.summaries // 0) PR summary covering \(.triage_execution.summary_threads // 0) threads (author must resolve)" else "author triage" end) | \(if .report then "\($dir)/\(.report)" else "-" end) | \(if .status == "analyzed" and .decision == null then .proposed else ((.decision // ["-"]) | join(" + ")) end) |")' "$RUN_DIR/state.json"
 ```
 
-Explain the role and shared selection reason separately from execution status. Author counts describe bot suggestions and human comments; reviewer work verifies existing findings and never prepares a fix commit. Questions stay pending in either role. The summary file holds the details. Explain author flags when relevant (`local-unpushed`: fixes stay unpushed; `cross-repo`: a fork, where an author push may be refused).
+Explain the role and shared selection reason separately from execution status. Author counts describe bot suggestions and human comments; reviewer work verifies existing findings and never prepares a fix commit. Questions stay pending in either role. The summary file holds the details and the exact grouped comment draft. Missing resolution permission offers a single PR summary, with no individual replies or resolution calls for its covered threads. Explain author flags when relevant (`local-unpushed`: fixes stay unpushed; `cross-repo`: a fork, where an author push may be refused).
 
 ### Allowed actions
 
@@ -793,7 +796,7 @@ Only an `analyzed` PR without a decision gets actions (FR-020):
 
 | Action | Meaning | Decision value |
 |---|---|---|
-| **Apply** | push the prepared commit, post the replies, resolve the handled threads, and post the human replies the user approves below | `["apply"]` |
+| **Apply** | apply the approved role-specific actions: author fixes/replies, permitted reviewer resolutions, or one approved reviewer PR summary; post approved human replies | `["apply"]` |
 | **Skip** | nothing is pushed or posted; the threads stay open for the next run | `["skip"]` |
 
 "Apply proposed actions" gives each PR its `proposed` action (`apply`, or `skip` for an empty plan).
@@ -860,7 +863,8 @@ echo "STATUS=$STATUS PUSHED=$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.actions
 
 The script itself records every sub-action (push, each reply, each resolution) and sets the final status:
 - `ACTIONED ...`: done. When it pushed, tell the user that their local branch of this PR (if they have one) is now behind the remote, and that CI was not checked (the summary suggests `/triage --pr <n>` for CI repair).
-- `PARTIAL ...` (some replies or resolutions failed), or a push or thread-read error: the PR is `partially-applied` and keeps its worktree; a resume retries only what is missing.
+- Permission-denied reviewer resolutions are recorded as terminal skips, reported with the threads still open, and do not keep the run unfinished. `ACTIONED` may include these skips; the summary links any posted PR notification. Legacy plans never acquire an unapproved comment during resume.
+- `PARTIAL ...` (some replies, summaries or resolutions failed transiently), or a push or thread-read error: the PR is `partially-applied` and keeps its worktree; a resume retries only what is missing.
 - `STALE` (the branch moved before the push, so nothing was pushed or posted; or it moved right after the push, so the fixes are pushed but no reply was posted) or `DENIED ...` (no push permission, for example a fork; the fixes are not pushed, the replies that do not depend on them are posted, and the PR is `cannot-push`): go to the next PR.
 - `rc=75`: pause the run as in Rate Limits (the PR stays `applying`, so a resume applies it).
 

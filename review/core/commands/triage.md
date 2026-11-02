@@ -34,7 +34,25 @@ Reviewer triage verifies only the exact feedback activity that prompted triage. 
 
 For each owned unresolved thread, inspect the current code and classify the outcome as `confirmed-fixed`, `still-present`, `accepted-explanation`, `deferred`, or `unclear`. Only verified fixes and explanations accepted under the normal approval/unattended policy can be resolved. Draft an exact-thread reply for approval where required. Deferred work, disagreement, unanswered questions, and uncertain verification remain visible and are not recorded as handled. Reviewer triage never edits or commits code, pushes a branch, invokes author bot-fix or CI-repair steps, or advances a full-review baseline.
 
-**Single-PR lifecycle:** Load the identity-scoped cache with `reviewer_activity.py load`, fingerprint each exact owned thread at the live PR head, and compare the full Activity before deciding it is already handled. Immediately before every reply and every resolution, refresh the PR and thread data and require `reviewer_activity.py check` to allow the same exact open PR, other-author ownership, unresolved thread, root and complete conversation. Append `activity_marker(identity, activity, reply_body)` to an actual reviewer reply so a retry can recover the exact post. After the approved reply and any resolution succeed, record the completed outcome with `reviewer_activity.py record`; record a verified no-post `still-present` outcome too. If replying succeeded but resolving failed, retain the reply result and retry only the resolution after a fresh exact check. Never record preparation, skipped work, deferred outcomes, unanswered questions, disagreement, or unclear verification.
+**Single-PR lifecycle:** Load the identity-scoped cache with `reviewer_activity.py load`, fingerprint each exact owned thread at the live PR head, and compare the full Activity before deciding it is already handled. Immediately before every reply and every resolution, refresh the PR and thread data and require `reviewer_activity.py check` to allow the same exact open PR, other-author ownership, unresolved thread, root and complete conversation. Append `activity_marker(identity, activity, reply_body)` to an actual reviewer reply so a retry can recover the exact post. After the approved reply and any resolution succeed, record the completed outcome with `reviewer_activity.py record`; record a verified no-post `still-present` outcome too. If replying succeeded but resolving failed transiently, retain the reply result and retry only the resolution after a fresh exact check. Permission denial follows the terminal skip policy below. Never record preparation, skipped work, deferred outcomes, unanswered questions, disagreement, or unclear verification.
+
+### Resolution permission and grouped notifications
+
+For reviewer triage, evidence that a finding is fixed does not grant permission to resolve it. Fetch `viewerCanResolve` for every exact thread during preparation and every immediate pre-resolution refresh. Only explicit `true` permits a resolution attempt; missing or null permission evidence is unavailable. Keep this flag outside the conversation fingerprint.
+
+After assessing all owned threads, build a reviewer plan with the identity, current `expected_head`, and exact `.cc_review_threads[]` entries used in Prepare Mode below. Each entry carries `viewer_can_resolve` from the fetched `viewerCanResolve` field. An accepted explanation additionally carries `outcome.approved:true` only after the existing approval policy accepts it. Verified fixes use `confirmed-fixed`; still-present, deferred and unclear findings cannot enter a resolution summary.
+
+Before presenting any decision (single-PR and bulk), finalize the plan:
+
+```bash
+python3 "$CORE_DIR/scripts/reviewer_summary.py" prepare < "$TRIAGE_PLAN" > "$TRIAGE_PLAN.tmp" && mv "$TRIAGE_PLAN.tmp" "$TRIAGE_PLAN"
+```
+
+This prepares at most one `.resolution_summary` per PR with `body`, exact `activity_keys` and `summary_key`. It covers verified outcomes with unavailable resolution permission, sets their `resolve:false` and clears their individual reply bodies. Show the full draft and counts before approval: for example, "0 resolutions; 1 PR summary covering 12 verified threads; author must resolve." Apply/Skip and existing unattended policy govern publication. Preserve approved summary actions if permission is later granted; do not add resolutions.
+
+**Single-PR apply:** use the same shared helper as bulk. Collect complete PR issue comments through `fetch_issue_comments`, complete exact review threads through `fetch_pr_threads`, and the live PR state/head/author. Supply `reviewer_summary.py check` with `{plan, current_pr:{state,head_oid,author}, threads, comments}`. A failed or incomplete collection cannot establish that a summary is absent. The helper checks every covered exact activity and returns the signed `body`, summary key, covered items and an existing `comment_id` when it recovers the authenticated user's exact publication. Withhold the entire group on stale activity or a conflicting edited marker. Otherwise, post the returned body once to `repos/$OWNER/$REPO/issues/$PR_NUM/comments` only when `comment_id` is null. Record the returned issue-comment ID immediately; record each covered activity through `reviewer_activity.py record` with `reply_id:null`, `resolved:false` and `summary_comment_id`. Do not record preparation or failed publication as handled. Never create a full-review scope marker from a triage summary.
+
+**Permission loss and old plans:** immediately before each ordinary reviewer resolution, refresh exact activity and permission. Explicit denial (including "does not have the correct permissions" from `ResolveReviewThread`) is final for that activity in this run: retain successful reply records, skip resolution, report the thread still open, and continue. Do not synthesize a new summary that was not approved. Skipped resolution outcomes remain eligible for a fresh triage pass; do not cache them as completed. Keep skipped activity keys and reasons for the current single-PR pass; bulk persists these for resume. Generic API failures remain retryable and rate limits retain existing pause behavior.
 
 ## Prepare Mode (`TRIAGE_MODE=prepare`)
 
@@ -78,7 +96,7 @@ jq -n --argjson pr "$PR_NUM" --arg base "$EXPECTED_HEAD" --arg role "$TRIAGE_ROL
   --arg host "$GH_HOST" --arg repository "$PR_OWNER/$PR_REPO" --arg user "$GH_USER" \
   '{pr: $pr, triage_role: $role, expected_head: $base, base_head: $base,
     activity_identity: {host: $host, repository: $repository, user: $user, pr: $pr},
-    prepared_commit: null, replies: [], cc_review_threads: [], stale_resolutions: [], human: []}' > "$TRIAGE_PLAN"
+    prepared_commit: null, replies: [], cc_review_threads: [], stale_resolutions: [], human: [], resolution_summary: null}' > "$TRIAGE_PLAN"
 ```
 
 Add each entry in a block like this one (the example records one Step 8 reply; the other lists work the same way with their fields from the table below):
@@ -103,14 +121,14 @@ plan_add replies "$(jq -n --argjson cid "$COMMENT_DB_ID" --arg tid "$THREAD_NODE
 |---|---|
 | 1 | `PR_NUM` from `--pr`; owner and repo from `gh repo view` in `PROJECT_DIR` |
 | 2 | runs, with `TRIAGE_STATE_FILE` exported; then create the plan file |
-| 3a, 3b | author role: run unchanged. Reviewer role: collect all pages with comment `id`, `databaseId`, `updatedAt`, `originalCommit`, `pullRequestReview`, `comments.totalCount` and `comments.pageInfo`; any truncated thread is incomplete and cannot produce an applicable outcome |
+| 3a, 3b | author role: run unchanged. Reviewer role: collect all pages with thread `viewerCanResolve` and comment `id`, `databaseId`, `updatedAt`, `originalCommit`, `pullRequestReview`, `comments.totalCount` and `comments.pageInfo`; any truncated thread is incomplete and cannot produce an applicable outcome |
 | 3c | **skipped**: the local CodeRabbit fallback posts to the PR. The summary says `CodeRabbit: rate-limited (local fallback not run in bulk mode)` when the rate-limit comment exists |
 | 3d | runs unchanged (read only) |
 | 4 to 6 | author role: run unchanged, with reads and edits under `TRIAGE_ROOT` (6e checks `$TRIAGE_ROOT/<path>`). Reviewer role: read current code at `expected_head`, verify each exact owned thread outcome, and do not edit files |
 | 7 | author role: stage and commit in the worktree (`git -C "$TRIAGE_ROOT" add ...`, `git -C "$TRIAGE_ROOT" commit` with the Step 7 message), **no push**. Record the commit as before. Reviewer role: **skip**; `prepared_commit` stays null and no reviewer commit is permitted |
 | 7b | **skipped**: CI is not checked in bulk mode (the bulk summary says so per pushed PR) |
 | 7c | **skipped**: `bulk-apply.sh triage` re-reads the threads after the push and re-maps ids by path, line and author |
-| 8 | author role: each reply is **recorded** in `.replies[]` as before. Reviewer role: record only owned exact-thread work in `.cc_review_threads[]`, with `comment_id` (exact root REST database ID), `thread_id`, exact `activity`, `outcome`, `action`, `resolve`, and signed `body`; retain a verified no-post outcome with an empty body |
+| 8 | author role: each reply is **recorded** in `.replies[]` as before. Reviewer role: record only owned exact-thread work in `.cc_review_threads[]`, with `comment_id` (exact root REST database ID), `thread_id`, exact `activity`, `outcome`, `viewer_can_resolve`, `action`, `resolve`, and signed `body`; retain a verified no-post outcome with an empty body |
 | 9 | author role: the Step 9 table decides each reply entry's `resolve` and `self_resolves`; reviewer role: **skip**, because only exact verified reviewer outcomes may request resolution |
 | 9b | author role: stale handled thread ids are **recorded** in `.stale_resolutions[]`; reviewer role: **skip** and leave `.stale_resolutions[]` empty |
 | 10, 11 | author role: run unchanged; reviewer role: **skip author bot handling** and continue to Step 11b only for exact owned cc-review threads |
@@ -122,7 +140,7 @@ plan_add replies "$(jq -n --argjson cid "$COMMENT_DB_ID" --arg tid "$THREAD_NODE
 | 14 | **skipped**: `bulk.md` offers the idea-inbox capture once after its decision step |
 | 15 | runs; a low rate limit ends the worker with `STATUS failed reason=rate-limited` |
 
-**Return.** Reviewer role keeps `prepared_commit: null`; unanswered questions and deferred/unclear outcomes remain visible and are not marked handled. The worker's final reply is exactly one line:
+**Return.** Reviewer role finalizes the grouped summary with `reviewer_summary.py prepare` before writing `triage-summary.md`; include its draft and resolution/notification counts. Reviewer role keeps `prepared_commit: null`; unanswered questions and deferred/unclear outcomes remain visible and are not marked handled. The worker's final reply is exactly one line:
 - Author role: `STATUS ok valid=<accepted bot fixes> rejected=<n> deferred=<n> human=<n> commit=<sha or none>`
 - Reviewer role: `STATUS ok valid=<confirmed fixes and accepted explanations> rejected=<still-present findings> deferred=<deferred or unclear outcomes> human=0 commit=none`
 - `STATUS failed reason=rate-limited` when the hosting service rate-limits a call (`API rate limit exceeded`, `secondary rate limit`, HTTP 403/429 on a page)
@@ -242,6 +260,7 @@ while true; do
             nodes {
               id
               isResolved
+              viewerCanResolve
               path
               line
               comments(first: 100) {

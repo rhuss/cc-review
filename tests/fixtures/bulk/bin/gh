@@ -119,9 +119,10 @@ case "${positional[0]:-} ${positional[1]:-}" in
       *search*) out=$(fixture graphql-search.json) || exit 1 ;;
       *reviewThreads*) out=$(fixture "graphql-threads-$number.json" graphql-threads.json) || exit 1 ;;
       *reviews*) out=$(fixture "graphql-reviews-$number.json" graphql-reviews.json) || exit 1 ;;
+      *comments\(first:*) out=$(fixture "graphql-comments-$number.json") || exit 1 ;;
       *) echo "fake gh: unknown graphql query" >&2; exit 1 ;;
     esac ;;
-  api\ */replies|api\ */reviews)
+  api\ */replies|api\ */reviews|api\ */issues/*/comments)
     if [ "$method" != POST ]; then
       echo "fake gh: only POST is supported for: $args" >&2
       exit 1

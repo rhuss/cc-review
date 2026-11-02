@@ -355,6 +355,8 @@ def record_activity(host: str, repository: str, user: str, pr: int, thread: dict
         record = dict(thread, outcome={"status": outcome["status"], "completed": True},
                       completed_at=datetime.now(timezone.utc).isoformat(),
                       reply_id=outcome.get("reply_id"), resolved=outcome.get("resolved", False))
+        if outcome.get("summary_comment_id") is not None:
+            record["summary_comment_id"] = outcome["summary_comment_id"]
         records[str(pr) + "/" + thread["thread_id"]] = record
         value = dict(schema_version=1, host=host, repository=repository, user=user, records=records)
         descriptor, temporary = tempfile.mkstemp(prefix=".activity-", dir=str(path.parent))
@@ -404,7 +406,10 @@ def main(argv=None):
             reply_id, resolved = value.get("reply_id"), value.get("resolved")
             if (reply_id is not None and (type(reply_id) is not int or reply_id < 1)) or type(resolved) is not bool:
                 raise ValueError("reply_id must be null/positive integer and resolved must be boolean")
-            outcome = dict(outcome, reply_id=reply_id, resolved=resolved)
+            summary_id = value.get("summary_comment_id")
+            if summary_id is not None and (type(summary_id) is not int or summary_id < 1 or resolved):
+                raise ValueError("summary_comment_id must be a positive integer and cannot imply resolution")
+            outcome = dict(outcome, reply_id=reply_id, resolved=resolved, summary_comment_id=summary_id)
             record_activity(host, repo, user, pr, value.get("activity"), outcome)
             recorded = outcome["completed"] and outcome["status"] not in ("unclear", "deferred")
             result = dict(recorded=recorded, complete=True, warnings=[],

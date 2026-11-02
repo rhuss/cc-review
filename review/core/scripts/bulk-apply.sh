@@ -373,18 +373,61 @@ reviewer_marker_reply() {
 
 reviewer_record_outcome() {
   local plan="$1" item="$2" reply_id="$3" resolved="$4" identity activity outcome
+  local summary_comment_id="${5:-null}"
   identity=$(jq -c '.activity_identity' "$plan")
   activity=$(printf '%s' "$item" | jq -c '.activity')
   outcome=$(printf '%s' "$item" | jq -c '.outcome')
   jq -nc --argjson identity "$identity" --argjson activity "$activity" --argjson outcome "$outcome" \
     --argjson reply_id "$(if [ -n "$reply_id" ]; then printf '%s' "$reply_id"; else printf null; fi)" \
-    --argjson resolved "$resolved" \
-    '{identity:$identity,activity:$activity,outcome:$outcome,reply_id:$reply_id,resolved:$resolved}' \
+    --argjson resolved "$resolved" --argjson summary_comment_id "$summary_comment_id" \
+    '{identity:$identity,activity:$activity,outcome:$outcome,reply_id:$reply_id,resolved:$resolved,summary_comment_id:$summary_comment_id}' \
     | python3 "$SCRIPT_DIR/reviewer_activity.py" record > "$out" 2>"$err" || {
       echo "Error: cannot record completed reviewer activity: $(tail -n 1 "$err")" >&2
       return 1
     }
   jq -e '.complete == true' "$out" >/dev/null || return 1
+}
+
+# Publish only the prepared group, with complete conversation reads for recovery.
+# Uses the caller's counters so transient reads/writes remain retryable.
+reviewer_apply_summary() {
+  local plan="$1" comments live checked payload summary_key summary_id recorded item
+  jq -e '.resolution_summary != null' "$plan" >/dev/null || return 0
+  comments=$(tmpfile); live=$(tmpfile); checked=$(tmpfile); payload=$(tmpfile)
+  summary_key=$(jq -r '.resolution_summary.summary_key' "$plan")
+  recorded=$(pr_field ".actions.reviewer_summaries[\"$summary_key\"] // null")
+  if ! try "$err" fetch_issue_comments "$owner" "$repo" "$PR" > "$comments" \
+    || ! try "$err" fetch_pr_threads "$PR" > "$threads" \
+    || ! try "$err" gh pr view "$PR" --json state,headRefOid,author > "$live"; then
+    echo "Warning: reviewer summary context unavailable: $(tail -n 1 "$err")"
+    stale=$((stale + 1)); return 0
+  fi
+  jq -n --slurpfile plan "$plan" --slurpfile live "$live" --slurpfile threads "$threads" \
+    --slurpfile comments "$comments" --argjson recorded "$recorded" \
+    '{plan:$plan[0],current_pr:($live[0]|{state,head_oid:.headRefOid,author:.author.login}),
+      threads:$threads[0],comments:$comments[0],published_comment_id:$recorded}' > "$payload"
+  if ! python3 "$SCRIPT_DIR/reviewer_summary.py" check < "$payload" > "$checked" 2> "$err"; then
+    echo "Warning: reviewer summary needs fresh preparation: $(tail -n 1 "$err")"
+    stale=$((stale + 1)); retriage=$((retriage + 1)); return 0
+  fi
+  summary_id=$(jq -r '.comment_id // empty' "$checked")
+  if [ -z "$summary_id" ]; then
+    jq '{body}' "$checked" > "$payload"
+    if ! try "$err" gh api "repos/$owner/$repo/issues/$PR/comments" --method POST --input "$payload" --jq .id > "$out"; then
+      echo "Warning: reviewer summary publication failed: $(tail -n 1 "$err")"
+      stale=$((stale + 1)); return 0
+    fi
+    summary_id=$(tr -d '[:space:]' < "$out")
+    if ! [[ "$summary_id" =~ ^[1-9][0-9]*$ ]]; then
+      echo "Warning: reviewer summary publication returned no comment ID"
+      stale=$((stale + 1)); return 0
+    fi
+    summaries=$((summaries + 1))
+  fi
+  "$BULK_STATE" record "$RUN" "$PR" reviewer_summary "$summary_key" "$summary_id" >/dev/null
+  while IFS= read -r item <&4; do
+    reviewer_record_outcome "$plan" "$item" "" false "$summary_id" || stale=$((stale + 1))
+  done 4< <(jq -c '.items[]' "$checked")
 }
 
 # Reviewer plans never use the author bot-repair path. Revalidate each exact
@@ -393,7 +436,9 @@ do_reviewer_triage() {
   local plan="$1" state="$2" item items action_body activity marker current_pr_file current_thread_file identity
   local comment_id thread_id resolve outcome_status reply_body response_id posted=0 resolved_n=0 stale=0 retriage=0
   local activity_key local_reply marker_reply local_resolved
+  local summaries=0 resolution_skipped=0 skip_reason summary_keys
   local reviewer_state="$SCRIPT_DIR/reviewer_activity.py"
+  summary_keys=$(jq -c '.resolution_summary.activity_keys // []' "$plan")
   pr_status applying
   current_pr_file=$(tmpfile); current_thread_file=$(tmpfile)
   items=$(tmpfile)
@@ -409,6 +454,9 @@ do_reviewer_triage() {
     [ -n "$item" ] || continue
     response_id=""
     activity_key=$(printf '%s' "$item" | jq -r '.activity.activity_key')
+    if jq -e --arg key "$activity_key" 'index($key) != null' <<< "$summary_keys" >/dev/null; then continue; fi
+    skip_reason=$(pr_field ".actions.reviewer_resolution_skipped[\"$activity_key\"] // \"\"")
+    if [ -n "$skip_reason" ]; then resolution_skipped=$((resolution_skipped + 1)); continue; fi
     local_resolved=$(pr_field ".actions.reviewer_resolved // [] | index(\"$activity_key\") != null")
     [ "$local_resolved" = true ] && continue
     resolve=$(printf '%s' "$item" | jq -r '.resolve // false')
@@ -495,7 +543,17 @@ $marker"
         stale=$((stale + 1)); retriage=$((retriage + 1))
         continue
       fi
+      if ! jq -e '.viewerCanResolve == true' "$current_thread_file" >/dev/null; then
+        "$BULK_STATE" record "$RUN" "$PR" reviewer_resolution_skipped "$activity_key" "resolution permission unavailable; thread left open" >/dev/null
+        echo "Warning: cannot resolve reviewer thread $thread_id; left open for the author (no new summary approved)"
+        resolution_skipped=$((resolution_skipped + 1)); continue
+      fi
       if ! try "$err" resolve_thread "$thread_id" >/dev/null; then
+        if grep -qiE 'does not have the correct permissions|Resource not accessible by integration|Resource not accessible by personal access token' "$err"; then
+          "$BULK_STATE" record "$RUN" "$PR" reviewer_resolution_skipped "$activity_key" "GitHub denied resolution; thread left open" >/dev/null
+          echo "Warning: GitHub denied resolution of reviewer thread $thread_id; skipped permanently for this run"
+          resolution_skipped=$((resolution_skipped + 1)); continue
+        fi
         echo "Warning: resolving reviewer thread $thread_id failed: $(tail -n 1 "$err")"
         stale=$((stale + 1))
         continue
@@ -507,6 +565,7 @@ $marker"
       reviewer_record_outcome "$plan" "$item" "" false || { stale=$((stale + 1)); continue; }
     fi
   done 3< "$items"
+  reviewer_apply_summary "$plan"
   if [ "$retriage" -gt 0 ]; then
     pr_status stale "$retriage reviewer actions need fresh preparation because activity changed or evidence was incomplete"
     echo "STALE needs-retriage=$retriage replies=$posted resolved=$resolved_n"
@@ -514,8 +573,8 @@ $marker"
     pr_status partially-applied "$stale reviewer actions failed; resume to retry the remaining writes"
     echo "PARTIAL stale=$stale replies=$posted resolved=$resolved_n"
   else
-    pr_status actioned "reviewer activity applied with exact freshness checks"
-    echo "ACTIONED replies=$posted resolved=$resolved_n"
+    pr_status actioned "reviewer activity applied; $resolution_skipped resolutions skipped (threads left open); summaries posted: $summaries"
+    echo "ACTIONED replies=$posted resolved=$resolved_n summaries=$summaries resolution_skipped=$resolution_skipped"
   fi
 }
 
