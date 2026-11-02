@@ -3686,7 +3686,9 @@ test_review_md_worker_mode_section() {
   for needle in 'findings/<name>.json' 'findings/{ENTRY.name}.json' '.positive.json' 'merged.json' 'findings.json' 'reviewers.json' \
     'review-findings.md' 'STATUS ok' 'STATUS failed reason=rate-limited' 'No worker dispatches subagents' \
     'never reads a findings file into its own context' 'git -C "$PROJECT_DIR" ls-tree -r --name-only "$EXPECTED_HEAD"' \
-    'meta-skeptic.md' 'meta-calibrator.md' 'round-<k>/changed-files' 'commit=<sha>' 'review_id=<id>'; do
+    'meta-skeptic.md' 'meta-calibrator.md' 'round-<k>/changed-files' 'commit=<sha>' 'review_id=<id>' \
+    '(a) Prep worker' 'never reads PR content' 'prompts/<name>.md' 'dispatch.json' 'RENEWED_REQUEST_FILE' \
+    'fresh prep worker per round'; do
     assert_contains "worker mode mentions $needle" "$section" "$needle"
   done
   assert_not_contains "worker mode names no harness tool" "$section" "Agent tool"
@@ -3930,6 +3932,16 @@ test_bulk_md_triage_blocks() {
   bulk_md_block 'triage-summary.md' "$run" > "$block"
   bash "$block" >/dev/null 2>&1
   assert_json "reviewer outcomes populate role-specific counts" "$(cat "$BULK_REPO/.cc-review/bulk/$run/state.json")"     '.prs[0].counts | "\(.bot_valid)/\(.bot_rejected)/\(.deferred)/\(.human)"' "1/1/1/0"
+}
+
+test_bulk_md_review_prep_worker() {
+  local section
+  section="$(md_section "$BULK_MD" "Review Analysis")"
+  for needle in 'prep worker subagent, fresh for this PR' 'dispatch.json' 'RENEWED_REQUEST_FILE' 'prep worker failed:'; do
+    assert_contains "review analysis mentions $needle" "$section" "$needle"
+  done
+  assert_not_contains "the coordinator no longer runs Steps 1 to 3" "$section" "Steps 1 to 3 in your shell"
+  assert_contains "bulk keeps PR content out of the coordinator" "$(md_section "$BULK_MD" "Bulk Review and Triage")" "Fresh context per PR"
 }
 
 test_bulk_md_resume_section() {
@@ -4581,6 +4593,7 @@ main() {
   run_test test_triage_md_mandatory_steps_have_prepare_exception
   run_test test_bulk_md_triage_blocks
   run_test test_bulk_md_resume_section
+  run_test test_bulk_md_review_prep_worker
   run_test test_bulk_md_rate_limit_pauses
   run_test test_bulk_md_unattended_policy
   run_test test_bulk_state_reanalyze_once_then_stale
