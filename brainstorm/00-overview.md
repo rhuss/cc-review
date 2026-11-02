@@ -1,6 +1,6 @@
 # Brainstorm Overview
 
-Last updated: 2026-10-29
+Last updated: 2026-11-02
 
 ## Sessions
 
@@ -17,6 +17,7 @@ Last updated: 2026-10-29
 | 09 | 2026-10-27 | incremental-review | active | - | [#8](https://github.com/rhuss/cc-review/issues/8) |
 | 10 | 2026-10-28 | review-convergence | active | - | [#11](https://github.com/rhuss/cc-review/issues/11) |
 | 11 | 2026-10-29 | issue-assessment | active | - | - |
+| 12 | 2026-11-02 | review-draft-approval | active | - | [#13](https://github.com/rhuss/cc-review/issues/13) |
 
 ## Open Threads
 
@@ -79,6 +80,12 @@ Last updated: 2026-10-29
 - What should happen when the prose plugin is unavailable, and should issue replies use a dedicated maintainer voice? (from #11)
 - How should later invocations incorporate new use-case evidence and prior maintainer answers without repeating questions or contradicting earlier decisions? (from #11)
 - Should the inbox eventually suggest this command for relevant issues? Automatic invocation and bulk issue assessment are outside the initial agreed workflow. (from #11)
+- Exact wording of the attribution sentence for each combination of `CURATED` and `EXECUTED`. (from #12)
+- Schema of the facts file (location under the scope or PR directory, fields, how fix-round test outcomes are recorded). (from #12)
+- How the conversation check compares threads and comments: counts only, or IDs, and which changes count as material. (from #12)
+- Where the hash of an approved payload is stored in single-PR mode, and whether a single-PR draft survives an interrupted session. (from #12)
+- Whether the post script replaces `post_review` in the platform layer or wraps it, and how 7.5m recovery maps onto it. (from #12)
+- How the severity title in the `reviewer-voice.md` examples is kept: drop it, or move it into the first sentence after the severity label. (from #12)
 
 ## Parked Ideas
 
