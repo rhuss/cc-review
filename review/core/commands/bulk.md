@@ -15,6 +15,8 @@ This file is executed by the "Bulk Mode" hand-off of `commands/review.md` (`BULK
 
 **Context discipline (FR-010).** The coordinator (you) keeps only a short per-PR summary: status, counts, report path. Findings, reviewer output and triage details stay in files under the PR's directory and are read with `jq` for counts only. The single exception is the interactive "review findings" drill-down in the decision step. Never read a findings file, report or plan into your own context otherwise.
 
+**Fresh context per PR.** Every judgment about a PR runs in a subagent dispatched for that PR alone: the review prep worker, the reviewer, merge, meta-review and report workers, or the triage worker. You never read a PR's code, diff, description, linked issues, threads or comments yourself, so nothing seen in one PR shapes the analysis of the next.
+
 **The user's checkout is never touched.** Every PR is analyzed in `<run dir>/pr-<n>/wt`, a detached worktree. Nothing in this command checks out, stashes, resets or commits in `PROJECT_DIR` itself, and nothing writes outside `.cc-review/bulk/` in it, apart from the shared triage state `.cc-review/.triage-state.json` that bulk triage updates exactly as single-PR triage does (FR-014a).
 
 ## Follow-up Review Continuity
@@ -340,9 +342,19 @@ The summary then tells the user: "GitHub rate limit reached; the run is paused. 
 
 ### Review Analysis
 
-For a PR with `CHECKOUT ok`, run `commands/review.md` in worker mode: read its section "Worker Mode (bulk)" once per run and follow it for every PR.
+For a PR with `CHECKOUT ok`, run `commands/review.md` in worker mode: read its section "Worker Mode (bulk)" once per run and follow it for every PR. Read only that section; the steps it hands to the prep worker are read by the prep worker.
 
-**1. Worker inputs.** Set them for this PR (keep them in your context; every block re-sets them):
+Before dispatch, write the PR's selection assessment to its directory, for the prep worker's `RENEWED_REQUEST`:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; PR_DIR="$RUN_DIR/pr-$N"
+"$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.assessment // {}' > "$PR_DIR/action-assessment.json"
+echo "RENEWED_REQUEST_FILE=$PR_DIR/action-assessment.json"
+```
+
+**1. Worker inputs.** Set them for this PR (keep them in your context; every dispatch passes them on):
 
 | Variable | Value |
 |---|---|
@@ -355,18 +367,19 @@ For a PR with `CHECKOUT ok`, run `commands/review.md` in worker mode: read its s
 | `RUN_MARKER` | `$RUN_ID/pr-$N` |
 | `MIN_CONFIDENCE` | from Config Resolution |
 | `UNTRUSTED_CHECKOUT` | `true` when the PR comes from a fork (`"$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.is_cross_repo // false'`), otherwise `false`: command reviewers then run only with `allow_untrusted_checkout.<name>: true` (`review.md` Step 2, Untrusted Checkout) |
-| per-PR options | the run's recorded `options` (`jq -r '.options[]' "$RUN_DIR/state.json"`), parsed exactly as `review.md` parses its arguments |
+| `RENEWED_REQUEST_FILE` | `$PR_DIR/action-assessment.json` from the block above |
+| per-PR options | the run's recorded `options` (`jq -r '.options[]' "$RUN_DIR/state.json"`), passed to the prep worker, which parses them exactly as `review.md` parses its arguments |
 
 **2. Pipeline.** In this order, as `review.md` "Worker Mode (bulk)" describes:
-1. (a) Steps 1 to 3 in your shell: changed files from the worktree, discovery, enablement, selection and detection, then `$PR_DIR/reviewers.json` is written **before any worker runs**; command reviewers run inside the worktree with their output kept in `$PR_DIR/commands/`
-2. (b) the prompt reviewer workers, each writing `$PR_DIR/findings/<name>.json` and returning `STATUS ok findings=<n>`
+1. (a) the prep worker subagent, fresh for this PR: Steps 1 to 3 (changed files from the worktree, discovery, enablement, selection and detection, goals, scope, prior review history, prior finding verification, command reviewers inside the worktree with their output kept in `$PR_DIR/commands/`), writing `$PR_DIR/reviewers.json`, one prompt file per prompt reviewer and `$PR_DIR/dispatch.json`, and returning `STATUS ok dispatch=<n> ...`
+2. (b) the prompt reviewer workers, one per `dispatch.json` entry, each told only to read and follow its prompt file, writing `$PR_DIR/findings/<name>.json` and returning `STATUS ok findings=<n>`
 3. (c) the merge worker (`$PR_DIR/merged.json`)
 4. (d) the Skeptic and Calibrator workers, when the Step 4b gate passes on the merged count
 5. (e) the report worker (`$PR_DIR/findings.json`, `$PR_DIR/review-findings.md`)
 
 Failure handling (`review.md` Worker Mode):
 - A reviewer worker without a parseable `STATUS` line, or whose findings file is missing or not a JSON array, is marked `failed` in `reviewers.json`; the PR continues with the other reviewers.
-- An early stop in Steps 1 to 3, or a merge or report worker that fails, returns no `STATUS` line or leaves its output file missing, fails the PR: set `failed` with a reason naming the step (`REASON="merge worker failed: <detail>"`), keep the worktree, and go to the next PR.
+- A prep, merge or report worker that fails (for the prep worker, including an early stop in Steps 1 to 3), returns no `STATUS` line or leaves its output file missing, fails the PR: set `failed` with a reason naming the step (`REASON="prep worker failed: <detail>"`, `REASON="merge worker failed: <detail>"`), keep the worktree, and go to the next PR.
 - `STATUS failed reason=rate-limited` from any worker: see Rate Limits.
 
 **Scope and verification.** The shared pipeline writes `$PR_DIR/scope/{scope.json,review.diff,targets.json,verification.json,reviewer-results.json,completion-input.json,completion.json}`. Explain mode, personal baseline, actual tool scope and incomplete coverage in the report and decision table. A failed required reviewer or incomplete verification is never a completed baseline. Keep usable partial results and name their limitations.

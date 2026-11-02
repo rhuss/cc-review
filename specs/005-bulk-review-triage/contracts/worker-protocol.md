@@ -14,12 +14,15 @@ Status line format: `STATUS <ok|failed> <key>=<value> ...`, for example `STATUS 
 
 ## Review, per PR (analysis phase)
 
-Before the workers run, the coordinator executes review.md Steps 1 to 3 in worker mode:
-- discovery, selection, and preconditions, in the coordinator, using shell only
+Before the reviewer workers run, a **prep worker** subagent, fresh for this PR, executes review.md Steps 1 to 3 in worker mode, so no judgment about one PR happens in a context that has seen another:
+- discovery, selection, preconditions, goals, scope, prior review history and prior finding verification, in the prep worker
 - `$PR_DIR/reviewers.json` is written from `REVIEWERS_JSON` together with each reviewer's planned status (`dispatched`, `skipped` with reason, `disabled`)
-- command reviewers run in the shell with `( cd "$REVIEW_ROOT" && ... )`, and their raw output stays in `$PR_DIR/commands/<name>.{out,err,rc}`; the coordinator records only the exit code in `reviewers.json`
+- command reviewers run in the prep worker's shell with `( cd "$REVIEW_ROOT" && ... )`, and their raw output stays in `$PR_DIR/commands/<name>.{out,err,rc}`; only the exit code is recorded in `reviewers.json`
+- one prompt file per prompt reviewer, `$PR_DIR/prompts/<name>.md`, and the dispatch list `$PR_DIR/dispatch.json`; returns `STATUS ok dispatch=<n> commands=<n> mode=<scope mode or none>`
 
-Every early stop in Steps 1 to 3 (no reviewers left, selection error, diff failure) becomes a per-PR failure with a reason (FR-015), never an `exit` of the coordinator.
+The coordinator never reads PR content: it dispatches each prompt reviewer with only the path of its prompt file.
+
+Every early stop in Steps 1 to 3 (no reviewers left, selection error, diff failure) makes the prep worker return `STATUS failed reason=<step>: <error>`, a per-PR failure with a reason (FR-015), never an `exit` of the coordinator.
 
 | # | Worker | Input | Output | Return |
 |---|---|---|---|---|
