@@ -222,6 +222,7 @@ Default bot profiles:
 | `coderabbitai[bot]` | `self_resolves: true` (CodeRabbit resolves its own threads when you push fixes) |
 | `copilot[bot]` | `auto_resolve: true` (auto-apply and resolve) |
 | `devin-ai-integration[bot]` | `auto_resolve: true` (auto-apply and resolve) |
+| `greptile-apps[bot]` | `auto_resolve: true` (auto-apply and resolve) |
 
 Human comments are presented for interactive review. Out-of-scope ideas can be captured to an idea inbox file:
 

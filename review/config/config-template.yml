@@ -62,6 +62,9 @@ triage:
     - login: "devin-ai-integration[bot]"
       self_resolves: false
       auto_resolve: true
+    - login: "greptile-apps[bot]"
+      self_resolves: false
+      auto_resolve: true
   codecov:
     patch_threshold: 80
     auto_remediate: true
