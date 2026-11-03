@@ -1,4 +1,4 @@
-# CI profile: all bundled reviewers except gator, verbose output, no interactive prompts
+# CI profile: all bundled reviewers except gator and greptile, verbose output, no interactive prompts
 reviewers:
   correctness: true
   architecture: true
@@ -9,6 +9,7 @@ reviewers:
   coderabbit: true
   copilot: true
   codex: true
+  greptile: false   # spends Greptile credits on every run
   gator: false
 
 severity:

@@ -13,7 +13,7 @@ review/                  Plugin directory (distributable, all harnesses)
   skills/                Command shims (Claude Code and Codex)
   opencode/              OpenCode integration (commands + install)
   core/                  Harness-agnostic review engine
-    reviewers/           Bundled reviewer plugins (6 prompt, 3 command, gator)
+    reviewers/           Bundled reviewer plugins (6 prompt, 4 command, gator)
     agents/              Shared preamble + meta-review prompts
     commands/            Command definitions (review.md, init.md, triage.md, bulk.md)
     schemas/             Finding and reviewer frontmatter schemas

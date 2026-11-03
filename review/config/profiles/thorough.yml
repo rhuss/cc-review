@@ -9,6 +9,7 @@ reviewers:
   coderabbit: true
   copilot: true
   codex: true
+  greptile: true
   gator: false
 
 severity:

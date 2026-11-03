@@ -126,6 +126,7 @@ reviewers:
   # coderabbit: <true when available, else false>
   # copilot: false
   # codex: <true when available, else false>
+  # greptile: false
   # gator: false
   # accessibility: true       (a project reviewer)
 

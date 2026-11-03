@@ -1,0 +1,52 @@
+{
+  "summary": "Adds a retry loop and a temp directory helper.",
+  "confidence": 3,
+  "confidenceReasoning": "Fix the temp path before merging.",
+  "securitySummary": null,
+  "instructions": null,
+  "effort": "base",
+  "comments": [
+    {
+      "id": "1000-0",
+      "path": "src/a.sh",
+      "startLine": 10,
+      "endLine": 12,
+      "side": "new",
+      "severity": "P1",
+      "securityIssue": true,
+      "category": "comment",
+      "body": "**Predictable temp path**\n\nThe PID-based path can be pre-created by another user. Use mktemp -d.",
+      "verifiedEvidence": null,
+      "suggestion": "tmp=\"$(mktemp -d)\"",
+      "hunk": { "header": "@@ -8,3 +8,6 @@", "oldRange": { "start": 8, "lines": 3 }, "newRange": { "start": 8, "lines": 6 }, "before": null, "after": null }
+    },
+    {
+      "id": "1000-1",
+      "path": "src/b.sh",
+      "startLine": 210,
+      "endLine": 210,
+      "side": "new",
+      "severity": "P2",
+      "securityIssue": false,
+      "category": "comment",
+      "body": "**Retry loop never backs off**\n\nThe loop retries immediately and can hammer the API.",
+      "verifiedEvidence": null,
+      "suggestion": null,
+      "hunk": { "header": "@@ -200,4 +205,9 @@", "oldRange": { "start": 200, "lines": 4 }, "newRange": { "start": 205, "lines": 9 }, "before": null, "after": null }
+    },
+    {
+      "id": "1000-2",
+      "path": "src/c.sh",
+      "startLine": 40,
+      "endLine": 42,
+      "side": "old",
+      "severity": "P0",
+      "securityIssue": false,
+      "category": "comment",
+      "body": "**Removed lock release**\n\nThe deleted lines released the lock on error paths.",
+      "verifiedEvidence": null,
+      "suggestion": "",
+      "hunk": { "header": "@@ -38,6 +35,2 @@", "oldRange": { "start": 38, "lines": 6 }, "newRange": { "start": 35, "lines": 2 }, "before": null, "after": null }
+    }
+  ]
+}

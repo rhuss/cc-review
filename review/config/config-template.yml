@@ -10,7 +10,7 @@
 # without a key uses the `enabled` default from its own frontmatter; these
 # defaults set no key, so that frontmatter default (and the `enabled` value of
 # a user or project override) applies. Bundled defaults: every reviewer is
-# enabled except copilot and gator.
+# enabled except copilot, gator, and greptile.
 # The legacy keys agents.* and external_tools.* still work but are deprecated.
 #
 # reviewers:
