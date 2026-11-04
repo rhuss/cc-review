@@ -464,6 +464,7 @@ For each bot thread, match the bot author against known profiles.
 | `coderabbitai[bot]` | Yes | No |
 | `copilot[bot]` | No | Yes |
 | `devin-ai-integration[bot]` | No | Yes |
+| `greptile-apps[bot]` | No | Yes |
 
 **Config overrides**: Read bot profile overrides from the merged config (which respects --config, --profile, and the full resolution chain):
 

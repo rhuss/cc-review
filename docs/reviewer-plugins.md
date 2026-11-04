@@ -193,7 +193,7 @@ exec jq -s 'map({file: .path, line, severity: .level, description: .message, rat
 
 `{files}` expands to the changed paths, each shell-quoted; do not put it inside quotes in `invoke`. A path starting with `-` is passed as `./-...`, and a `--` before `{files}` keeps tools from reading paths as options.
 
-The bundled `copilot` and `codex` reviewers in `review/core/reviewers/` are command reviewers using the `delimited` format, and `coderabbit/` is a directory-form command reviewer with a `parser` script for the CLI's JSON-lines output; read them as further examples.
+The bundled `copilot` and `codex` reviewers in `review/core/reviewers/` are command reviewers using the `delimited` format, `coderabbit/` is a directory-form command reviewer with a `parser` script for the CLI's JSON-lines output, and `greptile/` uses a `parser` script for a single JSON object; read them as further examples.
 
 Discovery needs `jq` 1.6 or newer, mikefarah `yq` 4.18 or newer, and `awk`; it stops with an error naming the missing or wrong tool.
 

@@ -9,7 +9,7 @@ cc-review dispatches a set of specialized reviewers against your code changes, m
 - **6 built-in review agents**: Correctness, Architecture & Idioms, Security, Production Readiness, Test Quality, Goal Alignment
 - **Pluggable reviewers**: add your own reviewer by dropping one markdown file into `.cc-review/reviewers/`; no core changes needed. See [docs/reviewer-plugins.md](docs/reviewer-plugins.md)
 - **Autonomous fix loop**: automatically applies fixes for Critical/Important findings, re-reviews, and repeats (up to 3 rounds by default)
-- **External tool integration**: CodeRabbit, GitHub Copilot CLI, and Codex CLI run as command reviewers; their findings are merged and deduplicated with agent findings
+- **External tool integration**: CodeRabbit, GitHub Copilot CLI, Codex CLI, and Greptile CLI run as command reviewers; their findings are merged and deduplicated with agent findings
 - **Gator reviewer (opt-in)**: a pragmatic principal-engineer review persona ported from NVIDIA OpenShell, with an evidence contract for every blocking finding
 - **PR comment triage**: classify and handle bot review comments (CodeRabbit, Copilot, Devin) and human reviewer feedback
 - **Repository inbox**: see relevant PRs, issues, and Discussions grouped by who acts next, with evidence and suggested actions
@@ -280,6 +280,7 @@ reviewers:                # one key per discovered reviewer; omit a key to use t
   coderabbit: true        # command reviewer (CodeRabbit CLI)
   copilot: false          # command reviewer (Copilot CLI)
   codex: true             # command reviewer (Codex CLI)
+  greptile: false         # command reviewer (Greptile CLI, spends credits)
   gator: false            # opt-in principal-engineer reviewer
 
 test:
@@ -336,7 +337,7 @@ review/                  Plugin directory (distributable)
   skills/                Command shims (Claude Code and Codex)
   opencode/              OpenCode commands + install script
   core/                  Harness-agnostic review engine
-    reviewers/           Bundled reviewer plugins (6 prompt, 3 command, gator)
+    reviewers/           Bundled reviewer plugins (6 prompt, 4 command, gator)
     agents/              Shared preamble + meta-review critics (skeptic, calibrator)
     commands/            Command definitions (review.md, init.md, triage.md)
     scripts/             Shell utilities (reviewer discovery, config resolution, platform detection)
@@ -373,6 +374,7 @@ A higher layer replaces a lower one by name, except that a project reviewer edit
 | CodeRabbit | command | on | CodeRabbit CLI findings |
 | Copilot | command | off | GitHub Copilot CLI findings |
 | Codex | command | on | Codex CLI findings |
+| Greptile | command | off | Greptile CLI findings (needs the repository connected to Greptile; each run spends credits) |
 | Gator | prompt | off | Principal-engineer review (pragmatism, user empathy, security) with an evidence contract; ported from NVIDIA OpenShell |
 
 All prompt reviewers share a common preamble that enforces anti-sycophancy, confidence scoring (minimum 70, or 50 for Critical), structured output, and spec awareness.

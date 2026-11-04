@@ -183,7 +183,7 @@ test_discovery_exit_code_and_shape() {
   assert_contains "old jq version is reported" "$out" "found: jq-1.5"
   # CDPATH must not change the scanned directory
   out="$(cd "$ROOT" && CDPATH=".:/tmp" TMPDIR="$TEST_TMP" bash "$DISCOVER" --core-dir review/core --user-dir "$TEST_TMP/none" --project-dir "$TEST_TMP/none" --skip-detection 2>/dev/null | jq 'length')"
-  assert_eq "CDPATH does not hide the bundled reviewers" "10" "$out"
+  assert_eq "CDPATH does not hide the bundled reviewers" "11" "$out"
 
   local out
   out="$(bash "$DISCOVER" --user-dir "$FIXTURES/user" 2>&1)"
@@ -538,11 +538,11 @@ test_bundled_reviewers_discovery() {
   discover --core-dir "$ROOT/review/core" --project-dir "$TEST_TMP/empty-project" --user-dir "$TEST_TMP/empty-user" --skip-detection
   assert_eq "bundled discovery exit 0" "0" "$DISCOVERY_EXIT"
   assert_eq "no warnings for the bundled set" "" "$DISCOVERY_STDERR"
-  assert_json "ten bundled reviewers" "$DISCOVERY_JSON" 'length' "10"
+  assert_json "eleven bundled reviewers" "$DISCOVERY_JSON" 'length' "11"
   assert_json "all bundled layer" "$DISCOVERY_JSON" '[.[] | .layer] | unique | join(",")' "bundled"
   assert_json "none invalid" "$DISCOVERY_JSON" '[.[] | select(.status == "invalid")] | length' "0"
   assert_json "six prompt reviewers plus gator" "$DISCOVERY_JSON" '[.[] | select(.kind == "prompt") | .name] | sort | join(",")' "architecture,correctness,gator,goal-alignment,production,security,test-quality"
-  assert_json "three command reviewers" "$DISCOVERY_JSON" '[.[] | select(.kind == "command") | .name] | sort | join(",")' "coderabbit,codex,copilot"
+  assert_json "four command reviewers" "$DISCOVERY_JSON" '[.[] | select(.kind == "command") | .name] | sort | join(",")' "coderabbit,codex,copilot,greptile"
   assert_json "goal-alignment requires pr" "$(entry goal-alignment)" '.status + ":" + .reason' "skipped:requires: pr"
   assert_json "goal-alignment metadata" "$(entry goal-alignment)" '(.requires | join(",")) + "|" + (.context | join(",")) + "|" + .dedup' "pr|goals|isolated"
   assert_json "production category" "$(entry production)" '.category' "production-readiness"
@@ -592,6 +592,33 @@ test_bundled_reviewers_discovery() {
     '[.command.detect, (.command.timeout_seconds | tostring), .command.output.format, .command.output.delimiter] | join("|")' \
     "command -v copilot|600|delimited|### FINDING"
   assert_contains "copilot invoke asks for the diff against the base branch" "$(entry copilot | jq -r '.command.invoke')" 'copilot -s -p "Review the git diff between {base_branch} and HEAD'
+
+  # Greptile spends credits per run, so it is opt-in.
+  assert_json "greptile disabled by default" "$(entry greptile)" '.enabled' "false"
+  assert_json "greptile detection, invocation, timeout" "$(entry greptile)" \
+    '[.command.detect, .command.auth_check, .command.invoke, (.command.timeout_seconds | tostring)] | join("|")' \
+    "command -v greptile|greptile whoami >/dev/null && greptile init --json >/dev/null|greptile review --json --agent -b {base_branch}|540"
+  assert_json "greptile severity map" "$(entry greptile)" '.severity_map | to_entries | map(.key + "=" + .value) | join(",")' "P0=Critical,P1=Important,P2=Minor,P3=Notable"
+  assert_json "greptile uses a parser in directory form" "$(entry greptile)" '.command.output.format + ":" + (.command.output.parser_path | endswith("/greptile/parse.sh") | tostring)' "parser:true"
+  local gt_parser gt_out
+  gt_parser="$(entry greptile | jq -r '.command.output.parser_path')"
+  gt_out="$("$gt_parser" < "$ROOT/tests/fixtures/greptile/review-sample.json")"
+  assert_json "greptile parser keeps every comment" "$gt_out" 'length' "3"
+  assert_json "greptile parser extracts a line range" "$gt_out" '.[0] | .file + ":" + (.line | tostring) + "-" + (.line_end | tostring) + ":" + .severity' "src/a.sh:10-12:P1"
+  assert_json "greptile parser description is the title without bold markers" "$gt_out" '.[0].description' "Predictable temp path"
+  assert_json "greptile parser rationale is the whole body" "$gt_out" '.[0].rationale | startswith("**Predictable temp path**") and endswith("Use mktemp -d.")' "true"
+  assert_json "greptile parser maps a suggestion to fix" "$gt_out" '.[0].fix' 'tmp="$(mktemp -d)"'
+  assert_json "greptile parser omits fix for null or empty suggestions" "$gt_out" '[.[1], .[2] | has("fix")] | any' "false"
+  assert_json "greptile parser anchors old-side comments at the new hunk start" "$gt_out" '.[2] | (.line | tostring) + "-" + (.line_end | tostring)' "35-35"
+  assert_json "greptile parser sets confidence 75" "$gt_out" 'all(.confidence == 75)' "true"
+  assert_eq "greptile parser emits [] for a clean run" "[]" "$(printf '{"summary":"ok","comments":[]}' | "$gt_parser")"
+  printf '' | "$gt_parser" >/dev/null 2>&1; rc=$?
+  assert_eq "greptile parser fails on empty output" "1" "$rc"
+  printf '{"error":"not connected"}' | "$gt_parser" >/dev/null 2>&1; rc=$?
+  assert_eq "greptile parser fails without a comments array" "1" "$rc"
+  printf '{"comments":[]}{"comments":[]}' | "$gt_parser" >/dev/null 2>&1; rc=$?
+  assert_eq "greptile parser fails on more than one object" "1" "$rc"
+  assert_eq "greptile native severities map" "Critical|Important|Minor" "$(map_severity "$(entry greptile)" P0)|$(map_severity "$(entry greptile)" P1)|$(map_severity "$(entry greptile)" P2)"
 
   local g
   g="$(entry gator)"
@@ -656,10 +683,10 @@ test_apply_cli_selection_on_bundled_set() {
   assert_contains "--only correctness --no-correctness exit 1" "$out" "rc=1"
 
   out="$( (apply_cli_selection "$DISCOVERY_JSON" "nope" "" "") 2>&1; echo "rc=$?")"
-  assert_contains "--only nope lists discovered names" "$out" "architecture, correctness, production, security, test-quality, gator, codex, copilot, coderabbit, goal-alignment"
+  assert_contains "--only nope lists discovered names" "$out" "architecture, correctness, production, security, test-quality, gator, codex, copilot, coderabbit, greptile, goal-alignment"
 
   out="$(apply_cli_selection "$DISCOVERY_JSON" "" "" "off" | jq -r '[.[] | select(.status == "disabled") | .name] | sort | join(",")')"
-  assert_eq "external off disables coderabbit, codex, copilot only" "coderabbit,codex,copilot" "$out"
+  assert_eq "external off disables coderabbit, codex, copilot, greptile only" "coderabbit,codex,copilot,greptile" "$out"
   out="$(apply_cli_selection "$DISCOVERY_JSON" "" "" "off" | jq -r '[.[] | select(.kind == "prompt" and .status == "ready") | .name] | length')"
   assert_eq "external off leaves prompt reviewers ready" "6" "$out"
   assert_json "goal-alignment stays skipped under --only" "$(apply_cli_selection "$DISCOVERY_JSON" "goal-alignment" "" "")" '.[] | select(.name == "goal-alignment") | .status' "skipped"
@@ -804,7 +831,7 @@ test_config_template_and_profiles_use_reviewers_keys() {
     assert_json "$(basename "$profile"): no agents key" "$merged" 'has("agents")' "false"
     assert_json "$(basename "$profile"): no external_tools key" "$merged" 'has("external_tools")' "false"
     assert_json "$(basename "$profile"): every reviewers value boolean" "$merged" '.reviewers | to_entries | all(.value | type == "boolean")' "true"
-    assert_json "$(basename "$profile"): ten bundled reviewers listed" "$merged" '.reviewers | keys | length' "10"
+    assert_json "$(basename "$profile"): eleven bundled reviewers listed" "$merged" '.reviewers | keys | length' "11"
   done
   # The template sets no reviewers keys, so the frontmatter `enabled` default
   # (FR-013) and the `enabled` of a user or project override (FR-009) apply.
@@ -814,7 +841,7 @@ test_config_template_and_profiles_use_reviewers_keys() {
   # off, every other bundled reviewer on.
   mkdir -p "$TEST_TMP/none"
   discover --core-dir "$ROOT/review/core" --user-dir "$TEST_TMP/none" --project-dir "$TEST_TMP/none" --skip-detection
-  assert_json "frontmatter defaults: copilot and gator disabled" "$DISCOVERY_JSON" '[.[] | select(.enabled == false) | .name] | sort | join(",")' "copilot,gator"
+  assert_json "frontmatter defaults: copilot, gator and greptile disabled" "$DISCOVERY_JSON" '[.[] | select(.enabled == false) | .name] | sort | join(",")' "copilot,gator,greptile"
   assert_json "frontmatter defaults: the other eight enabled" "$DISCOVERY_JSON" '[.[] | select(.enabled == true)] | length' "8"
   discover_cleanup
 }
@@ -1149,7 +1176,7 @@ test_review_command_has_no_reviewer_names() {
     hits="$hits$(grep -n -w -- "$name" "$ROOT/review/core/commands/review.md" || true)"
   done
   assert_eq "review.md names no bundled reviewer" "" "$hits"
-  assert_eq "ten bundled reviewer names were checked" "10" "$(ls "$ROOT"/review/core/reviewers/*.md "$ROOT"/review/core/reviewers/*/reviewer.md | wc -l | tr -d ' ')"
+  assert_eq "eleven bundled reviewer names were checked" "11" "$(ls "$ROOT"/review/core/reviewers/*.md "$ROOT"/review/core/reviewers/*/reviewer.md | wc -l | tr -d ' ')"
 }
 
 # ---------------------------------------------------------------------------
@@ -1458,7 +1485,7 @@ test_review_discovery_block_under_zsh() {
   git -C "$repo" init -q
   out="$(cd "$repo" && HOME="$TEST_TMP/home" TMPDIR="$TEST_TMP/tmp" CORE_DIR="$ROOT/review/core" PR_NUMBER=3 SPEC_FLAG="" \
     ALL_CHANGED_FILES="src/a.go" VERBOSITY=normal zsh -c '. "$1"; printf "%s" "$REVIEWERS_JSON" > "$2"; rm -rf "$REVIEW_RUN_DIR"' _ "$block" "$TEST_TMP/zsh.json" 2>&1)"
-  assert_json "zsh: discovery succeeds with a PR number" "$(cat "$TEST_TMP/zsh.json" 2>/dev/null || echo null)" 'length' "10"
+  assert_json "zsh: discovery succeeds with a PR number" "$(cat "$TEST_TMP/zsh.json" 2>/dev/null || echo null)" 'length' "11"
   assert_json "zsh: the PR number reached discovery (requires: pr satisfied)" "$(cat "$TEST_TMP/zsh.json" 2>/dev/null || echo null)" '.[] | select(.name == "goal-alignment") | .status' "ready"
   assert_not_contains "zsh: no unknown-argument error" "$out" "unknown argument"
   out="$(cd "$repo" && HOME="$TEST_TMP/home" CC_REVIEW_CORE_DIR="$ROOT/review/core" CONFIG_FLAG="" PROFILE_FLAG=quick zsh -c '

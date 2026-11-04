@@ -222,6 +222,7 @@ Default bot profiles:
 | `coderabbitai[bot]` | `self_resolves: true` (CodeRabbit resolves its own threads when you push fixes) |
 | `copilot[bot]` | `auto_resolve: true` (auto-apply and resolve) |
 | `devin-ai-integration[bot]` | `auto_resolve: true` (auto-apply and resolve) |
+| `greptile-apps[bot]` | `auto_resolve: true` (auto-apply and resolve) |
 
 Human comments are presented for interactive review. Out-of-scope ideas can be captured to an idea inbox file:
 
@@ -351,7 +352,8 @@ The adapter could not locate the core directory. Ensure one of these paths exist
 
 Command reviewers wrap external CLIs and run the plugin's `detect` check on your PATH. If a tool is installed but reported as not available:
 
-- Verify with `which coderabbit`, `which copilot`, or `which codex`
+- Verify with `which coderabbit`, `which copilot`, `which codex`, or `which greptile`
+- Greptile also reports `skipped (not authenticated)` when the repository is not connected to a Greptile organization; run `greptile init` to connect it
 - A reviewer turned off in config shows `disabled`, not `skipped`
 - `skipped (not authenticated)` means the tool's `auth_check` failed; the text after the colon, when present, is the last line the check printed (a network error looks different from a missing login). Log in to the tool first
 - `detection timed out` means the check did not answer within 15 seconds; the tool's state is unknown
