@@ -8,3 +8,7 @@
 ## Overview
 
 - [cc-review Guide](README.md)
+
+## Using cc-review
+
+- [Install cc-review](using/install.md)

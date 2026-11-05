@@ -17,3 +17,19 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/using/install.md
+    require:
+      - '^#'
+      - 'jq'
+      - 'yq'
+      - '\bgh\b'
+      - 'Python'
+      - 'install\.sh'
+      - '(?m)^Check:'
+    require_order:
+      - 'marketplace add'
+      - 'plugin install'
+      - 'install\.sh'
+    forbid:
+      - '\u2014'
+      - '\u2013'
