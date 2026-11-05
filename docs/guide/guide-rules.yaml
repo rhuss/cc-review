@@ -135,3 +135,12 @@ rules:
       - '\u2014'
       - '\u2013'
       - '/Users/'
+  - glob: docs/extending/prompt-reviewer.md
+    require:
+      - 'kind: prompt'
+      - 'frontmatter'
+      - '--only'
+      - '(?m)^Check:'
+    forbid:
+      - '\u2014'
+      - '\u2013'

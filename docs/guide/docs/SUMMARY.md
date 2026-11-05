@@ -25,3 +25,8 @@
 - [Meta-review](how-it-works/meta-review.md)
 - [Gate and fix](how-it-works/gate-and-fix.md)
 - [Measured results](how-it-works/results.md)
+
+## Extending cc-review
+
+- [Extending cc-review](extending/index.md)
+- [Write a prompt reviewer](extending/prompt-reviewer.md)
