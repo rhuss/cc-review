@@ -5,3 +5,5 @@ sources:
   repo: rhuss/cc-review
   ref: v1.4.0
   commit: 37efe889dec45f580b8f33307790701d71cab74a
+  attributes:
+    version: "1.4.0"
