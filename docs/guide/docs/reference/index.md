@@ -10,3 +10,4 @@ The pages:
 
 - [CLI reference](cli.md) lists every flag for the four cc-review commands and what each bundled profile sets.
 - [Configuration and finding schema](config-and-schema.md) lists the configuration keys, the order its layers resolve in, and the fields of a finding.
+- [Invoking cc-review across harnesses](invocation.md) shows how to call a command on Claude Code, Codex, and OpenCode.

@@ -198,10 +198,22 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/reference/invocation.md
+    require:
+      - '/cc-review:review'
+      - '\$review'
+      - '/review'
+      - 'Claude Code'
+      - 'Codex'
+      - 'OpenCode'
+    forbid:
+      - '\u2014'
+      - '\u2013'
   - glob: docs/reference/index.md
     require:
       - '\]\(cli\.md\)'
       - '\]\(config-and-schema\.md\)'
+      - '\]\(invocation\.md\)'
     forbid:
       - '\u2014'
       - '\u2013'
