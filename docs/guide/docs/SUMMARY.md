@@ -16,3 +16,8 @@
 - [Review your changes](using/review.md)
 - [Triage pull request comments](using/triage.md)
 - [Inbox and issue assessment](using/inbox-and-issue.md)
+
+## How it works
+
+- [How it works](how-it-works/index.md)
+- [The review pipeline](how-it-works/pipeline.md)

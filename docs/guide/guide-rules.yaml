@@ -74,3 +74,15 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/how-it-works/pipeline.md
+    require:
+      - 'assets/diagrams/review-pipeline\.svg'
+      - '[Dd]iscover'
+      - '[Dd]ispatch'
+      - '[Mm]erge'
+      - '[Mm]eta-review'
+      - '[Gg]ate'
+      - '[Rr]eport'
+    forbid:
+      - '\u2014'
+      - '\u2013'
