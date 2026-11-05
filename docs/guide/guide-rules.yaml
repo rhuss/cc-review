@@ -198,3 +198,10 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/reference/index.md
+    require:
+      - '\]\(cli\.md\)'
+      - '\]\(config-and-schema\.md\)'
+    forbid:
+      - '\u2014'
+      - '\u2013'
