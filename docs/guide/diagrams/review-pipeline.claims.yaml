@@ -1,6 +1,6 @@
 diagram: review-pipeline
 claims:
-  # --- box labels (one per stage) ---
+  # --- box labels (one per stage, left to right) ---
   - id: discover
     kind: label
     elements: [box_discover_t]
@@ -32,12 +32,12 @@ claims:
     text: "Step 7 writes the findings report."
     sources: ["cc-review:review/core/commands/review.md:1051-1138"]
 
-  # --- forward arrows (stage order) ---
+  # --- forward arrows (stage order, linear left to right; no return arrow) ---
   - id: f_discover_dispatch
     kind: connects
     elements: [a_f1]
     text: "After discovery, the ready set (built in Step 2) is dispatched in Step 3."
-    sources: ["cc-review:review/core/commands/review.md:226-353", "cc-review:review/core/commands/review.md:632-643"]
+    sources: ["cc-review:review/core/commands/review.md:226-353", "cc-review:review/core/commands/review.md:632-770"]
   - id: f_dispatch_merge
     kind: connects
     elements: [a_f2]
@@ -59,14 +59,7 @@ claims:
     text: "After the gate and fix loop (Steps 5 and 6), Step 7 writes the findings report."
     sources: ["cc-review:review/core/commands/review.md:916-1050", "cc-review:review/core/commands/review.md:1051-1138"]
 
-  # --- return arrow (fix loop) + its label ---
-  - id: r_gate_dispatch
-    kind: connects
-    elements: [a_return, a_return_lbl]
-    text: "The fix loop applies fixes, runs the test suite, then re-dispatches the same reviewer sets on the modified files for up to max_fix_rounds (default 3)."
-    sources: ["cc-review:review/core/commands/review.md:995-1016"]
-
   # --- legend (no source) ---
   - id: legend
     kind: legend
-    elements: [lg_title, lg_t1, lg_t2, lg_t3, lg_t4]
+    elements: [lg_title, lg_t1, lg_t2, lg_t3]
