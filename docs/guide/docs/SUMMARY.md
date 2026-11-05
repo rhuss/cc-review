@@ -31,3 +31,4 @@
 - [Extending cc-review](extending/index.md)
 - [Write a prompt reviewer](extending/prompt-reviewer.md)
 - [Write a command reviewer](extending/command-reviewer.md)
+- [Trust and configuration](extending/trust-and-config.md)

@@ -154,3 +154,12 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/extending/trust-and-config.md
+    require:
+      - 'trusted-reviewers'
+      - 'sha256'
+      - '--no-'
+      - 'reviewers:'
+    forbid:
+      - '\u2014'
+      - '\u2013'
