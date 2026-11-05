@@ -2,6 +2,7 @@
 
 <!-- Sources:
 cc-review:README.md:254-307
+cc-review:review/config/config-template.yml:1-73
 cc-review:review/core/scripts/resolve-config.sh:117-222
 cc-review:review/core/schemas/finding.schema.json:40-127
 cc-review:review/core/schemas/reviewer.schema.json:40-54
@@ -37,6 +38,12 @@ triage:
       self_resolves: true
       auto_resolve: false
     - login: "copilot[bot]"
+      self_resolves: false
+      auto_resolve: true
+    - login: "devin-ai-integration[bot]"
+      self_resolves: false
+      auto_resolve: true
+    - login: "greptile-apps[bot]"
       self_resolves: false
       auto_resolve: true
   codecov:
@@ -87,7 +94,7 @@ Each key under `reviewers` enables (`true`) or disables (`false`) one discovered
 
 | Key | Template value | Notes |
 |-----|----------------|-------|
-| `triage.bot_profiles` | two entries | The template lists `coderabbitai[bot]` (`self_resolves: true`, `auto_resolve: false`) and `copilot[bot]` (`self_resolves: false`, `auto_resolve: true`). |
+| `triage.bot_profiles` | four entries | The template lists `coderabbitai[bot]` (`self_resolves: true`, `auto_resolve: false`), `copilot[bot]`, `devin-ai-integration[bot]`, and `greptile-apps[bot]` (each `self_resolves: false`, `auto_resolve: true`). |
 | `triage.codecov.patch_threshold` | `80` | |
 | `triage.codecov.auto_remediate` | `true` | |
 
