@@ -86,3 +86,13 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/how-it-works/reviewers.md
+    require:
+      - 'Correctness'
+      - 'Security'
+      - '[Ss]tay in your lane'
+      - 'confidence'
+      - 'gator'
+    forbid:
+      - '\u2014'
+      - '\u2013'
