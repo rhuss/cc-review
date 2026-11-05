@@ -4,4 +4,16 @@
 #   forbid:         no regex may match anywhere in each file
 #   require_order:  the first matches of these regexes must appear in this order
 # Page tasks add rules for their page before writing it, so the check fails first.
-rules: []
+# The forbid patterns use Python regex unicode escapes (U+2014 em dash and
+# U+2013 en dash) so this rules file never carries the characters it bans.
+rules:
+  - glob: docs/README.md
+    require:
+      - '\]\(using/index\.md\)'
+      - '\]\(extending/index\.md\)'
+      - '\]\(how-it-works/index\.md\)'
+      - 'assets/diagrams/core-and-layers\.svg'
+      - 'guide:attr cc-review-commit-short'
+    forbid:
+      - '\u2014'
+      - '\u2013'
