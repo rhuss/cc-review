@@ -19,7 +19,7 @@ cc-review:review/core/commands/issue.md:79
 cc-review:review/core/commands/issue.md:81
 -->
 
-A repository collects pull requests, issues, and Discussions from many people, and not every one of them is yours to act on. Two commands help you decide where your attention goes before you start reviewing or writing code. `/inbox` surveys one repository and groups the open items by who needs to act next. `/issue` takes a single issue and separates its concrete need, its fit with the project, and whether the work is justified, then drafts a reply you can send. Both commands are read-only. Neither posts a comment, edits code, or changes an issue, so you can run either one to understand a situation without touching it.
+A repository collects pull requests, issues, and Discussions from many people, and not every one of them is yours to act on. Two commands help you decide where your attention goes before you start reviewing or writing code. `/cc-review:inbox` surveys one repository and groups the open items by who needs to act next. `/cc-review:issue` takes a single issue and separates its concrete need, its fit with the project, and whether the work is justified, then drafts a reply you can send. Both commands are read-only. Neither posts a comment, edits code, or changes an issue, so you can run either one to understand a situation without touching it.
 
 Both commands need Python 3.9 or newer, `jq`, and an authenticated `gh` for the repository you work with.
 
@@ -37,7 +37,7 @@ One repository gathers pull requests, issues, and Discussions from everyone who 
 1. From a checkout of the repository, run the command with no arguments:
 
    ```
-   /inbox
+   /cc-review:inbox
    ```
 
 2. Read the report. It sorts every item into **Needs your attention**, **Waiting on others**, and **No current action**. Each entry says why it appears, links to the activity that supports it, and suggests a next step. A pull request can suggest both a review and a triage pass, because one does not clear the other.
@@ -56,19 +56,19 @@ By default the inbox reports all three item types: open pull requests and issues
 For example, this reports only pull requests, up to 20 of them, updated since the start of October:
 
 ```
-/inbox --type pr --limit 20 --since 2026-10-01
+/cc-review:inbox --type pr --limit 20 --since 2026-10-01
 ```
 
 ## Assess a single issue
 
-Before you commit time to an issue, you want to know whether it describes a real need, whether that need fits the project, and whether building it is justified. `/issue` reads the issue conversation and any matching project guidance, makes those three judgments separately, and gives you both the reasoning and a reply you can post.
+Before you commit time to an issue, you want to know whether it describes a real need, whether that need fits the project, and whether building it is justified. `/cc-review:issue` reads the issue conversation and any matching project guidance, makes those three judgments separately, and gives you both the reasoning and a reply you can post.
 
 Assessment works on GitHub.com issues only, the target must be an issue (pull requests are rejected), and you name it explicitly.
 
 1. Run the command with the issue number:
 
    ```
-   /issue 42
+   /cc-review:issue 42
    ```
 
    You can also pass a full issue URL, or add `--repo owner/name` to assess an issue in a repository you are not checked out in.

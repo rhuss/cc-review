@@ -14,7 +14,7 @@ cc-review:review/config/profiles/thorough.yml:1-26
 cc-review:review/config/profiles/ci.yml:1-30
 -->
 
-A review before you push catches the Critical and Important issues while the change is still on your machine, so you hand reviewers a cleaner pull request. The `/review` command dispatches every enabled reviewer at your changes, merges the findings, and runs the fix loop over the issues worth acting on. This page covers how to start a review, how to narrow it, and how to read what it reports. For the mechanism behind each step, see [How it works](../how-it-works/index.md).
+A review before you push catches the Critical and Important issues while the change is still on your machine, so you hand reviewers a cleaner pull request. The `/cc-review:review` command dispatches every enabled reviewer at your changes, merges the findings, and runs the fix loop over the issues worth acting on. This page covers how to start a review, how to narrow it, and how to read what it reports. For the mechanism behind each step, see [How it works](../how-it-works/index.md).
 
 ## Review the current branch
 
@@ -23,7 +23,7 @@ Start here when the change lives on your working branch and you have not opened 
 1. Make sure your branch holds the changes you want reviewed, then run:
 
    ```
-   /review
+   /cc-review:review
    ```
 
    This reviews all changed files on the current branch against main, dispatches every enabled reviewer, merges their findings, and runs the fix loop.
@@ -44,7 +44,7 @@ Run a review against an open pull request when the change is already pushed, for
 1. Review the diff of a specific PR by number:
 
    ```
-   /review --pr 42
+   /cc-review:review --pr 42
    ```
 
 2. When you run `--pr` from a branch other than the PR's own, cc-review checks the PR out into a separate worktree under `.cc-review/pr-worktrees/` and reviews it there, so your current working tree stays as it is. You do not need to switch branches first.
@@ -54,7 +54,7 @@ Run a review against an open pull request when the change is already pushed, for
 cc-review ships three profile presets you select with `--profile`. Each one sets which reviewers run, the confidence threshold, the severities that block the gate, and the number of fix rounds.
 
 ```
-/review --profile thorough
+/cc-review:review --profile thorough
 ```
 
 - **`quick`** runs only the correctness and security reviewers, with no command (external tool) reviewers and a single fix round. Only Critical findings block its gate.
@@ -73,7 +73,7 @@ These flags trim a run when you want a report only, want to leave the external t
 You can combine them. This produces a report only, from the bundled reviewers, with no fixes applied:
 
 ```
-/review --no-fix --no-external
+/cc-review:review --no-fix --no-external
 ```
 
 ## Read the report and the gate
@@ -90,7 +90,7 @@ The gate is the pass-or-fix decision at the end. cc-review counts the findings w
 Run a bulk review to cover more than one pull request in a single pass:
 
 ```
-/review --bulk
+/cc-review:review --bulk
 ```
 
 This reviews the open PRs that request your review, plus the PRs you already reviewed with cc-review that have new commits since. Each PR is analyzed in its own worktree, and at the end you get one table to decide per PR: post the review, apply the suggested fixes, post a short no-findings note, or skip.

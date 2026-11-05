@@ -12,7 +12,7 @@ cc-review:review/core/commands/triage.md:502-546
 cc-review:review/core/commands/triage.md:887-949
 -->
 
-An open pull request collects review comments from bots (CodeRabbit, Copilot, Devin, Greptile) and from human reviewers, and each one needs a reply or a fix. The `/triage` command fetches the PR's review threads, classifies each as bot or human, and then handles them by kind: it works through the bot comments on its own and presents the human comments to you for approval. This page covers how to start a triage pass, how bot and human comments are handled, and why triage drafts replies instead of pushing a fix on your behalf. For the mechanism behind each step, see [How it works](../how-it-works/index.md).
+An open pull request collects review comments from bots (CodeRabbit, Copilot, Devin, Greptile) and from human reviewers, and each one needs a reply or a fix. The `/cc-review:triage` command fetches the PR's review threads, classifies each as bot or human, and then handles them by kind: it works through the bot comments on its own and presents the human comments to you for approval. This page covers how to start a triage pass, how bot and human comments are handled, and why triage drafts replies instead of pushing a fix on your behalf. For the mechanism behind each step, see [How it works](../how-it-works/index.md).
 
 ## Triage the comments on a PR
 
@@ -21,7 +21,7 @@ Start here when a pull request has gathered review comments you want to work thr
 1. From the PR's branch, run:
 
    ```
-   /triage
+   /cc-review:triage
    ```
 
    With no arguments, triage uses the open pull request for your current branch. When your branch has no PR but you have exactly one other open PR in the repository, triage uses that one and tells you which.
@@ -29,7 +29,7 @@ Start here when a pull request has gathered review comments you want to work thr
 2. To target a specific pull request by number, pass `--pr`:
 
    ```
-   /triage --pr 42
+   /cc-review:triage --pr 42
    ```
 
    Triage includes draft PRs, so you can work through comments before the PR is marked ready for review.
@@ -72,7 +72,7 @@ A few flags adjust what a triage pass does:
 
 When Codecov data is available for the PR, triage cross-references it with the bot findings and reports, per file, whether a coverage gap overlaps with an issue a bot already flagged. That overlap strengthens the case for accepting fixes that add error handling or branch coverage.
 
-To triage several of your PRs in one pass, run `/triage --bulk`. On your own PRs it keeps the prepared-fix workflow; for reviewer feedback it prepares exact-thread replies without changing any branch, and leaves answers that still need your judgment pending.
+To triage several of your PRs in one pass, run `/cc-review:triage --bulk`. On your own PRs it keeps the prepared-fix workflow; for reviewer feedback it prepares exact-thread replies without changing any branch, and leaves answers that still need your judgment pending.
 
 > [!NOTE]
 > This page covers the commands you run. For how triage verifies threads and classifies bots, read [How it works](../how-it-works/index.md). For the full flag list, see the [Reference](../reference/index.md).

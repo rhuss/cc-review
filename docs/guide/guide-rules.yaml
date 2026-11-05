@@ -35,7 +35,7 @@ rules:
       - '\u2013'
   - glob: docs/using/review.md
     require:
-      - '/review'
+      - '/cc-review:review'
       - '--pr'
       - 'quick'
       - 'thorough'
@@ -49,7 +49,7 @@ rules:
       - '/Users/'
   - glob: docs/using/triage.md
     require:
-      - '/triage'
+      - '/cc-review:triage'
       - '--pr'
       - 'bot'
       - '(?m)^Check:'
@@ -58,8 +58,8 @@ rules:
       - '\u2013'
   - glob: docs/using/inbox-and-issue.md
     require:
-      - '/inbox'
-      - '/issue'
+      - '/cc-review:inbox'
+      - '/cc-review:issue'
       - 'read-only'
       - '(?m)^Check:'
     forbid:

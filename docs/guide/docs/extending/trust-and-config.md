@@ -75,9 +75,9 @@ Every discovered reviewer runs by default except the ones whose own frontmatter 
 
 2. **Override for one run with flags.** Flags beat config and apply after discovery:
 
-   - `/review --only correctness,security` runs only the named reviewers. `--only` re-enables a config-disabled reviewer, but never a reviewer that discovery skipped or marked invalid.
-   - `/review --no-security` subtracts one reviewer from the run. `--no-<name>` for an invalid reviewer prints a warning and the review continues.
-   - `/review --no-external` drops every external command reviewer at once.
+   - `/cc-review:review --only correctness,security` runs only the named reviewers. `--only` re-enables a config-disabled reviewer, but never a reviewer that discovery skipped or marked invalid.
+   - `/cc-review:review --no-security` subtracts one reviewer from the run. `--no-<name>` for an invalid reviewer prints a warning and the review continues.
+   - `/cc-review:review --no-external` drops every external command reviewer at once.
 
 The resolution order settles conflicts: CLI flags win over `--config`, then `--profile`, then project config, then user config, then the built-in defaults, then each reviewer's own `enabled` default.
 

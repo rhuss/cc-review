@@ -14,6 +14,9 @@ cc-review:review/.claude-plugin/plugin.json:1-20
 
 cc-review ships as one plugin directory (`review/`) that carries a native manifest for each supported harness: Claude Code, Codex, and OpenCode. Each harness reads only its own manifest and ignores the others, so installing the plugin once registers the cc-review commands with the harness you use. Install it in the harness you already run.
 
+> [!NOTE]
+> This guide's command examples use Claude Code syntax (`/cc-review:review`). On Codex use `$review`; on OpenCode use `/review`. See [Invoking cc-review across harnesses](../reference/invocation.md).
+
 ## Prerequisites
 
 cc-review needs a few command-line tools. Install these before you add the plugin:
@@ -33,7 +36,7 @@ claude plugin marketplace add /path/to/cc-review
 claude plugin install cc-review@cc-review-plugin-development
 ```
 
-This registers the local marketplace and installs the plugin. The `/review`, `/triage`, `/inbox`, and `/issue` commands become available immediately.
+This registers the local marketplace and installs the plugin. The `/cc-review:review`, `/cc-review:triage`, `/cc-review:inbox`, and `/cc-review:issue` commands become available immediately.
 
 > [!TIP]
 > From a local clone you can run `make install` instead. It registers the marketplace and installs the plugin in one step.
@@ -78,6 +81,10 @@ specify extension add /path/to/cc-review/speckit
 ```
 
 The spec-kit adapter then passes spec paths, constitution hints, and output locations during the ship pipeline.
+
+## Duplicate command entries
+
+If a harness lists each cc-review command twice, you most likely have more than one copy of the plugin installed. List the installed plugins (`claude plugin list` in Claude Code), uninstall every copy except the current one, then reinstall from your local clone.
 
 > [!NOTE]
 > These steps were verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.

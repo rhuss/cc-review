@@ -14,7 +14,7 @@ Every flag for the four cc-review commands, and what each bundled profile sets. 
 
 ## review
 
-Flags for the `/review` command.
+Flags for the `/cc-review:review` command.
 
 | Flag | Description |
 |------|-------------|
@@ -45,7 +45,7 @@ Flags for the `/review` command.
 
 ## triage
 
-Flags for the `/triage` command.
+Flags for the `/cc-review:triage` command.
 
 | Flag | Description |
 |------|-------------|

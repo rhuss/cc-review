@@ -67,7 +67,7 @@ The steps below build an accessibility reviewer for UI code.
    Report each defect as a finding with the exact element and line.
    ```
 
-4. **Commit the file and run a review.** Discovery picks the reviewer up on the next run, dispatches it alongside the built-ins with the shared preamble prepended, and shows its row in the console summary (here "Accessibility"). Its findings carry `source_agent: accessibility` and `category: accessibility`. Run only your reviewer with `/review --only accessibility`, or turn it off for one run with `/review --no-accessibility`.
+4. **Commit the file and run a review.** Discovery picks the reviewer up on the next run, dispatches it alongside the built-ins with the shared preamble prepended, and shows its row in the console summary (here "Accessibility"). Its findings carry `source_agent: accessibility` and `category: accessibility`. Run only your reviewer with `/cc-review:review --only accessibility`, or turn it off for one run with `/cc-review:review --no-accessibility`.
 
 Check: the file sits in the project reviewer directory that discovery scans, so the next review runs it.
 
