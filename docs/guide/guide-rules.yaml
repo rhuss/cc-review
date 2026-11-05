@@ -43,6 +43,8 @@ rules:
       - 'Critical'
       - 'Important'
       - '(?m)^Check:'
+      - '(?m)^## Fixes and PR ownership'
+      - 'push to'
     forbid:
       - '\u2014'
       - '\u2013'
@@ -53,6 +55,7 @@ rules:
       - '--pr'
       - 'bot'
       - '(?m)^Check:'
+      - 'review\.md#fixes-and-pr-ownership'
     forbid:
       - '\u2014'
       - '\u2013'
@@ -122,6 +125,7 @@ rules:
       - 'Notable'
       - '3'
       - 're-review'
+      - 'push permission'
     forbid:
       - '\u2014'
       - '\u2013'

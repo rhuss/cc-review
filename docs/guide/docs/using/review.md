@@ -9,6 +9,9 @@ cc-review:README.md:151-161
 cc-review:README.md:167-189
 cc-review:README.md:224-236
 cc-review:review/core/commands/review.md:916-938
+cc-review:review/core/commands/review.md:146-181,327
+cc-review:review/core/commands/review.md:970-972
+cc-review:review/core/commands/review.md:1003,1017-1042
 cc-review:review/config/profiles/quick.yml:1-25
 cc-review:review/config/profiles/thorough.yml:1-26
 cc-review:review/config/profiles/ci.yml:1-30
@@ -48,6 +51,12 @@ Run a review against an open pull request when the change is already pushed, for
    ```
 
 2. When you run `--pr` from a branch other than the PR's own, cc-review checks the PR out into a separate worktree under `.cc-review/pr-worktrees/` and reviews it there, so your current working tree stays as it is. You do not need to switch branches first.
+
+## Fixes and PR ownership
+
+The autonomous fix loop applies its edits to the tree under review, but whether those edits reach the pull request depends on your push access: cc-review can push fixes only to a PR you can push to. It offers to apply fixes only when the PR is your own; on another author's PR it offers to post the review and nothing more. When it does fix your own PR, it commits the edits in the PR worktree and pushes them to the PR branch, never with force.
+
+A push can still be refused. You may lack push permission on the branch, as with a fork PR, the branch may have moved since the review started, or the push may fail for another reason. In each case cc-review does not push the fixes and does not post a review, because the findings would then describe code that is not on the PR. It reports the problem in plain words, keeps the fix worktree so the commit is not lost, and tells you the worktree path. The review itself still runs on a PR you do not own, so you can read and post its findings; only the fixes cannot land there.
 
 ## Choose how deep to go
 

@@ -62,6 +62,8 @@ Triage works on comments on your own PR and on reviewer feedback you own on anot
 > [!IMPORTANT]
 > When you triage reviewer feedback you own, triage verifies the current code and the exact feedback thread and drafts a response for your approval. In that role it never commits or pushes a code fix. Author triage, on your own PR, keeps its fix workflow and applies valid bot fixes as described above.
 
+For how the review command's fix loop handles the same question of which PRs it can push to, see [Fixes and PR ownership](review.md#fixes-and-pr-ownership).
+
 ## Add spec context and control coverage fixes
 
 A few flags adjust what a triage pass does:

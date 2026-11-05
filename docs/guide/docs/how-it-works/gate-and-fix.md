@@ -4,6 +4,7 @@
 cc-review:review/core/commands/review.md:916-925
 cc-review:review/core/commands/review.md:997-1001
 cc-review:review/core/commands/review.md:1005-1015
+cc-review:review/core/commands/review.md:1003,1017-1042
 cc-review:README.md:139
 cc-review:README.md:141
 cc-review:README.md:386-390
@@ -30,6 +31,8 @@ Once the edits are staged, cc-review runs the project's test suite if it could d
 cc-review then re-reviews only the files the round changed. It re-dispatches the same reviewers that ran the first time, restricted to the modified files, and reuses the earlier decisions about which reviewers were enabled rather than running discovery again. The new findings are merged with the Minor findings still on the list, and the gate runs once more. If Critical and Important are both at zero, the loop passes and stops early.
 
 If the blocking findings are not cleared, the loop tries again, up to the three-round default. When it reaches that limit with findings still open, the gate-fail result stands and the review reports what remains instead of looping on. The loop exists to clear the issues it can fix automatically, not to force a pass.
+
+The loop applies its edits to the tree under review, but whether those edits reach a pull request depends on push permission. cc-review commits the fixes in the PR worktree and pushes them to the PR branch, but that push can be refused when you lack access, the branch moved since the review started, or it fails for another reason. When that happens, cc-review keeps the fix worktree so the commit is not lost and does not post a review for code that is not on the PR.
 
 ## Follow-up reviews converge
 
