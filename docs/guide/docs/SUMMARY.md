@@ -37,3 +37,4 @@
 
 - [Reference](reference/index.md)
 - [CLI reference](reference/cli.md)
+- [Configuration and finding schema](reference/config-and-schema.md)

@@ -186,3 +186,15 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/reference/config-and-schema.md
+    require:
+      - 'resolution'
+      - '--profile'
+      - 'Critical'
+      - 'Important'
+      - 'Minor'
+      - 'Notable'
+      - 'severity_map'
+    forbid:
+      - '\u2014'
+      - '\u2013'
