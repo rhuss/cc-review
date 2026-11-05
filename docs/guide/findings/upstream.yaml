@@ -1,0 +1,12 @@
+# Upstream findings collected by cc-guide runs; file them with /guide:upstream.
+findings:
+- id: UF-1
+  source: cc-review
+  kind: stale-reference
+  locations:
+  - ref: review/VERSION:1
+    quote: 1.2.0
+  summary: review/VERSION is stale at 1.2.0 while the project ships 1.4.0
+  evidence: review/VERSION:1 reads 1.2.0, but the top-level VERSION, review/.claude-plugin/plugin.json
+    version, and the release tag v1.4.0 all say 1.4.0 at commit 37efe88
+  status: collected
