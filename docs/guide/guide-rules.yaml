@@ -74,6 +74,16 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/how-it-works/index.md
+    require:
+      - '\]\(pipeline\.md\)'
+      - '\]\(reviewers\.md\)'
+      - '\]\(meta-review\.md\)'
+      - '\]\(gate-and-fix\.md\)'
+      - '\]\(results\.md\)'
+    forbid:
+      - '\u2014'
+      - '\u2013'
   - glob: docs/how-it-works/pipeline.md
     require:
       - 'assets/diagrams/review-pipeline\.svg'
