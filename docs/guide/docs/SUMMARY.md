@@ -23,3 +23,4 @@
 - [The review pipeline](how-it-works/pipeline.md)
 - [Reviewers](how-it-works/reviewers.md)
 - [Meta-review](how-it-works/meta-review.md)
+- [Gate and fix](how-it-works/gate-and-fix.md)

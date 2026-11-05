@@ -105,3 +105,13 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/how-it-works/gate-and-fix.md
+    require:
+      - 'Critical'
+      - 'Important'
+      - 'Notable'
+      - '3'
+      - 're-review'
+    forbid:
+      - '\u2014'
+      - '\u2013'
