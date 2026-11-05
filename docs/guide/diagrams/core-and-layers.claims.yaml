@@ -1,0 +1,81 @@
+diagram: core-and-layers
+claims:
+  # --- harness shim box labels (user blue) ---
+  - id: shim-claude
+    kind: label
+    elements: [box_claude_t]
+    text: "Claude Code reads the cc-review distributable through its own Claude Code plugin manifest."
+    sources: ["cc-review:review/.claude-plugin/plugin.json:1-20", "cc-review:README.md:331"]
+  - id: shim-codex
+    kind: label
+    elements: [box_codex_t]
+    text: "Codex reads the same distributable through its own Codex plugin manifest."
+    sources: ["cc-review:review/.codex-plugin/plugin.json:1-11", "cc-review:README.md:331"]
+  - id: shim-opencode
+    kind: label
+    elements: [box_opencode_t]
+    text: "OpenCode installs the same commands through the opencode install script."
+    sources: ["cc-review:review/opencode/install.sh:1-32", "cc-review:README.md:338"]
+
+  # --- core box label (platform gray) ---
+  - id: core
+    kind: label
+    elements: [box_core_t]
+    text: "One harness-agnostic core holds the portable review engine; each harness reads its own manifest and delegates to this shared core."
+    sources: ["cc-review:README.md:329-339", "cc-review:README.md:350"]
+
+  # --- reviewer discovery layer box labels (governance orange) ---
+  - id: layer-project
+    kind: label
+    elements: [box_project_t]
+    text: "The project layer .cc-review/reviewers/ has the highest precedence."
+    sources: ["cc-review:README.md:356-358", "cc-review:review/core/scripts/discover-reviewers.sh:719"]
+  - id: layer-user
+    kind: label
+    elements: [box_user_t]
+    text: "The user layer ~/.cc-review/reviewers/ has middle precedence."
+    sources: ["cc-review:README.md:356-359", "cc-review:review/core/scripts/discover-reviewers.sh:718"]
+  - id: layer-bundled
+    kind: label
+    elements: [box_bundled_t]
+    text: "The bundled layer (review/core/reviewers/) has the lowest precedence."
+    sources: ["cc-review:README.md:356-360", "cc-review:review/core/scripts/discover-reviewers.sh:717"]
+
+  # --- free-text labels ---
+  - id: higher-replaces
+    kind: label
+    elements: [t_higher]
+    text: "A higher layer replaces a lower layer's reviewer of the same name."
+    sources: ["cc-review:README.md:362", "cc-review:review/core/scripts/discover-reviewers.sh:745-756"]
+  - id: discovers
+    kind: label
+    elements: [t_discovers]
+    text: "The core holds no reviewer list; discover-reviewers.sh scans the three layers on every run and emits the reviewers to dispatch."
+    sources: ["cc-review:README.md:352-354", "cc-review:review/core/scripts/discover-reviewers.sh:717-719"]
+
+  # --- arrows (connects) ---
+  - id: a-claude
+    kind: connects
+    elements: [a_claude]
+    text: "The Claude Code command shim resolves the core directory at runtime and delegates to the core command files."
+    sources: ["cc-review:README.md:350", "cc-review:README.md:337"]
+  - id: a-codex
+    kind: connects
+    elements: [a_codex]
+    text: "The Codex command shim resolves the core directory at runtime and delegates to the core command files."
+    sources: ["cc-review:README.md:350", "cc-review:README.md:337"]
+  - id: a-opencode
+    kind: connects
+    elements: [a_opencode]
+    text: "The OpenCode commands resolve the core directory through the installed .core-path pointer and delegate to it."
+    sources: ["cc-review:README.md:350", "cc-review:review/opencode/install.sh:28-29"]
+  - id: a-discover
+    kind: connects
+    elements: [a_discover]
+    text: "The core discovers reviewers by scanning the three layers (bundled, then user, then project) on every run."
+    sources: ["cc-review:review/core/scripts/discover-reviewers.sh:717-719", "cc-review:README.md:352-354"]
+
+  # --- legend (no source) ---
+  - id: legend
+    kind: legend
+    elements: [lg_title, lg_t1, lg_t2, lg_t3]
