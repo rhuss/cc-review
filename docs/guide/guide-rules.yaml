@@ -96,3 +96,12 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/how-it-works/meta-review.md
+    require:
+      - 'assets/diagrams/two-critics\.svg'
+      - 'Skeptic'
+      - 'Calibrator'
+      - 'also_reported_by'
+    forbid:
+      - '\u2014'
+      - '\u2013'

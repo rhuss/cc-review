@@ -22,3 +22,4 @@
 - [How it works](how-it-works/index.md)
 - [The review pipeline](how-it-works/pipeline.md)
 - [Reviewers](how-it-works/reviewers.md)
+- [Meta-review](how-it-works/meta-review.md)
