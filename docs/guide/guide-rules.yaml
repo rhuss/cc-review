@@ -174,3 +174,15 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/reference/cli.md
+    require:
+      - '--pr'
+      - '--bulk'
+      - '--only'
+      - '--spec'
+      - 'quick'
+      - 'thorough'
+      - 'ci'
+    forbid:
+      - '\u2014'
+      - '\u2013'
