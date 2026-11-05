@@ -1,0 +1,50 @@
+diagram: two-critics
+claims:
+  # --- box labels (one per box) ---
+  - id: merged-findings
+    kind: label
+    elements: [box_merged_t]
+    text: "The merged findings list (findings produced by the review agents) is the shared input both meta-review critics evaluate."
+    sources: ["cc-review:review/core/agents/meta-skeptic.md:17-19", "cc-review:review/core/agents/meta-calibrator.md:17-18"]
+  - id: skeptic
+    kind: label
+    elements: [box_skeptic_t]
+    text: "The Skeptic reads the code behind each finding and tries to refute it, assigning a verdict of confirmed, weak, or false-positive."
+    sources: ["cc-review:review/core/agents/meta-skeptic.md:20-22", "cc-review:review/core/agents/meta-skeptic.md:39-48"]
+  - id: calibrator
+    kind: label
+    elements: [box_calibrator_t]
+    text: "The Calibrator judges whether each finding's severity is proportional to the evidence and detects contradictions between agents."
+    sources: ["cc-review:review/core/agents/meta-calibrator.md:17-20", "cc-review:review/core/agents/meta-calibrator.md:51-64"]
+  - id: verdict
+    kind: label
+    elements: [box_verdict_t]
+    text: "The two critics' results are merged into one outcome per finding; when the Skeptic confirms but the Calibrator downgrades, the more conservative verdict wins."
+    sources: ["cc-review:review/core/commands/review.md:870-877", "cc-review:review/core/commands/review.md:882-884"]
+
+  # --- arrows (connects) ---
+  - id: in-skeptic
+    kind: connects
+    elements: [a_in_sk]
+    text: "The Skeptic's evaluation process runs over each finding in the merged findings list."
+    sources: ["cc-review:review/core/agents/meta-skeptic.md:27-32"]
+  - id: in-calibrator
+    kind: connects
+    elements: [a_in_ca]
+    text: "The Calibrator's calibration process runs over each finding in the merged findings list."
+    sources: ["cc-review:review/core/agents/meta-calibrator.md:27-33"]
+  - id: skeptic-verdict
+    kind: connects
+    elements: [a_sk_vr]
+    text: "The Skeptic's verdicts drive the merged outcome: false positives are removed and the remaining findings keep their verdict."
+    sources: ["cc-review:review/core/commands/review.md:870-877"]
+  - id: calibrator-verdict
+    kind: connects
+    elements: [a_ca_vr]
+    text: "The Calibrator's calibrated severities are applied to the surviving findings when forming the verdict."
+    sources: ["cc-review:review/core/commands/review.md:879-888"]
+
+  # --- legend (no source) ---
+  - id: legend
+    kind: legend
+    elements: [lg_title, lg_t1, lg_t2, lg_t3]
