@@ -56,3 +56,12 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/using/inbox-and-issue.md
+    require:
+      - '/inbox'
+      - '/issue'
+      - 'read-only'
+      - '(?m)^Check:'
+    forbid:
+      - '\u2014'
+      - '\u2013'
