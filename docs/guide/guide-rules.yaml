@@ -115,3 +115,13 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/how-it-works/results.md
+    require:
+      - '[Mm]easured'
+      - 'OpenShell'
+      - '208'
+      - 'pull/'
+    forbid:
+      - '\u2014'
+      - '\u2013'
+      - '/Users/'

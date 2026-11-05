@@ -24,3 +24,4 @@
 - [Reviewers](how-it-works/reviewers.md)
 - [Meta-review](how-it-works/meta-review.md)
 - [Gate and fix](how-it-works/gate-and-fix.md)
+- [Measured results](how-it-works/results.md)
