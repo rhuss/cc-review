@@ -33,3 +33,17 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/using/review.md
+    require:
+      - '/review'
+      - '--pr'
+      - 'quick'
+      - 'thorough'
+      - 'ci'
+      - 'Critical'
+      - 'Important'
+      - '(?m)^Check:'
+    forbid:
+      - '\u2014'
+      - '\u2013'
+      - '/Users/'

@@ -12,3 +12,4 @@
 ## Using cc-review
 
 - [Install cc-review](using/install.md)
+- [Review your changes](using/review.md)
