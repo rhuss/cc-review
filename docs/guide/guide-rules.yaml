@@ -135,6 +135,17 @@ rules:
       - '\u2014'
       - '\u2013'
       - '/Users/'
+  - glob: docs/extending/index.md
+    require:
+      - 'assets/diagrams/core-and-layers\.svg'
+      - '\]\(prompt-reviewer\.md\)'
+      - '\]\(command-reviewer\.md\)'
+      - '\]\(trust-and-config\.md\)'
+      - 'project'
+      - 'bundled'
+    forbid:
+      - '\u2014'
+      - '\u2013'
   - glob: docs/extending/prompt-reviewer.md
     require:
       - 'kind: prompt'
