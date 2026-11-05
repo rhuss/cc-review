@@ -144,3 +144,13 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/extending/command-reviewer.md
+    require:
+      - 'kind: command'
+      - 'detect'
+      - 'invoke'
+      - 'severity_map'
+      - '(?m)^Check:'
+    forbid:
+      - '\u2014'
+      - '\u2013'
