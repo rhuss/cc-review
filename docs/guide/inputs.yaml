@@ -1,0 +1,104 @@
+# Input register: transcripts, tickets, links, notes, and documents that inform the
+# guide. Only references live here; raw inputs are never copied into this project.
+# Claims from inputs reach a page only after they are verified against a pinned source.
+# Locations are relative to this guide project root (docs/guide) and resolve into the
+# surrounding cc-review repository.
+inputs:
+  - id: presentation-outline
+    kind: document
+    location: ../presentation/outline.md
+    role: Presentation outline; the theory and narrative arc (panel, skeptic, fix loop, architecture)
+    sha256: "838e87291a941a4fa4dd940fe20f4741fbc972dc8d3b3b7186fa22547fc2a37e"
+    confidential: false
+    registered: "2026-11-05"
+  - id: presentation-slides
+    kind: document
+    location: ../presentation/slides.md
+    role: Presentation slides; speaker-level framing of each concept
+    sha256: "43662f298383a4e808f311721f9e3fcd2d9068dce5462d64bc59a06577116001"
+    confidential: false
+    registered: "2026-11-05"
+  - id: readme
+    kind: document
+    location: ../../README.md
+    role: Project README; features, install, usage, configuration, architecture overview
+    sha256: "07243373b171b8e7430ee56de76f869bce72237034b13f8607e10be93ed56fc6"
+    confidential: false
+    registered: "2026-11-05"
+  - id: docs-reviewer-plugins
+    kind: document
+    location: ../reviewer-plugins.md
+    role: Reviewer plugin reference; prompt and command reviewer formats, trust model
+    sha256: "628eb893f2fa46d5685bef6681a3ec3feff92e281049d969a3eaff06757c2add"
+    confidential: false
+    registered: "2026-11-05"
+  - id: docs-standalone-guide
+    kind: document
+    location: ../standalone-guide.md
+    role: Standalone usage guide; install, first review, PR review, follow-ups, inbox, config
+    sha256: "d44efea60fc56eb392e10e703420847bb81676c2c7fc15431d8ae2e7322b5e80"
+    confidential: false
+    registered: "2026-11-05"
+  - id: docs-speckit-guide
+    kind: document
+    location: ../speckit-guide.md
+    role: spec-kit integration guide; how cc-spex delegates to cc-review
+    sha256: "480d78163d1dac04c56208884c6ee7a48abde9cd2487a2751747c4141469ee16"
+    confidential: false
+    registered: "2026-11-05"
+  - id: data-local-reports
+    kind: document
+    location: ../presentation/data/local-reports-aggregate.json
+    role: Measured data; aggregate of local cc-review reports (fix rates, per-reviewer precision)
+    sha256: "07228dae632ffb6bc0d560d166651d89e016551285a27b1684ef57534f6aadc3"
+    confidential: false
+    registered: "2026-11-05"
+  - id: data-openshell-findings
+    kind: document
+    location: ../presentation/data/openshell-findings-labeled.jsonl
+    role: Measured data; labeled findings from cc-review runs on the public NVIDIA/OpenShell PRs
+    sha256: "59d284bb0e66e7de34b2df6381ea2f3a5386528847ca2586a34f5b440728c98a"
+    confidential: false
+    registered: "2026-11-05"
+  - id: brainstorm-overview
+    kind: notes
+    location: ../../brainstorm/00-overview.md
+    role: Design rationale; overall vision and how the pieces fit together
+    sha256: "71d4b81067ccc2b4aadc3a27d68925e0623fc8a72ab4aa106565f95638d6e7a7"
+    confidential: false
+    registered: "2026-11-05"
+  - id: brainstorm-reviewer-abstraction
+    kind: notes
+    location: ../../brainstorm/03-reviewer-abstraction.md
+    role: Design rationale; the reviewer abstraction and discovery layers
+    sha256: "902c1770499f3cef15cd65b475e6f6bac7bdcea11cdb2f5e70b5c9a903a63dc8"
+    confidential: false
+    registered: "2026-11-05"
+  - id: brainstorm-meta-reviewer
+    kind: notes
+    location: ../../brainstorm/04-meta-reviewer.md
+    role: Design rationale; the skeptic and calibrator meta-review
+    sha256: "4e8a04cab1401c38cb18fa674bc4806b8e656bc1a806f5eacf7a0394bfc5bdf6"
+    confidential: false
+    registered: "2026-11-05"
+  - id: brainstorm-reviewer-plugins
+    kind: notes
+    location: ../../brainstorm/05-reviewer-plugins.md
+    role: Design rationale; the reviewer plugin system
+    sha256: "65e5e554fd7c8c3534c2ffd32ca2a64bd57050ca6b32d5cf0ea4bef4bd56b0c2"
+    confidential: false
+    registered: "2026-11-05"
+  - id: brainstorm-review-convergence
+    kind: notes
+    location: ../../brainstorm/10-review-convergence.md
+    role: Design rationale; the fix loop, gate, and review convergence
+    sha256: "240eb5f57c1545c1deacffea3c6fe9eb54127dbc2a2556485501292035bdac0e"
+    confidential: false
+    registered: "2026-11-05"
+  - id: brainstorm-skeptic-fp
+    kind: notes
+    location: ../../brainstorm/13-skeptic-false-positives.md
+    role: Design rationale; skeptic tuning and false positives
+    sha256: "59c3059b9f8d9ce0f759249967152744c2a64c0577bbdb3002204d929d322abd"
+    confidential: false
+    registered: "2026-11-05"

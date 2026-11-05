@@ -1,0 +1,7 @@
+# Per-page content rules, checked by `make check` (tools/guide/check.py).
+# Each rule applies to the files matching `glob` (relative to the guide project root):
+#   require:        every regex must match somewhere in each file
+#   forbid:         no regex may match anywhere in each file
+#   require_order:  the first matches of these regexes must appear in this order
+# Page tasks add rules for their page before writing it, so the check fails first.
+rules: []

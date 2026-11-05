@@ -1,0 +1,65 @@
+# Guide project configuration (cc-guide schema 1).
+# Written by /guide:create from the intake interview; edit by hand when needed and
+# run `uv run tools/guide/guidecfg.py validate` afterwards. Unknown keys are errors.
+schema: 1
+
+# Shown on the site header and the PDF title page.
+title: "cc-review Guide"
+
+# Output adapter: antora, mkdocs, or gfm. Fixed after create.
+format: "gfm"
+
+# Reader roles. Each persona has its own section and an entry page
+# (path without extension, relative to the adapter's page directory, docs/).
+personas:
+  - id: user
+    title: Developer
+    start: using/index
+  - id: author
+    title: Plugin author
+    start: extending/index
+
+# Navigation sections in reading order. `voice` is a cc-prose voice profile when
+# cc-prose is installed, otherwise one of the built-in styles: concepts, technical, reference.
+sections:
+  - id: overview
+    title: Overview
+    voice: concepts
+  - id: using
+    title: Using cc-review
+    voice: technical
+  - id: how-it-works
+    title: How it works
+    voice: concepts
+  - id: extending
+    title: Extending cc-review
+    voice: technical
+  - id: reference
+    title: Reference
+    voice: reference
+
+# fast (final review only), standard (per-page reviews, the default), or strict
+# (standard plus the claim ledger). A run can override it with --rigor.
+rigor: standard
+
+internal:
+  # true adds an internal part that never reaches the shareable build or PDF.
+  enabled: false
+  # Exact terms (case-insensitive) that must never appear in shareable output.
+  confidential_terms: []
+  # Regular expressions, for example a ticket key format: '\b[A-Z]{2,}-\d+\b'
+  confidential_patterns: []
+
+# Optional cluster connections for /guide:validate. Not used by this guide.
+clusters: {}
+
+# Extra read-only command patterns for /guide:validate (additive only).
+validate:
+  extra_queries: []
+
+# Scheduled drift check (.github/workflows/guide-drift.yml): "off" or a cron expression.
+drift:
+  schedule: "off"
+
+upstream:
+  target: github
