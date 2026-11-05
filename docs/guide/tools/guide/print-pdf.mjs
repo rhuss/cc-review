@@ -225,7 +225,10 @@ function transformDocument(args) {
   // Links between pages become in-document anchors.
   const pageIds = pages.map((h) => h.id);
   const findPage = (key) => {
-    const variants = [key, key.replace(/\//g, '-'), key.split('/').pop()];
+    const variants = [
+      key, key.replace(/\//g, '-'), key.split('/').pop(),
+      `${key}/index`, `${key}/index`.replace(/\//g, '-'),
+    ];
     for (const v of variants) {
       if (pageIds.includes(v)) return v;
       const hit = pages.find((h) => h.dataset.guidePath === v);
