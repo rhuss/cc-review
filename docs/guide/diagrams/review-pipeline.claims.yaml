@@ -1,0 +1,72 @@
+diagram: review-pipeline
+claims:
+  # --- box labels (one per stage) ---
+  - id: discover
+    kind: label
+    elements: [box_discover_t]
+    text: "Step 2 discovers the reviewers: it builds the ready set after enablement and CLI selection."
+    sources: ["cc-review:review/core/commands/review.md:226-353"]
+  - id: dispatch
+    kind: label
+    elements: [box_dispatch_t]
+    text: "Step 3 dispatches the ready prompt reviewers as parallel subagents (one Agent call each, in a single response)."
+    sources: ["cc-review:review/core/commands/review.md:632-770"]
+  - id: merge
+    kind: label
+    elements: [box_merge_t]
+    text: "Step 4 merges the reviewers' findings and deduplicates them."
+    sources: ["cc-review:review/core/commands/review.md:784-792"]
+  - id: meta
+    kind: label
+    elements: [box_meta_t]
+    text: "Step 4b runs the meta-review (skeptic and calibrator) over the merged findings."
+    sources: ["cc-review:review/core/commands/review.md:793-914"]
+  - id: gate
+    kind: label
+    elements: [box_gate_t]
+    text: "Step 5 gates on Critical plus Important findings; Step 6 is the autonomous fix loop."
+    sources: ["cc-review:review/core/commands/review.md:916-1050"]
+  - id: report
+    kind: label
+    elements: [box_report_t]
+    text: "Step 7 writes the findings report."
+    sources: ["cc-review:review/core/commands/review.md:1051-1138"]
+
+  # --- forward arrows (stage order) ---
+  - id: f_discover_dispatch
+    kind: connects
+    elements: [a_f1]
+    text: "After discovery, the ready set (built in Step 2) is dispatched in Step 3."
+    sources: ["cc-review:review/core/commands/review.md:226-353", "cc-review:review/core/commands/review.md:632-643"]
+  - id: f_dispatch_merge
+    kind: connects
+    elements: [a_f2]
+    text: "The orchestrator collects findings from all reviewers before proceeding to Step 4 (merge and deduplicate)."
+    sources: ["cc-review:review/core/commands/review.md:632-770", "cc-review:review/core/commands/review.md:784-792"]
+  - id: f_merge_meta
+    kind: connects
+    elements: [a_f3]
+    text: "After merge and dedup (Step 4), Step 4b runs the meta-review."
+    sources: ["cc-review:review/core/commands/review.md:784-792", "cc-review:review/core/commands/review.md:793-914"]
+  - id: f_meta_gate
+    kind: connects
+    elements: [a_f4]
+    text: "After the meta-review (Step 4b), Step 5 performs the gate check."
+    sources: ["cc-review:review/core/commands/review.md:793-914", "cc-review:review/core/commands/review.md:916-1050"]
+  - id: f_gate_report
+    kind: connects
+    elements: [a_f5]
+    text: "After the gate and fix loop (Steps 5 and 6), Step 7 writes the findings report."
+    sources: ["cc-review:review/core/commands/review.md:916-1050", "cc-review:review/core/commands/review.md:1051-1138"]
+
+  # --- return arrow (fix loop) + its label ---
+  - id: r_gate_dispatch
+    kind: connects
+    elements: [a_return, a_return_lbl]
+    text: "The fix loop applies fixes, runs the test suite, then re-dispatches the same reviewer sets on the modified files for up to max_fix_rounds (default 3)."
+    sources: ["cc-review:review/core/commands/review.md:995-1016"]
+
+  # --- legend (no source) ---
+  - id: legend
+    kind: legend
+    elements: [lg_title, lg_t1, lg_t2, lg_t3, lg_t4]
