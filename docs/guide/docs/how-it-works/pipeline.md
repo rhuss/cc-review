@@ -11,7 +11,7 @@ cc-review:review/core/commands/review.md:1051-1138
 
 One review run carries a set of changes through six stages: discover, dispatch, merge, meta-review, gate and fix, and report. Each stage has a single job and hands its output to the next. The diagram below shows the order, with the fix loop as the one arrow that goes back.
 
-[![cc-review review pipeline: discover, dispatch, merge, meta-review, gate and fix, report](../assets/diagrams/review-pipeline.svg)](../assets/diagrams/review-pipeline.svg)
+![cc-review review pipeline: discover, dispatch, merge, meta-review, gate and fix, report](../assets/diagrams/review-pipeline.svg)
 
 ## Discover
 

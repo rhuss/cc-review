@@ -52,7 +52,7 @@ cc-review keeps one harness-agnostic core and adds a thin manifest for each harn
 
 The review command carries no built-in list of reviewers. On every run, cc-review scans three layers and runs the reviewers it finds: your project's `.cc-review/reviewers/`, your personal `~/.cc-review/reviewers/`, and the reviewers bundled with the plugin. When a name appears in more than one layer, the higher layer wins, so you can add a reviewer or replace a bundled one without touching the core.
 
-[![cc-review: one core, three harness shims, three reviewer layers](assets/diagrams/core-and-layers.svg)](assets/diagrams/core-and-layers.svg)
+![cc-review: one core, three harness shims, three reviewer layers](assets/diagrams/core-and-layers.svg)
 
 ## Why run them together
 

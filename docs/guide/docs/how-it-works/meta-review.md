@@ -17,7 +17,7 @@ cc-review:review/core/commands/review.md:901-913
 
 Once the panel's findings are merged into one list, two critics read that list before cc-review acts on any of it. The first decides whether each finding is real. The second decides whether its severity is right and whether the reviewers contradict one another. Both run at the same time over the same input, and cc-review combines their separate judgments into one outcome for every finding.
 
-[![cc-review two critics: merged findings through the Skeptic and Calibrator into one verdict](../assets/diagrams/two-critics.svg)](../assets/diagrams/two-critics.svg)
+![cc-review two critics: merged findings through the Skeptic and Calibrator into one verdict](../assets/diagrams/two-critics.svg)
 
 ## One de-duplicated list
 

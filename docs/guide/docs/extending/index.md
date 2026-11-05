@@ -16,7 +16,7 @@ cc-review keeps the review logic in one place and wires it into each harness sep
 
 A reviewer is the unit you add, and the core carries no built-in list of them. On every run, `discover-reviewers.sh` scans three directories for reviewers and emits the set to dispatch. It reads the project layer `.cc-review/reviewers/` in the checkout under review, the user layer `~/.cc-review/reviewers/` in your home directory, and the bundled layer that ships inside the core. The layers have a fixed precedence, project over user over bundled, and a higher layer replaces a lower one of the same name. That is how a reviewer you write takes its place next to the built-in panel, and how a project or user reviewer can stand in for a bundled one by reusing its name.
 
-[![cc-review: one core, three harness shims, three reviewer layers](../assets/diagrams/core-and-layers.svg)](../assets/diagrams/core-and-layers.svg)
+![cc-review: one core, three harness shims, three reviewer layers](../assets/diagrams/core-and-layers.svg)
 
 The pages, in reading order:
 
