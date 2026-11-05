@@ -47,3 +47,12 @@ rules:
       - '\u2014'
       - '\u2013'
       - '/Users/'
+  - glob: docs/using/triage.md
+    require:
+      - '/triage'
+      - '--pr'
+      - 'bot'
+      - '(?m)^Check:'
+    forbid:
+      - '\u2014'
+      - '\u2013'

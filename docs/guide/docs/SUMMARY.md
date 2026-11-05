@@ -13,3 +13,4 @@
 
 - [Install cc-review](using/install.md)
 - [Review your changes](using/review.md)
+- [Triage pull request comments](using/triage.md)
