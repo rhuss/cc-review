@@ -11,6 +11,7 @@
 
 ## Using cc-review
 
+- [Using cc-review](using/index.md)
 - [Install cc-review](using/install.md)
 - [Review your changes](using/review.md)
 - [Triage pull request comments](using/triage.md)
