@@ -10,3 +10,16 @@ findings:
   evidence: review/VERSION:1 reads 1.2.0, but the top-level VERSION, review/.claude-plugin/plugin.json
     version, and the release tag v1.4.0 all say 1.4.0 at commit 37efe88
   status: collected
+- id: UF-2
+  source: cc-review
+  kind: bug
+  locations:
+  - ref: review/opencode/install.sh:19-20
+    quote: .opencode/plugins/cc-review
+  summary: OpenCode installer copies commands to a path stock OpenCode does not scan,
+    so the commands never register
+  evidence: install.sh:19-20 writes command markdown to .opencode/plugins/cc-review/command/,
+    but OpenCode (v2.1.4) discovers commands only from .opencode/command/ (project)
+    or ~/.config/opencode/commands/ (global) per opencode.ai/docs/commands; so /review
+    and the other commands do not register under stock OpenCode
+  status: collected
