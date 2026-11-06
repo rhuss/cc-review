@@ -101,3 +101,12 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: `--profile <name>` only resolves bundled profiles in `review/config/profiles/` (quick, thorough, ci); a user or project cannot add their own named profile.
 
 > Look up `<name>.yml` in the project config directory and the user config directory first, then fall back to the bundled profiles, so a team can ship `--profile security-audit` with its repo. Open points: precedence when a project profile shadows a bundled name, listing all available profiles (with their source) in the "unknown profile" error, and whether `init` should scaffold an example profile. Today's workaround is `--config path/to/profile.yml`.
+
+### comment-voice-and-template-overrides
+
+- **Source**: presentation prep
+- **Date**: 2026-11-06
+- **Reference**: review/core/templates/reviewer-voice.md, review/core/commands/review.md (7.5f, 7.5i), review/config/config-template.yml (`pr_posting.voice_profile`)
+- **Summary**: `pr_posting.voice_profile` is written by `init` but never read; the posting step always loads the bundled reviewer-voice.md. That file mixes two concerns (prose voice and comment structure), and the summary layout is hard-coded in review.md, so neither tone nor layout can be adjusted without editing the plugin.
+
+> Split the concerns. (1) Voice: make `pr_posting.voice_profile` select the cc-prose voice used to word comments, defaulting to the bundled `reviewer` voice; keep only tone guidance in the voice file. (2) Layout: add separate settings such as `pr_posting.comment_template` and `pr_posting.summary_template` that point to a project or user file and fall back to the bundled layout. Keep the what/why/fix elements, the source footer and the run-id marker mandatory regardless of template, since they carry the comments' value and the follow-up machinery depends on the marker. Validate custom templates for the required placeholders before posting.

@@ -29,6 +29,8 @@ flowchart LR
 
 - Why a panel: every reviewer has blind spots, and models from the same vendor share them. Reviewers from different vendors miss different things.
 - When several reviewers report the same problem, that's a strong signal. cc-review records it on the finding (`also_reported_by`).
+- Posting goes to the PR as one GitHub review: a summary comment (findings table, gate outcome, participating reviewers) plus inline comments on the changed lines. Findings outside the diff appear only in the summary, with a note why.
+- Every inline comment follows one template: severity and what's wrong, **Why this matters**, **Suggested fix**, and the source reviewer. Authors get the reason and a concrete fix, not just a complaint, which makes a comment easy to act on.
 - The industry arrived at the same pattern: Cursor Bugbot runs eight parallel passes plus a validator, Anthropic's Code Review uses an agent team with a verification step. cc-review does this locally and mixes vendors.
 
 **If asked:**
