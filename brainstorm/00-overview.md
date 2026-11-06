@@ -1,6 +1,6 @@
 # Brainstorm Overview
 
-Last updated: 2026-11-02
+Last updated: 2026-11-06
 
 ## Sessions
 
@@ -18,6 +18,8 @@ Last updated: 2026-11-02
 | 10 | 2026-10-28 | review-convergence | active | - | [#11](https://github.com/rhuss/cc-review/issues/11) |
 | 11 | 2026-10-29 | issue-assessment | active | - | - |
 | 12 | 2026-11-02 | review-draft-approval | active | - | [#13](https://github.com/rhuss/cc-review/issues/13) |
+| 13 | 2026-11-04 | skeptic-false-positives | parked | - | - |
+| 14 | 2026-11-06 | inbox-tour-orchestration | active | - | - |
 
 ## Open Threads
 
@@ -86,6 +88,13 @@ Last updated: 2026-11-02
 - Where the hash of an approved payload is stored in single-PR mode, and whether a single-PR draft survives an interrupted session. (from #12)
 - Whether the post script replaces `post_review` in the platform layer or wraps it, and how 7.5m recovery maps onto it. (from #12)
 - How the severity title in the `reviewer-voice.md` examples is kept: drop it, or move it into the first sentence after the severity label. (from #12)
+- Exact shape of the end-of-report prompt and the per-item tour prompts, given the command's "no action menu" rule this feature deliberately relaxes. (from #14)
+- Does the tour work purely off the one-shot snapshot, or does a toured item need fresh context within the collector's read-only "collect once" boundary? (from #14)
+- Does focused per-item context require a subagent (a Claude Code mechanism), and what is the fallback on Codex/OpenCode so the tour degrades gracefully? (from #14)
+- Batch handoff into bulk: pass the explicit PR list and skip reselection, or reuse #08's shared action assessment, and what if a toured PR is not bulk-eligible? (from #14)
+- Selection and paging UX for picking up to 5 items and moving to the next 5, and how it reads across the supported harnesses. (from #14)
+- How the model's "my take" recommendation stays an ignorable opinion and never hardens into a claimed obligation. (from #14)
+- Which harnesses get the full interactive experience, and whether the streamlined report ships independently of the tour and fan-out. (from #14)
 
 ## Parked Ideas
 
