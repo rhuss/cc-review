@@ -20,6 +20,7 @@ Last updated: 2026-11-06
 | 12 | 2026-11-02 | review-draft-approval | active | - | [#13](https://github.com/rhuss/cc-review/issues/13) |
 | 13 | 2026-11-04 | skeptic-false-positives | parked | - | - |
 | 14 | 2026-11-06 | inbox-tour-orchestration | active | - | - |
+| 15 | 2026-11-06 | review-metrics-log | active | - | - |
 
 ## Open Threads
 
@@ -95,6 +96,8 @@ Last updated: 2026-11-06
 - Selection and paging UX for picking up to 5 items and moving to the next 5, and how it reads across the supported harnesses. (from #14)
 - How the model's "my take" recommendation stays an ignorable opinion and never hardens into a claimed obligation. (from #14)
 - Which harnesses get the full interactive experience, and whether the streamlined report ships independently of the tour and fan-out. (from #14)
+- Where the outcome back-fill hook lives (follow-up review, triage, or both) and how outcomes match findings edited before posting. (from #15)
+- What a project may safely commit or share from the metrics log for team-wide tuning. (from #15)
 
 ## Parked Ideas
 
