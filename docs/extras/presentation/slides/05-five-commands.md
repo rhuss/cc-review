@@ -6,7 +6,7 @@ layout: default
 
 <img src="/images/pr-lifecycle/diagram-excalidraw.svg" alt="Two lanes. A pull request: init at setup, review before push, review --pr when the PR is open, triage after feedback. The repository, any time: inbox shows what waits for you, issue assesses whether an issue is worth doing." class="w-full mt-6" />
 
-<div class="mt-10 text-center opacity-80">Slides now: <code>review</code> · live after the results: the rest</div>
+<div class="mt-10 text-center opacity-80">The next slides go deep on <code>review</code> · <code>triage</code>, <code>inbox</code> and <code>issue</code> follow as a live demo after the results</div>
 
 <!--
 **Goal:** the map for the talk, and which parts are slides and which are live.
