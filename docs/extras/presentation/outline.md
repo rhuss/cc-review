@@ -99,7 +99,7 @@
 
 ### Slide 9: Two critics check every finding before you see it
 - Skeptic: tries to refute each finding against the code; marks it confirmed, weak or false positive
-- Calibrator: checks severity, finds contradictions between reviewers; conservative verdict wins
+- Calibrator: checks severity, finds contradictions between reviewers; lower severity wins
 - Measured (6 meta-reviewed runs, 128 findings): 13% downgraded, almost never upgraded; the Skeptic removed none outright
 - You stay the last filter: on OpenShell, 29 findings were held back at the posting step
 - Visual: two columns (Skeptic | Calibrator) merging into "one verdict" (Excalidraw)

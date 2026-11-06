@@ -110,3 +110,21 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: `pr_posting.voice_profile` is written by `init` but never read; the posting step always loads the bundled reviewer-voice.md. That file mixes two concerns (prose voice and comment structure), and the summary layout is hard-coded in review.md, so neither tone nor layout can be adjusted without editing the plugin.
 
 > Split the concerns. (1) Voice: make `pr_posting.voice_profile` select the cc-prose voice used to word comments, defaulting to the bundled `reviewer` voice; keep only tone guidance in the voice file. (2) Layout: add separate settings such as `pr_posting.comment_template` and `pr_posting.summary_template` that point to a project or user file and fall back to the bundled layout. Keep the what/why/fix elements, the source footer and the run-id marker mandatory regardless of template, since they carry the comments' value and the follow-up machinery depends on the marker. Validate custom templates for the required placeholders before posting.
+
+### critic-merge-weak-upgrade
+
+- **Source**: presentation prep
+- **Date**: 2026-11-06
+- **Reference**: review/core/commands/review.md (Verdict Application, Severity Calibration)
+- **Summary**: The critic merge is meant to resolve disagreement toward the lower severity, but a Calibrator upgrade is applied unconditionally, even to a finding the Skeptic marked `weak`.
+
+> The rules cover confirmed + downgrade (downgrade wins) and weak without calibration (drop one level), but a weak finding with a calibrated severity above the original is raised. Either clamp: a `weak` finding never ends above its original severity, or require the Skeptic to confirm before any upgrade. Add a fixture with a weak finding plus an upgrade so the rule is tested. Rare in practice (the Calibrator almost never upgrades), but the talk claims "lower severity wins".
+
+### skeptic-never-removes
+
+- **Source**: presentation prep
+- **Date**: 2026-11-06
+- **Reference**: review/core/agents/meta-skeptic.md, brainstorm/13-skeptic-false-positives.md
+- **Summary**: The Skeptic is supposed to refute findings against the code, but across 6 local runs (128 findings) and the OpenShell runs it removed 0 findings and only marked some as weak, while the user held back 29 findings by hand.
+
+> How it works today: it receives each finding with the reviewer's rationale, confidence and source, reads the cited range plus 20 lines of context, tries to refute it, and answers confirmed, weak or false-positive (false-positive needs cited counter-evidence; confirmed needs nothing). Likely causes: anchoring on the reviewer's narrative, no burden of proof for "confirmed", same model family as the reviewers. Candidate fixes (blind refutation, reachability proof for Critical/Important, cross-vendor second skeptic, a labeled eval set from the OpenShell outcomes) are collected in brainstorm #13.
