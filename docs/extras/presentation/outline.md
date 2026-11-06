@@ -37,13 +37,13 @@
 - Same pattern the industry converged on (Cursor Bugbot, Anthropic Code Review), but across vendors and locally, before you push
 - Visual: icon strip (panel -> skeptic -> fix -> report)
 
-### Slide 3: Five commands cover a PR's whole life
+### Slide 3: Five commands: one PR flow, one repo view
 - `review`: panel review with fix loop
 - `triage`: handle bot and human PR comments
 - `inbox`: what waits for you in a repository
 - `issue`: assess a new issue, draft a reply
 - `init`: generate config, list reviewers
-- Visual: timeline (before push -> PR open -> feedback -> repository) with commands placed on it; doubles as agenda
+- Visual: two lanes. A pull request (init, review, review --pr, triage, left to right) and the repository at any time (inbox, issue, no arrows); doubles as agenda
 
 **Transition:** "Here is how you get to where I was five minutes ago."
 

@@ -47,7 +47,7 @@ src: ./slides/04-panel-argues.md
 ---
 src: ./slides/05-five-commands.md
 ---
-<!-- Slide 5: Five commands cover a PR's whole life -->
+<!-- Slide 5: Five commands: one PR flow, one repo view -->
 
 ---
 src: ./slides/06-install.md
