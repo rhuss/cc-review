@@ -5,12 +5,18 @@ cc-review:review/core/commands/review.md:916-925
 cc-review:review/core/commands/review.md:997-1001
 cc-review:review/core/commands/review.md:1005-1015
 cc-review:review/core/commands/review.md:1003,1017-1042
+cc-review:review/core/commands/review.md:970
+cc-review:review/core/commands/review.md:1409
 cc-review:README.md:139
 cc-review:README.md:141
 cc-review:README.md:386-390
 -->
 
 By the time the findings reach this stage, meta-review has filtered them into one list (see [Meta-review](meta-review.md)). cc-review now has to turn that list into a decision: is the change ready, or does something still need fixing first? Two mechanisms do that. The gate reads the list and returns a verdict, and the fix loop tries to clear the findings that fail the gate so the verdict can flip to a pass.
+
+What happens to those findings, and whether cc-review changes any code, depends on whose code is under review. On your own code it can apply the fixes. On a pull request you did not author it only offers to post the review, and never edits the code.
+
+![cc-review decision after review: a panel of reviewers, then two critics, then you decide, the fix loop for your own code or posting the review for any pull request](../assets/diagrams/decision-ownership.svg)
 
 ## The gate
 

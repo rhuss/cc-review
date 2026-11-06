@@ -1,0 +1,55 @@
+diagram: decision-ownership
+claims:
+  # --- box labels (left to right, then the two branch outcomes) ---
+  - id: panel
+    kind: label
+    elements: [box_panel_t]
+    text: "The panel of focused reviewers and external tools runs over the changes in parallel."
+    sources: ["cc-review:review/core/commands/review.md:632-770"]
+  - id: critics
+    kind: label
+    elements: [box_critics_t]
+    text: "Two critics, the skeptic and the calibrator, filter the findings before you see them."
+    sources: ["cc-review:review/core/commands/review.md:793-914"]
+  - id: decide
+    kind: label
+    elements: [box_decide_t]
+    text: "After the findings, cc-review offers a menu and you choose what happens next."
+    sources: ["cc-review:review/core/commands/review.md:974-993"]
+  - id: fix
+    kind: label
+    elements: [box_fix_t]
+    text: "On your own code, the fix options apply the fixes, run the tests, and re-review."
+    sources: ["cc-review:review/core/commands/review.md:970", "cc-review:review/core/commands/review.md:916-1050"]
+  - id: post
+    kind: label
+    elements: [box_post_t]
+    text: "On a PR you did not author, cc-review offers only to post the review."
+    sources: ["cc-review:review/core/commands/review.md:970", "cc-review:review/core/commands/review.md:1409"]
+
+  # --- arrows ---
+  - id: a_panel_critics
+    kind: connects
+    elements: [a_pc]
+    text: "The panel's findings pass to the critics."
+    sources: ["cc-review:review/core/commands/review.md:632-770", "cc-review:review/core/commands/review.md:793-914"]
+  - id: a_critics_decide
+    kind: connects
+    elements: [a_cd]
+    text: "After the critics filter them, the menu offers the next step."
+    sources: ["cc-review:review/core/commands/review.md:793-914", "cc-review:review/core/commands/review.md:974-993"]
+  - id: a_decide_fix
+    kind: connects
+    elements: [a_df, lbl_df]
+    text: "Your own code: cc-review can apply the fixes (the fix loop)."
+    sources: ["cc-review:review/core/commands/review.md:970", "cc-review:review/core/commands/review.md:916-1050"]
+  - id: a_decide_post
+    kind: connects
+    elements: [a_dp, lbl_dp]
+    text: "Any PR: cc-review posts the review as comments."
+    sources: ["cc-review:review/core/commands/review.md:970", "cc-review:review/core/commands/review.md:1409"]
+
+  # --- legend (no source) ---
+  - id: legend
+    kind: legend
+    elements: [lg_title, lg_t1, lg_t2, lg_t3, lg_t4]
