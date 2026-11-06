@@ -142,6 +142,10 @@ Follow-ups also remember your earlier manual and cc-review discussions, includin
 
 Use `review --pr 42 --full` or `review --bulk --full` to request full scope. First reviews, legacy markers without completion evidence, changed reviewer coverage/settings and unreliable history comparisons also use full review with an explanation. Proven rebase-only changes avoid another code review; a renewed request receives verification and an acknowledgment under existing posting approval.
 
+Nothing is posted to a PR before you have seen it. cc-review first writes the review as a local draft and shows you a preview: the summary, every inline comment with its file and line, and any replies to earlier threads. You can approve it, ask for changes (reword a comment, drop one, or turn a request for changes into a plain comment), or skip it. What you approved is posted unchanged, and only if the PR head has not moved, the review is not already there, and nobody else has commented in the meantime. If the head moved or the review is already on the PR, nothing is posted and cc-review says so. If somebody commented, it shows you the new comments and asks whether to post anyway, skip, or re-run the review later. The same check runs before every approved thread reply or resolution. Bots do not count as somebody else; CI accounts that are regular GitHub users (for example `k8s-ci-robot`) can be added to `pr_posting.ignore_authors` in the config.
+
+Every comment keeps the same structure (severity, why it matters, suggested fix, source), and a script checks each draft for it before the preview. The summary states plainly how the findings came about: whether you went through them one by one, which test commands the run executed, and that failure scenarios come from reading the code. It never claims a check that did not happen.
+
 ```
 /review --spec specs/feature/spec.md
 ```
@@ -226,7 +230,7 @@ Triage with spec context for assessing whether suggestions align with requiremen
 /review --bulk
 ```
 
-Reviews the open PRs that request your review, plus PRs you reviewed with cc-review that got new commits since. Each PR is analyzed in its own worktree, and at the end you get one table to decide per PR: post the review, apply the suggested fixes (your own PRs only), post a short "no findings" note, or skip.
+Reviews the open PRs that request your review, plus PRs you reviewed with cc-review that got new commits since. Each PR is analyzed in its own worktree, and at the end you get one table to decide per PR: post the review, apply the suggested fixes (your own PRs only), post a short "no findings" note, or skip. Reviews you chose to post are drafted first; you then see the previews one after another and approve, edit or skip each before anything is posted. You can stop during the previews and continue later with `--resume`.
 
 ```
 /review --bulk --search 'label:needs-review' --limit 5
@@ -245,7 +249,7 @@ Triages open PRs with eligible author or reviewer-owned feedback. Author PRs kee
 /review --bulk --resume --unattended
 ```
 
-Continues an unfinished run, or starts a new one, without asking anything. This is the form for scheduled jobs. Unattended reviews are posted as plain comments, no code is changed, and human comments in triage are left for you.
+Continues an unfinished run, or starts a new one, without asking anything. This is the form for scheduled jobs. Unattended reviews are posted as plain comments, no code is changed, and human comments in triage are left for you. Unattended reviews go through the same draft and check; a draft that still fails the check, or a PR whose conversation changed since analysis, is not posted and shows up as `withheld` under "Needs attention" for the next run.
 
 Run state and reports live in `.cc-review/bulk/<run-id>/` (git-ignored); `state.md` shows the progress. See the [standalone guide](docs/standalone-guide.md#bulk-review-and-triage) for the details.
 

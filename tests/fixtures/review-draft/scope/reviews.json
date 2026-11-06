@@ -1,0 +1,12 @@
+[
+  {
+    "databaseId": 301,
+    "url": "https://github.com/acme/widget/pull/7#pullrequestreview-301",
+    "body": "## cc-review Summary\n\n<!-- cc-review:run-id:20261028-090000-review/pr-7 -->",
+    "author": {"login": "me", "__typename": "User"},
+    "commit": {"oid": "1111111111111111111111111111111111111111"},
+    "state": "COMMENTED",
+    "submittedAt": "2026-10-28T09:00:00Z",
+    "comments": {"nodes": [{"databaseId": 101, "path": "src/parser.go", "line": 12, "body": "This loop never ends on empty input.", "pullRequestReviewThread": {"id": "PRRT_kwDOA1"}}]}
+  }
+]

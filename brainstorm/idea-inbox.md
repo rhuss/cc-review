@@ -74,3 +74,12 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: Bulk worktrees and run state live inside the user's working tree, and finished or abandoned runs are kept forever with no retention.
 
 > Tools that ignore nested .gitignore files (linters, test runners, IDE indexers) see full nested checkouts while a run keeps them; placing worktrees under the git common dir and offering a prune option for old runs would bound disk use and avoid that.
+
+### enforce-locked-edit-fields
+
+- **Source**: deep-review
+- **Date**: 2026-11-06
+- **Reference**: 011-review-draft-approval
+- **Summary**: FR-016 forbids an approval-time edit from changing paths, lines, the pinned commit or the run marker, but only the LLM instructions enforce it.
+
+> `review_draft.py assemble` could compare the locked fields per slot id against the previous payload of the same inputs key and refuse a change, so the restriction holds by construction like the labels do.

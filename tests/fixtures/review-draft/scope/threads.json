@@ -1,0 +1,38 @@
+[
+  {
+    "id": "PRRT_kwDOA1",
+    "isResolved": false,
+    "viewerCanResolve": true,
+    "isOutdated": false,
+    "path": "src/parser.go",
+    "line": 12,
+    "comments": {
+      "totalCount": 2,
+      "pageInfo": {"hasNextPage": false, "hasPreviousPage": false},
+      "nodes": [
+        {
+          "id": "PRRC_kwDOA1",
+          "databaseId": 101,
+          "url": "https://github.com/acme/widget/pull/7#discussion_r101",
+          "body": "This loop never ends on empty input.",
+          "author": {"login": "me", "__typename": "User"},
+          "createdAt": "2026-10-28T09:00:00Z",
+          "updatedAt": "2026-10-28T09:00:00Z",
+          "originalCommit": {"oid": "1111111111111111111111111111111111111111"},
+          "pullRequestReview": {"author": {"login": "me"}, "body": "", "state": "COMMENTED"}
+        },
+        {
+          "id": "PRRC_kwDOA2",
+          "databaseId": 102,
+          "url": "https://github.com/acme/widget/pull/7#discussion_r102",
+          "body": "Fixed in the latest push.",
+          "author": {"login": "alice", "__typename": "User"},
+          "createdAt": "2026-10-29T09:00:00Z",
+          "updatedAt": "2026-10-29T09:00:00Z",
+          "originalCommit": {"oid": "1111111111111111111111111111111111111111"},
+          "pullRequestReview": {"author": {"login": "alice"}, "body": "", "state": "COMMENTED"}
+        }
+      ]
+    }
+  }
+]

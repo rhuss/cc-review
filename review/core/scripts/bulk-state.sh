@@ -10,6 +10,8 @@
 #   bulk-state.sh record <run> <n> pending_push|pushed_sha|review_id <value>
 #   bulk-state.sh record <run> <n> reply <comment_id> <reply_id>
 #   bulk-state.sh record <run> <n> resolved <thread_id>
+#   bulk-state.sh record <run> <n> pr_comment <source_id> <comment_id>
+#   bulk-state.sh record <run> <n> thread_actions_done
 #   bulk-state.sh set-status <run> <status>
 #   bulk-state.sh reanalyze <run> <n>
 #   bulk-state.sh open-prs <run>
@@ -29,7 +31,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 RUN_STATUSES="selecting analyzing deciding applying finished paused abandoned"
-PR_STATUSES="pending analyzing analyzed applying failed stale cannot-push partially-applied actioned skipped closed not-analyzed"
+PR_STATUSES="pending analyzing analyzed applying failed stale withheld cannot-push partially-applied actioned skipped closed not-analyzed"
 RUN_ID_PATTERN='^[0-9]{8}-[0-9]{6}-(review|triage)(-[0-9]+)?$'
 # A PR whose attempts failed this often (counted across resumes) is not
 # retried; it stays failed and counts as finished for the run (FR-028)
@@ -39,26 +41,35 @@ MAX_FAILED_ATTEMPTS=3
 MAX_REANALYSES=1
 
 # jq definitions shared by every filter that needs them:
-#   terminal  the PR is finished for this run (nothing is retried or applied)
+#   terminal  the PR is finished for this run (nothing is retried or applied);
+#             withheld (a review not posted after a failed check) is finished
+#             like stale, and the next run selects the PR again
 #   reset     back to pending for a new analysis; the recorded replies and
-#             resolutions stay (dedup for the next apply), the push does not
-#             (a new analysis prepares a new commit to push)
+#             resolutions stay (dedup for the next apply), the push, the review
+#             draft, its approval and the thread_actions_done mark do not (a
+#             new analysis prepares a new commit to push and a new draft to
+#             approve)
 #   acted     the PR has recorded sub-actions
 #   to_apply  the PR has a decision that is not fully applied yet
 JQ_DEFS="
   def terminal: .status == \"actioned\" or .status == \"skipped\" or .status == \"stale\"
+    or .status == \"withheld\"
     or .status == \"cannot-push\" or .status == \"closed\" or .status == \"not-analyzed\"
     or (.status == \"failed\" and (.failed_attempts // 0) >= $MAX_FAILED_ATTEMPTS);
   def reset: .status = \"pending\" | .reason = null | .analyzed_head = null | .expected_head = null
     | .pending_push = null | .actions.pushed_sha = null
     | .worktree = null | .counts = null | .report = null | .proposed = null
-    | .decision = null | del(.fixable) | .flags = ((.flags // []) - [\"local-unpushed\"]);
+    | .decision = null | .draft = null | .approval = null | del(.fixable)
+    | del(.actions.thread_actions_done)
+    | .flags = ((.flags // []) - [\"local-unpushed\"]);
   def acted: .actions.pushed_sha != null or .actions.review_id != null
     or (.actions.replies | length) > 0 or (.actions.resolved | length) > 0
     or ((.actions.reviewer_replies // {}) | length) > 0
     or ((.actions.reviewer_resolved // []) | length) > 0
     or ((.actions.reviewer_summaries // {}) | length) > 0
-    or ((.actions.reviewer_resolution_skipped // {}) | length) > 0;
+    or ((.actions.reviewer_resolution_skipped // {}) | length) > 0
+    or ((.actions.pr_comments // {}) | length) > 0
+    or .actions.thread_actions_done == true;
   def to_apply: .decision != null
     and (.status == \"analyzed\" or .status == \"applying\" or .status == \"partially-applied\");
 "
@@ -334,8 +345,8 @@ do_pr_get() {
 }
 
 do_record() {
-  local usage="Usage: bulk-state.sh record <run> <n> {pending_push <sha>|pushed_sha <sha>|review_id <id>|reply <comment_id> <reply_id>|reviewer_reply <activity_key> <reply_id>|reviewer_resolved <activity_key>|reviewer_summary <summary_key> <comment_id>|reviewer_resolution_skipped <activity_key> <reason>|resolved <thread_id>}"
-  [ $# -ge 4 ] || { echo "$usage" >&2; exit 2; }
+  local usage="Usage: bulk-state.sh record <run> <n> {pending_push <sha>|pushed_sha <sha>|review_id <id>|reply <comment_id> <reply_id>|reviewer_reply <activity_key> <reply_id>|reviewer_resolved <activity_key>|reviewer_summary <summary_key> <comment_id>|reviewer_resolution_skipped <activity_key> <reason>|resolved <thread_id>|pr_comment <source_id> <comment_id>|thread_actions_done}"
+  [ $# -ge 3 ] || { echo "$usage" >&2; exit 2; }
   local run="$1" n="$2" form="$3"
   shift 3
   require_pr_number "$n"
@@ -372,6 +383,17 @@ do_record() {
     resolved)
       [ $# -eq 1 ] || { echo "$usage" >&2; exit 2; }
       update_pr "$run" "$n" 'if any(.actions.resolved[]; . == $v) then . else .actions.resolved += [$v] end' --arg v "$1" ;;
+    pr_comment)
+      # A PR conversation comment of a continuation response (review.md 7.5l2),
+      # keyed by the history source it continues, so it is never posted twice
+      [ $# -eq 2 ] || { echo "$usage" >&2; exit 2; }
+      [ -n "$1" ] || { echo "Error: the source ID must not be empty" >&2; exit 2; }
+      [[ "$2" =~ ^[1-9][0-9]*$ ]] || { echo "Error: PR comment ID must be positive" >&2; exit 2; }
+      update_pr "$run" "$n" '.actions.pr_comments[$k] = ($v | tonumber)' --arg k "$1" --arg v "$2" ;;
+    thread_actions_done)
+      # The approved thread actions of a PR without a review are all done
+      [ $# -eq 0 ] || { echo "$usage" >&2; exit 2; }
+      update_pr "$run" "$n" '.actions.thread_actions_done = true' ;;
     *)
       echo "$usage" >&2; exit 2 ;;
   esac
@@ -594,8 +616,10 @@ do_summary() {
            (if .actions.pushed_sha != null then "pushed \(.actions.pushed_sha[:7])" else empty end),
            (if (.actions.replies | length) > 0 then "\(.actions.replies | length) replies" else empty end),
            (if (.actions.resolved | length) > 0 then "\(.actions.resolved | length) threads resolved" else empty end),
+           (if .actions.thread_actions_done == true then "thread actions done, no review posted" else empty end),
            (if ((.actions.reviewer_replies // {}) | length) > 0 then "\(.actions.reviewer_replies | length) reviewer replies" else empty end),
            (if ((.actions.reviewer_resolved // []) | length) > 0 then "\(.actions.reviewer_resolved | length) reviewer threads resolved" else empty end),
+           ((.actions.pr_comments // {})[] | "PR comment https://github.com/\($r.owner)/\($r.name)/pull/\($p.number)#issuecomment-\(.)"),
            ((.actions.reviewer_summaries // {})[] | "summary https://github.com/\($r.owner)/\($r.name)/pull/\($p.number)#issuecomment-\(.)"),
            (if ((.actions.reviewer_resolution_skipped // {}) | length) > 0 then "\(.actions.reviewer_resolution_skipped | length) resolutions skipped; threads left open" else empty end)]
         | join("; ") as $done
@@ -614,6 +638,18 @@ do_summary() {
       ("", "## Removed worktrees", "", "The run was abandoned; its kept worktrees were removed:", "",
        (.removed_worktrees[] | "- \(.)")) else empty end)
   ' "$state" > "$tmp"
+  # A review withheld by a failed check (draft lint, conversation change) needs
+  # the user's attention; with a recorded review_id the review is on the PR and
+  # only its thread replies and resolutions were held back; a draft of thread
+  # actions alone had no review to post
+  attention=$(jq -r '.prs[] | select(.status == "withheld")
+    | "- #\(.number) \(if .actions.review_id != null then "review posted, thread replies withheld"
+        elif .draft.thread_actions_only == true then "no review to post, thread replies withheld"
+        else "review withheld" end): \(.reason // "no reason recorded")"' "$state")
+  [ -z "$attention" ] || attention+=$'\n'
+  if [ "$(jq -r '.command' "$state")" = review ] && [ -n "$attention" ]; then
+    { printf '\n## Needs attention\n\n'; printf '%s' "$attention"; } >> "$tmp"
+  fi
   if [ "$(jq -r '.command' "$state")" = triage ]; then
     # Human comments without a decision were left untouched (unattended mode,
     # or a stopped decision step)

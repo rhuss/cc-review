@@ -3651,7 +3651,8 @@ test_review_md_payload_has_commit_id() {
   assert_contains "bulk passes the expected head" "$(md_section "$REVIEW_MD" "Step 1: Determine Changed Files")" 'REVIEWED_HEAD="${EXPECTED_HEAD:-}"'
   assert_contains "marker line uses RUN_MARKER" "$(md_section "$REVIEW_MD" "7.5k: Assemble Review Submission")" "<!-- cc-review:run-id:{RUN_MARKER} -->"
   assert_contains "RUN_MARKER defaults to the run id" "$(md_section "$REVIEW_MD" "7.5a: Extract PR Context")" 'RUN_MARKER="${RUN_MARKER:-$RUN_ID}"'
-  assert_contains "recovery search uses RUN_MARKER" "$(md_section "$REVIEW_MD" "7.5m: Error Recovery")" '--arg id "$RUN_MARKER"'
+  assert_contains "recovery search is post-review.sh's" "$(md_section "$REVIEW_MD" "7.5m: Error Recovery")" '`post-review.sh` already waits about 20 seconds'
+  assert_contains "the post passes RUN_MARKER to the recovery search" "$(md_section "$REVIEW_MD" "7.5l: Post Review")" '--run-marker "$RUN_MARKER"'
   assert_contains "event override" "$(md_section "$REVIEW_MD" "7.5k: Assemble Review Submission")" "REVIEW_EVENT_OVERRIDE"
   assert_contains "no-findings markers are not the previous run" "$(md_section "$REVIEW_MD" "7.5d: Detect Previous cc-review Runs")" "cc-review found no issues at"
   local overlap
@@ -3661,23 +3662,32 @@ test_review_md_payload_has_commit_id() {
     'complete changed-code review scope'; do
     assert_contains "review overlap handling includes $needle" "$overlap" "$needle"
   done
-  overlap="$(md_section "$REVIEW_MD" "7.5f: Resolve Fixed Threads")"
+  assert_contains "7.5f only collects thread actions" "$(md_section "$REVIEW_MD" "7.5f: Resolve Fixed Threads")" '$DRAFT_DIR/thread-actions.json'
+  overlap="$(md_section "$REVIEW_MD" "7.5l2: Thread Actions")"
   for needle in 'activity_marker(identity, activity, reply_body)' 'reviewer_activity.py record' \
-    'Only after the reply and resolution succeed'; do
+    'Only after the reply and resolution succeed' 'resolve_thread "$THREAD_NODE_ID"' 'approved `reply_body`'; do
     assert_contains "resolved review thread lifecycle includes $needle" "$overlap" "$needle"
   done
   assert_contains "posted review records only verified own roots" "$(md_section "$REVIEW_MD" "7.5l: Post Review")" \
     "thread contains exactly the posted root comment"
   assert_contains "a moved head is reported" "$(md_section "$REVIEW_MD" "7.5l: Post Review")" "PR head moved; review not posted"
-  # The payload block as written puts commit_id in the payload
-  block="$TEST_TMP/payload.sh"
-  md_block "$REVIEW_MD" 'arg commit' > "$block"
-  printf 'cat "$PAYLOAD_FILE"; rm -f "$PAYLOAD_FILE"\n' >> "$block"
-  out="$(SUMMARY_BODY=s EVENT_TYPE=COMMENT REVIEWED_HEAD=abc123 COMMENTS_JSON='[]' TMPDIR="$TEST_TMP" bash "$block")"
+  # The assemble block as written pins the payload to the reviewed head
+  assert_contains "the slots pin the reviewed head" "$(md_section "$REVIEW_MD" "7.5k: Assemble Review Submission")" '"commit_id": "{REVIEWED_HEAD}"'
+  block="$TEST_TMP/assemble.sh"
+  md_block "$REVIEW_MD" 'DRAFT_TOOL" assemble' > "$block"
+  mkdir -p "$TEST_TMP/post"
+  jq '.commit_id = "abc123"' "$ROOT/tests/fixtures/review-draft/slots-basic.json" > "$TEST_TMP/post/slots.json"
+  printf '[{"id":"FINDING-1"},{"id":"FINDING-2"},{"id":"FINDING-3"}]\n' > "$TEST_TMP/post/findings-to-post.json"
+  DRAFT_TOOL="$SCRIPTS/review_draft.py" DRAFT_DIR="$TEST_TMP/post" FACTS_FILE="$TEST_TMP/facts.json" REVIEWED_HEAD=abc123 \
+    RUN_MARKER=20261102-120000-review/pr-7 MAX_COMMENTS=50 bash "$block" >/dev/null
+  out="$(cat "$TEST_TMP/post/payload.json")"
   assert_json "payload carries commit_id" "$out" '.commit_id' "abc123"
-  assert_json "payload keeps body, event, comments" "$out" '[.body, .event, (.comments | length)] | map(tostring) | join(",")' "s,COMMENT,0"
-  out="$(SUMMARY_BODY=s EVENT_TYPE=COMMENT REVIEWED_HEAD= COMMENTS_JSON='[]' TMPDIR="$TEST_TMP" bash "$block")"
-  assert_json "no commit_id without a known head" "$out" 'has("commit_id")' "false"
+  assert_json "payload keeps body, event, comments" "$out" '[(.body | startswith("## cc-review Summary")), .event, (.comments | length)] | map(tostring) | join(",")' "true,COMMENT,2"
+  assert_eq "the block renders the preview" "yes" "$([ -f "$TEST_TMP/post/preview.md" ] && echo yes)"
+  jq 'del(.commit_id)' "$ROOT/tests/fixtures/review-draft/slots-basic.json" > "$TEST_TMP/post/slots.json"
+  DRAFT_TOOL="$SCRIPTS/review_draft.py" DRAFT_DIR="$TEST_TMP/post" FACTS_FILE="$TEST_TMP/facts.json" REVIEWED_HEAD= \
+    RUN_MARKER=20261102-120000-review/pr-7 MAX_COMMENTS=50 bash "$block" >/dev/null
+  assert_json "no commit_id without a known head" "$(cat "$TEST_TMP/post/payload.json")" 'has("commit_id")' "false"
 }
 
 test_review_md_worker_mode_section() {
@@ -3686,7 +3696,7 @@ test_review_md_worker_mode_section() {
   for needle in 'findings/<name>.json' 'findings/{ENTRY.name}.json' '.positive.json' 'merged.json' 'findings.json' 'reviewers.json' \
     'review-findings.md' 'STATUS ok' 'STATUS failed reason=rate-limited' 'No worker dispatches subagents' \
     'never reads a findings file into its own context' 'git -C "$PROJECT_DIR" ls-tree -r --name-only "$EXPECTED_HEAD"' \
-    'meta-skeptic.md' 'meta-calibrator.md' 'round-<k>/changed-files' 'commit=<sha>' 'review_id=<id>' \
+    'meta-skeptic.md' 'meta-calibrator.md' 'round-<k>/changed-files' 'commit=<sha>' 'draft=<DRAFT_DIR> fingerprint=<sha>' \
     '(a) Prep worker' 'never reads PR content' 'prompts/<name>.md' 'dispatch.json' 'RENEWED_REQUEST_FILE' \
     'fresh prep worker per round'; do
     assert_contains "worker mode mentions $needle" "$section" "$needle"
@@ -3980,11 +3990,12 @@ test_bulk_md_review_apply_checks_and_inputs() {
   assert_contains "the head check is the shared script check" "$apply" '"$S/bulk-apply.sh" head "$RUN_ID" "$N"'
   assert_contains "the pre-decision refresh uses the same check" "$(md_section "$BULK_MD" "Pre-Decision Refresh")" '"$S/bulk-apply.sh" head "$RUN_ID" "$N"'
   assert_contains "head check before every push, post and marker" "$apply" "immediately before every push, every post and every marker"
-  assert_contains "head check before the posting worker even without a push" "$section" "immediately before dispatching the posting worker"
-  assert_contains "the posting worker gets CAN_REQUEST_CHANGES" "$section" "CAN_REQUEST_CHANGES"
-  assert_contains "the posting worker learns about a fresh push" "$section" "JUST_PUSHED"
+  assert_contains "head check before every post even without a push" "$section" "immediately before each \`post-review.sh\` call"
+  assert_contains "the drafting worker gets CAN_REQUEST_CHANGES" "$section" "CAN_REQUEST_CHANGES"
+  assert_contains "the post retries a lagging head after a fresh push" "$section" 'set -- "$@" --just-pushed'
   assert_contains "fix is offered only with suggested fixes" "$section" "fixable"
-  assert_contains "the posting worker retries a lagging head" "$(md_section "$REVIEW_MD" "(g) Posting worker")" "JUST_PUSHED=true"
+  assert_contains "the drafting worker writes nothing to GitHub" "$(md_section "$REVIEW_MD" "(g) Drafting worker")" "makes no write API call"
+  assert_contains "the drafting worker reuses an unchanged draft" "$(md_section "$REVIEW_MD" "(g) Drafting worker")" "inputs-key"
   assert_contains "worker mode recovery file stays in the PR directory" "$(md_section "$REVIEW_MD" "7.5m: Error Recovery")" 'RECOVERY_DIR="$PR_DIR"'
   assert_contains "fix rounds apply all suggested fixes" "$(md_section "$REVIEW_MD" "(f) Fix rounds")" 'FIX_SCOPE="all"'
 }
@@ -4248,6 +4259,1093 @@ test_bulk_md_pre_decision_refresh() {
     out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" FAKE_GH_FAIL='pr view*' FAKE_GH_FAIL_MSG='secondary rate limit' with_fake_gh "$sh" "$block" 2>&1)"
     assert_eq "$sh: apply head check pauses on a rate limit" "HEAD rate-limited" "$out"
   done
+}
+
+# ---------------------------------------------------------------------------
+# post-review.sh
+# ---------------------------------------------------------------------------
+
+POST_REVIEW="$SCRIPTS/post-review.sh"
+REVIEW_DRAFT="$SCRIPTS/review_draft.py"
+DRAFT_FIXTURES="$ROOT/tests/fixtures/review-draft"
+DRAFT_HEAD=0123456789abcdef0123456789abcdef01234567
+DRAFT_MARKER=20261102-120000-review/pr-7
+
+# draft_setup: a GitHub-like repo, the analysis snapshots of PR 7 in
+# $TEST_TMP/scope (with history.json), matching fake gh fixtures in
+# $TEST_TMP/gh, and an assembled draft in $TEST_TMP/draft. Sets DRAFT_FP.
+draft_setup() {
+  local f="$DRAFT_FIXTURES"
+  if [ -d "$TEST_TMP/repo" ]; then BULK_REPO="$TEST_TMP/repo"; else make_bulk_repo; fi
+  rm -rf "$TEST_TMP/scope" "$TEST_TMP/gh" "$TEST_TMP/draft" "$TEST_TMP/gh-state" "$TEST_TMP/gh.log"
+  mkdir -p "$TEST_TMP/scope" "$TEST_TMP/gh" "$TEST_TMP/draft"
+  cp "$f"/scope/*.json "$TEST_TMP/scope/"
+  printf '{"state":"OPEN","headRefOid":"%s"}\n' "$DRAFT_HEAD" > "$TEST_TMP/gh/pr-view-7.json"
+  draft_threads "$(cat "$f/scope/threads.json")"
+  draft_comments "$(cat "$f/scope/comments.json")"
+  draft_reviews "$(jq -c 'map(del(.comments.nodes[].pullRequestReviewThread))' "$f/scope/reviews.json")"
+  jq -n --arg h "$DRAFT_HEAD" '{identity:{host:"github.com",repository:"acme/widget",user:"me",pr:7},head_oid:$h}' \
+    > "$TEST_TMP/scope/scope.json"
+  printf '[]\n' > "$TEST_TMP/scope/review-comment-ids.json"
+  jq -n --slurpfile s "$TEST_TMP/scope/scope.json" --slurpfile r "$TEST_TMP/scope/reviews.json" \
+    --slurpfile t "$TEST_TMP/scope/threads.json" --slurpfile c "$TEST_TMP/scope/comments.json" \
+    '{identity:$s[0].identity,head_oid:$s[0].head_oid,reviews:$r[0],threads:$t[0],comments:$c[0],
+      reviews_complete:true,threads_complete:true,comments_complete:true}' > "$TEST_TMP/scope/history-input.json"
+  jq '. + {review_comment_ids:[]}' "$TEST_TMP/scope/history-input.json" > "$TEST_TMP/history-selected.json"
+  python3 -B "$SCRIPTS/review_continuity.py" prepare --input "$TEST_TMP/history-selected.json" > "$TEST_TMP/scope/history.json"
+  cp "$f/slots-basic.json" "$TEST_TMP/draft/slots.json"
+  python3 -B "$REVIEW_DRAFT" assemble --slots "$TEST_TMP/draft/slots.json" --facts "$f/facts-uncurated.json" \
+    --out "$TEST_TMP/draft" --inputs-key k >/dev/null
+  DRAFT_FP="$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TEST_TMP/draft")"
+}
+
+# draft_threads / draft_comments / draft_reviews <json array>: the live
+# conversation the fake gh serves for PR 7
+draft_threads() {
+  printf '%s' "$1" | jq '{data:{repository:{pullRequest:{reviewThreads:{pageInfo:{hasNextPage:false,endCursor:null},nodes:.}}}}}' \
+    > "$TEST_TMP/gh/graphql-threads-7.json"
+}
+draft_comments() {
+  printf '%s' "$1" | jq '{data:{repository:{pullRequest:{comments:{pageInfo:{hasNextPage:false,endCursor:null},nodes:.}}}}}' \
+    > "$TEST_TMP/gh/graphql-comments-7.json"
+}
+draft_reviews() {
+  printf '%s' "$1" | jq '{data:{repository:{pullRequest:{reviews:{pageInfo:{hasNextPage:false,endCursor:null},nodes:.}}}}}' \
+    > "$TEST_TMP/gh/graphql-reviews-7.json"
+}
+
+# post_draft [extra args...]: runs post-review.sh for the draft in the repo;
+# the waits are zero so retries do not slow the suite
+post_draft() {
+  (cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" CC_REVIEW_POST_RETRY_DELAY=0 CC_REVIEW_POST_RECHECK_DELAY=0 \
+    with_fake_gh bash "$POST_REVIEW" --draft "$TEST_TMP/draft" --owner acme --repo widget --pr 7 --user me \
+    --expected-head "$DRAFT_HEAD" --run-marker "$DRAFT_MARKER" --scope "$TEST_TMP/scope" "$@")
+}
+
+# posted_count: number of request bodies the fake gh recorded
+posted_count() {
+  find "$TEST_TMP/gh-state/requests" -type f 2>/dev/null | wc -l | tr -d ' '
+}
+
+test_post_review_guards() {
+  local out rc hash comments
+  draft_setup
+  out="$(post_draft --approved-fingerprint 0000 2>&1)"; rc=$?
+  assert_eq "fingerprint mismatch is refused" "REFUSED fingerprint|1" "$out|$rc"
+  assert_eq "nothing posted on a fingerprint mismatch" "0" "$(posted_count)"
+  # missing and different pinned commit
+  jq 'del(.commit_id)' "$TEST_TMP/draft/payload.json" > "$TEST_TMP/p.json" && mv "$TEST_TMP/p.json" "$TEST_TMP/draft/payload.json"
+  out="$(post_draft --approved-fingerprint "$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TEST_TMP/draft")" 2>&1)"; rc=$?
+  assert_eq "a missing commit is stale" "STALE commit|1" "$out|$rc"
+  jq '.commit_id = "ffffffffffffffffffffffffffffffffffffffff"' "$TEST_TMP/draft/payload.json" > "$TEST_TMP/p.json" \
+    && mv "$TEST_TMP/p.json" "$TEST_TMP/draft/payload.json"
+  out="$(post_draft --approved-fingerprint "$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TEST_TMP/draft")" 2>&1)"; rc=$?
+  assert_eq "a different commit is stale" "STALE commit|1" "$out|$rc"
+  assert_eq "nothing posted without the right commit" "0" "$(posted_count)"
+  # moved head
+  draft_setup
+  printf '{"state":"OPEN","headRefOid":"%s"}\n' ffffffffffffffffffffffffffffffffffffffff > "$TEST_TMP/gh/pr-view-7.json"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "a moved head is stale" "STALE head|1" "$out|$rc"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --just-pushed 2>&1)"; rc=$?
+  assert_eq "a moved head stays stale after the retries" "STALE head|1" "$out|$rc"
+  assert_eq "the retries re-read the head" "4" "$(grep -c '^pr view 7' "$TEST_TMP/gh.log")"
+  assert_eq "nothing posted on a moved head" "0" "$(posted_count)"
+  # existing marker
+  draft_setup
+  draft_reviews "$(jq -c --arg m "$DRAFT_MARKER" 'map(del(.comments.nodes[].pullRequestReviewThread))
+    + [{databaseId:4242,body:("## cc-review Summary\n\n<!-- cc-review:run-id:" + $m + " -->"),author:{login:"me"},state:"COMMENTED",comments:{nodes:[]}}]' \
+    "$DRAFT_FIXTURES/scope/reviews.json")"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "an existing marker is found, not posted again" "FOUND 4242|0" "$out|$rc"
+  assert_eq "nothing posted when the marker exists" "0" "$(posted_count)"
+  draft_reviews "$(jq -c --arg m "$DRAFT_MARKER" 'map(del(.comments.nodes[].pullRequestReviewThread))
+    + [{databaseId:4343,body:("<!-- cc-review:run-id:" + $m + " -->"),author:{login:"someone"},state:"COMMENTED",comments:{nodes:[]}}]' \
+    "$DRAFT_FIXTURES/scope/reviews.json")"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_not_contains "another author's review with the marker is not this run's review" "$out" "FOUND"
+  assert_contains "another author's new review is a conversation change" "$out" "review 4343 by someone"
+  draft_reviews "$(jq -c --arg m "$DRAFT_MARKER" 'map(del(.comments.nodes[].pullRequestReviewThread))
+    + [{databaseId:4444,body:("quoted <!-- cc-review:run-id:" + $m + " --> inline"),author:{login:"me"},state:"COMMENTED",comments:{nodes:[]}}]' \
+    "$DRAFT_FIXTURES/scope/reviews.json")"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_not_contains "a marker inside a line is not the marker line" "$out" "FOUND"
+  # only a comment or a request for changes with this run's marker is posted
+  draft_setup
+  jq '.event = "APPROVE"' "$TEST_TMP/draft/payload.json" > "$TEST_TMP/p.json" && mv "$TEST_TMP/p.json" "$TEST_TMP/draft/payload.json"
+  out="$(post_draft --approved-fingerprint "$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TEST_TMP/draft")" 2>&1)"; rc=$?
+  assert_eq "an approving review is refused" "REFUSED payload|1" "$out|$rc"
+  draft_setup
+  jq --arg m "$DRAFT_MARKER" '.body |= sub("<!-- cc-review:run-id:" + $m + " -->"; "")' "$TEST_TMP/draft/payload.json" > "$TEST_TMP/p.json" \
+    && mv "$TEST_TMP/p.json" "$TEST_TMP/draft/payload.json"
+  out="$(post_draft --approved-fingerprint "$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TEST_TMP/draft")" 2>&1)"; rc=$?
+  assert_eq "a payload without the run marker is refused" "REFUSED payload|1" "$out|$rc"
+  assert_eq "nothing posted for a refused payload" "0" "$(posted_count)"
+  # a new comment by someone else since analysis
+  draft_setup
+  comments="$(jq -c '. + [{id:"IC_new",databaseId:9,body:"Please wait",author:{login:"carol",__typename:"User"}}]' "$DRAFT_FIXTURES/scope/comments.json")"
+  draft_comments "$comments"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "a new comment withholds the post" "1" "$rc"
+  assert_contains "the change names the new item" "$out" "new conversation items: comment IC_new by carol"
+  assert_eq "nothing posted on a conversation change" "0" "$(posted_count)"
+  hash="$(printf '%s' "$out" | cut -d' ' -f2)"
+  assert_eq "the hash is the reason's SHA-256" "$hash" \
+    "$(printf '%s' "${out#CHANGED $hash }" | python3 -c 'import hashlib,sys; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest())')"
+  # the history recheck reports the same change
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_contains "history recheck: a mismatch withholds" "$out" "CHANGED "
+  assert_contains "history recheck: the reason names the new history item" "$out" "history changed: comment IC_new by carol"
+  assert_contains "history recheck: the new item is named too" "$out" "; new conversation items: comment IC_new by carol"
+  # post anyway for exactly these changes; one more comment withholds again
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --accept-changes "$hash" 2>&1)"; rc=$?
+  assert_eq "post anyway posts" "0" "$rc"
+  assert_contains "post anyway reports the review" "$out" "POSTED "
+  draft_setup
+  draft_comments "$comments"
+  draft_comments "$(printf '%s' "$comments" | jq -c '. + [{id:"IC_more",databaseId:10,body:"And this",author:{login:"dave"}}]')"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --accept-changes "$hash" 2>&1)"; rc=$?
+  assert_eq "a further change is withheld again" "1" "$rc"
+  assert_contains "the further change is named" "$out" "comment IC_more by dave"
+  assert_eq "nothing posted for the further change" "0" "$(posted_count)"
+  # bots and the user's own comments do not block
+  draft_setup
+  draft_comments "$(jq -c '. + [{id:"IC_bot",body:"ci",author:{login:"ci-bot",__typename:"Bot"}},
+    {id:"IC_bot2",body:"ci",author:{login:"renovate[bot]"}},{id:"IC_mine",body:"note",author:{login:"me"}}]' \
+    "$DRAFT_FIXTURES/scope/comments.json")"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "bot and own comments do not withhold" "0" "$rc"
+  assert_contains "bot and own comments: posted" "$out" "POSTED 1001 https://github.com/acme/widget/pull/7#pullrequestreview-1001"
+  # 422: stale head after one POST, or after 3 with --just-pushed
+  draft_setup
+  out="$(FAKE_GH_POST_STATUS=422 post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "422 is a stale head" "STALE head|1" "$out|$rc"
+  assert_eq "422 without a push: one POST" "1" "$(posted_count)"
+  draft_setup
+  out="$(FAKE_GH_POST_STATUS=422 post_draft --approved-fingerprint "$DRAFT_FP" --just-pushed 2>&1)"; rc=$?
+  assert_eq "422 after a push is stale after the retries" "STALE head|1" "$out|$rc"
+  assert_eq "422 after a push: three POSTs" "3" "$(posted_count)"
+  assert_eq "no recovery file for a stale head" "no" "$([ -e "$TEST_TMP/draft/recovery.json" ] && echo yes || echo no)"
+  # authentication failure
+  draft_setup
+  out="$(FAKE_GH_FAIL='api repos/acme/widget/pulls/7/reviews*' FAKE_GH_FAIL_MSG='HTTP 401: Bad credentials' \
+    post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "an auth failure fails" "1" "$rc"
+  assert_contains "an auth failure is named" "$out" "FAILED auth "
+  assert_eq "the recovery file holds the payload" "$(cat "$TEST_TMP/draft/payload.json")" "$(cat "$TEST_TMP/draft/recovery.json")"
+  # rate limit
+  draft_setup
+  out="$(FAKE_GH_FAIL='api repos/acme/widget/pulls/7/reviews*' FAKE_GH_FAIL_MSG='HTTP 403: API rate limit exceeded' \
+    post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "a rate limit exits 75" "75" "$rc"
+  assert_contains "a rate limit is reported" "$out" "Error: RATE_LIMITED"
+  # usage
+  out="$(bash "$POST_REVIEW" --draft "$TEST_TMP/draft" 2>&1)"; rc=$?
+  assert_eq "missing arguments are a usage error" "2" "$rc"
+}
+
+test_post_review_posts_exact_bytes() {
+  local out rc
+  draft_setup
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_eq "an unchanged PR is posted" "POSTED 1001 https://github.com/acme/widget/pull/7#pullrequestreview-1001|0" "$out|$rc"
+  assert_eq "one POST" "1" "$(posted_count)"
+  cmp -s "$TEST_TMP/draft/payload.json" "$TEST_TMP/gh-state/requests/001.json" && _pass \
+    || _fail "the POST body equals payload.json byte for byte (SC-002)"
+  assert_contains "the POST goes to the PR's reviews" "$(cat "$TEST_TMP/gh.log")" "api repos/acme/widget/pulls/7/reviews --method POST --input"
+  # A timeout although GitHub created the review: the marker search finds it
+  draft_setup
+  jq --arg m "$DRAFT_MARKER" '.data.repository.pullRequest.reviews.nodes += [{databaseId:5151,
+    body:("x\n<!-- cc-review:run-id:" + $m + " -->"),author:{login:"me"},state:"COMMENTED",comments:{nodes:[]}}]' \
+    "$TEST_TMP/gh/graphql-reviews-7.json" > "$TEST_TMP/gh/graphql-reviews-7-after-post.json"
+  out="$(FAKE_GH_POST_STATUS=502 post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "a timeout with the review created is found" "FOUND 5151|0" "$out|$rc"
+  assert_eq "no second POST after the timeout" "1" "$(posted_count)"
+  assert_eq "no recovery file when found" "no" "$([ -e "$TEST_TMP/draft/recovery.json" ] && echo yes || echo no)"
+  # A timeout without the review: recovery file and FAILED
+  draft_setup
+  out="$(FAKE_GH_POST_STATUS=502 post_draft --approved-fingerprint "$DRAFT_FP" 2>&1)"; rc=$?
+  assert_eq "a timeout without the review fails" "1" "$rc"
+  assert_contains "a timeout without the review is FAILED other" "$out" "FAILED other "
+  assert_eq "a timeout without the review writes the recovery file" "yes" "$([ -e "$TEST_TMP/draft/recovery.json" ] && echo yes)"
+}
+
+test_post_review_check_only() {
+  local out rc fp reviews
+  draft_setup
+  # After the review was posted: the run's own review with its marker is on the PR
+  reviews="$(jq -c --arg m "$DRAFT_MARKER" 'map(del(.comments.nodes[].pullRequestReviewThread))
+    + [{databaseId:4242,body:("<!-- cc-review:run-id:" + $m + " -->"),author:{login:"me"},state:"COMMENTED",
+        submittedAt:"2026-11-06T10:00:00Z",comments:{nodes:[]}}]' "$DRAFT_FIXTURES/scope/reviews.json")"
+  draft_reviews "$reviews"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --check-only --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_eq "check-only passes with the run's own review on the PR" "OK|0" "$out|$rc"
+  assert_eq "check-only posts nothing" "0" "$(posted_count)"
+  draft_comments "$(jq -c '. + [{id:"IC_new",body:"Wait",author:{login:"carol",__typename:"User"}}]' "$DRAFT_FIXTURES/scope/comments.json")"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --check-only --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_eq "check-only: a new comment by someone else withholds" "1" "$rc"
+  assert_contains "check-only: the change is named" "$out" "comment IC_new by carol"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --check-only --accept-changes "$(printf '%s' "$out" | cut -d' ' -f2)" \
+    --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_eq "check-only: an accepted change passes" "OK|0" "$out|$rc"
+  # Thread actions without a review: the draft holds thread-actions.json alone
+  draft_setup
+  rm "$TEST_TMP/draft/payload.json"
+  printf '[{"thread_id":"PRRT_kwDOA1","reply_body":"Fixed in the latest commit.","resolve":true,"activity":{}}]\n' \
+    > "$TEST_TMP/draft/thread-actions.json"
+  fp="$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TEST_TMP/draft")"
+  out="$(post_draft --approved-fingerprint "$fp" --check-only 2>&1)"; rc=$?
+  assert_eq "check-only: approved thread actions without a review pass" "OK|0" "$out|$rc"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --check-only 2>&1)"; rc=$?
+  assert_eq "check-only: changed thread actions are refused" "REFUSED fingerprint|1" "$out|$rc"
+  out="$(post_draft --approved-fingerprint "$fp" 2>&1)"; rc=$?
+  assert_eq "posting a review needs payload.json" "2" "$rc"
+  printf '{"state":"OPEN","headRefOid":"%s"}\n' ffffffffffffffffffffffffffffffffffffffff > "$TEST_TMP/gh/pr-view-7.json"
+  out="$(post_draft --approved-fingerprint "$fp" --check-only 2>&1)"; rc=$?
+  assert_eq "check-only: a moved head is stale" "STALE head|1" "$out|$rc"
+  assert_eq "check-only never posts" "0" "$(posted_count)"
+}
+
+test_post_review_ignored_authors() {
+  local out rc
+  draft_setup
+  draft_comments "$(jq -c '. + [{id:"IC_robot",body:"/retest",author:{login:"k8s-ci-robot",__typename:"User"}}]' \
+    "$DRAFT_FIXTURES/scope/comments.json")"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_eq "a robot account that is a user withholds by default" "1" "$rc"
+  assert_contains "the robot comment is named" "$out" "comment IC_robot by k8s-ci-robot"
+  out="$(post_draft --approved-fingerprint "$DRAFT_FP" --history "$TEST_TMP/scope/history.json" \
+    --ignore-author k8s-ci-robot 2>&1)"; rc=$?
+  assert_eq "an ignored author is treated like a bot" "0" "$rc"
+  assert_contains "the review is posted" "$out" "POSTED "
+}
+
+# post-review.sh reads and posts through --owner/--repo only: run from a
+# directory that is not a clone, the fake gh fails every call that addresses
+# another repository or relies on the current directory
+test_post_review_outside_repo() {
+  local out rc elsewhere
+  draft_setup
+  elsewhere="$TEST_TMP/elsewhere"
+  mkdir -p "$elsewhere"
+  printf '{"owner":{"login":"other"},"name":"elsewhere"}\n' > "$TEST_TMP/gh/repo.json"
+  post_elsewhere() {
+    (cd "$elsewhere" && FAKE_GH_DIR="$TEST_TMP/gh" FAKE_GH_EXPECT_REPO=acme/widget \
+      CC_REVIEW_POST_RETRY_DELAY=0 CC_REVIEW_POST_RECHECK_DELAY=0 \
+      with_fake_gh bash "$POST_REVIEW" --draft "$TEST_TMP/draft" --owner acme --repo widget --pr 7 --user me \
+      --expected-head "$DRAFT_HEAD" --run-marker "$DRAFT_MARKER" --scope "$TEST_TMP/scope" "$@")
+  }
+  # The fake really rejects a read that resolves the repository from the directory
+  out="$(cd "$elsewhere" && FAKE_GH_DIR="$TEST_TMP/gh" FAKE_GH_EXPECT_REPO=acme/widget CC_REVIEW_PLATFORM=github \
+    with_fake_gh bash -c 'source "$1"; fetch_pr_threads 7' _ "$SCRIPTS/platform.sh" 2>&1)"; rc=$?
+  assert_eq "outside a clone, threads without owner and repo fail" "1" "$rc"
+  out="$(cd "$elsewhere" && FAKE_GH_DIR="$TEST_TMP/gh" FAKE_GH_EXPECT_REPO=acme/widget CC_REVIEW_PLATFORM=github \
+    with_fake_gh bash -c 'source "$1"; fetch_pr_threads 7 acme widget' _ "$SCRIPTS/platform.sh" 2>/dev/null)"; rc=$?
+  assert_eq "threads with owner and repo are read" "0" "$rc"
+  assert_json "the threads of the named repository" "$out" 'length' "$(jq length "$TEST_TMP/scope/threads.json")"
+  rm -f "$TEST_TMP/gh.log"
+  out="$(post_elsewhere --approved-fingerprint "$DRAFT_FP" --check-only --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_eq "check-only outside a clone reads the named repository" "OK|0" "$out|$rc"
+  out="$(post_elsewhere --approved-fingerprint "$DRAFT_FP" --history "$TEST_TMP/scope/history.json" 2>&1)"; rc=$?
+  assert_eq "post outside a clone addresses the named repository" \
+    "POSTED 1001 https://github.com/acme/widget/pull/7#pullrequestreview-1001|0" "$out|$rc"
+  assert_not_contains "no call resolves the repository from the directory" "$(cat "$TEST_TMP/gh.log")" "repo view"
+  assert_contains "the threads are read for acme/widget" "$(cat "$TEST_TMP/gh.log")" "owner=acme -f repo=widget -F number=7"
+}
+
+# bulk_post_setup <shell>: a deferred review run with PR 7 approved for posting;
+# its draft (run marker of this run) and scope come from draft_setup. Sets
+# POST_RUN and POST_RUN_DIR.
+bulk_post_setup() {
+  local seed fp
+  seed="[{\"number\":7,\"title\":\"Parser\",\"author\":\"alice\",\"head_ref\":\"topic-7\",\"head_sha\":\"$DRAFT_HEAD\",\"base_ref\":\"main\",\"head_repo_url\":\"https://github.com/alice/widget.git\",\"is_cross_repo\":true,\"authored_by_user\":false,\"updated_at\":\"2026-10-20T10:00:00Z\"}]"
+  POST_RUN="$(CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" init review deferred "$BULK_SELECTOR" '[]' acme widget me)"
+  CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" set-prs "$POST_RUN" "$seed" '[]' >/dev/null
+  POST_RUN_DIR="$BULK_REPO/.cc-review/bulk/$POST_RUN"
+  mkdir -p "$POST_RUN_DIR/pr-7/post"
+  cp -R "$TEST_TMP/scope" "$POST_RUN_DIR/pr-7/scope"
+  jq --arg m "$POST_RUN/pr-7" '.run_marker = $m' "$DRAFT_FIXTURES/slots-basic.json" > "$POST_RUN_DIR/pr-7/post/slots.json"
+  python3 -B "$REVIEW_DRAFT" assemble --slots "$POST_RUN_DIR/pr-7/post/slots.json" --facts "$DRAFT_FIXTURES/facts-uncurated.json" \
+    --out "$POST_RUN_DIR/pr-7/post" --inputs-key k7 >/dev/null
+  fp="$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$POST_RUN_DIR/pr-7/post")"
+  CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$POST_RUN" 7 '.status="applying"' \
+    '.decision=["post"]' ".expected_head=\"$DRAFT_HEAD\"" ".draft={fingerprint:\"$fp\",inputs_key:\"k7\"}" \
+    ".approval={answer:\"approved\",fingerprint:\"$fp\"}" >/dev/null
+}
+
+# run_bulk_block <shell> <block file>: runs a bulk.md block against the fake gh
+run_bulk_block() {
+  (cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" CC_REVIEW_POST_RETRY_DELAY=0 CC_REVIEW_POST_RECHECK_DELAY=0 \
+    HOME="$TEST_TMP/home" with_fake_gh "$1" "$2" 2>&1)
+}
+
+test_bulk_post_pass_block() {
+  local sh block check out bset
+  draft_setup
+  mkdir -p "$TEST_TMP/home"
+  bset() { CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$POST_RUN" 7 "$@" >/dev/null; }
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    rm -rf "$TEST_TMP/gh-state" "$TEST_TMP/gh.log" "$BULK_REPO/.cc-review/config.yml"
+    draft_comments "$(cat "$DRAFT_FIXTURES/scope/comments.json")"
+    printf '{"state":"OPEN","headRefOid":"%s"}\n' "$DRAFT_HEAD" > "$TEST_TMP/gh/pr-view-7.json"
+    bulk_post_setup
+    block="$TEST_TMP/post-pass.sh"; check="$TEST_TMP/thread-check.sh"
+    bulk_md_block 'PR_DIR/post.err' "$POST_RUN" > "$block"
+    bulk_md_block 'PR_DIR/check.err' "$POST_RUN" > "$check"
+    # The approved draft is posted byte for byte
+    out="$(run_bulk_block "$sh" "$block")"
+    assert_contains "$sh: the Post pass posts the approved draft" "$out" "POST rc=0 POSTED 1001"
+    cmp -s "$POST_RUN_DIR/pr-7/post/payload.json" "$TEST_TMP/gh-state/requests/001.json" && _pass \
+      || _fail "$sh: the Post pass sends payload.json byte for byte"
+    # The thread-action check passes after the run's own review was posted
+    draft_reviews "$(jq -c --arg m "$POST_RUN/pr-7" 'map(del(.comments.nodes[].pullRequestReviewThread))
+      + [{databaseId:1001,body:("<!-- cc-review:run-id:" + $m + " -->"),author:{login:"me"},state:"COMMENTED",comments:{nodes:[]}}]' \
+      "$DRAFT_FIXTURES/scope/reviews.json")"
+    out="$(run_bulk_block "$sh" "$check")"
+    assert_contains "$sh: the thread-action check passes" "$out" "CHECK rc=0 OK"
+    draft_reviews "$(jq -c 'map(del(.comments.nodes[].pullRequestReviewThread))' "$DRAFT_FIXTURES/scope/reviews.json")"
+    # Another approval fingerprint is refused, by the post and by the check
+    rm -rf "$TEST_TMP/gh-state"
+    bset '.approval.fingerprint="0000"'
+    assert_contains "$sh: a changed draft is refused" "$(run_bulk_block "$sh" "$block")" "POST rc=1 REFUSED fingerprint"
+    assert_contains "$sh: the check refuses a changed draft" "$(run_bulk_block "$sh" "$check")" "CHECK rc=1 REFUSED fingerprint"
+    assert_eq "$sh: nothing posted for a changed draft" "0" "$(posted_count)"
+    bset ".approval.fingerprint=.draft.fingerprint"
+    # After a push by this run the head is read three times
+    bset '.actions.pushed_sha="abc"'
+    printf '{"state":"OPEN","headRefOid":"%s"}\n' ffffffffffffffffffffffffffffffffffffffff > "$TEST_TMP/gh/pr-view-7.json"
+    rm -f "$TEST_TMP/gh.log"
+    assert_contains "$sh: a moved head is stale" "$(run_bulk_block "$sh" "$block")" "POST rc=1 STALE head"
+    assert_eq "$sh: --just-pushed retries the head read" "3" "$(grep -c '^pr view 7' "$TEST_TMP/gh.log")"
+    printf '{"state":"OPEN","headRefOid":"%s"}\n' "$DRAFT_HEAD" > "$TEST_TMP/gh/pr-view-7.json"
+    bset '.actions.pushed_sha=null'
+    # pr_posting.ignore_authors from the project config reaches the check
+    draft_comments "$(jq -c '. + [{id:"IC_robot",body:"/retest",author:{login:"k8s-ci-robot",__typename:"User"}}]' \
+      "$DRAFT_FIXTURES/scope/comments.json")"
+    assert_contains "$sh: a robot user withholds by default" "$(run_bulk_block "$sh" "$block")" "comment IC_robot by k8s-ci-robot"
+    mkdir -p "$BULK_REPO/.cc-review"
+    printf 'pr_posting:\n  ignore_authors:\n    - k8s-ci-robot\n' > "$BULK_REPO/.cc-review/config.yml"
+    assert_contains "$sh: an ignored author does not withhold" "$(run_bulk_block "$sh" "$block")" "POST rc=0 POSTED"
+    rm -f "$BULK_REPO/.cc-review/config.yml"
+  done
+  assert_contains "the default config lists no ignored author" "$(cat "$ROOT/review/config/config-template.yml")" "  ignore_authors: []"
+}
+
+# The Post pass and its thread-action check run in a new shell: --config and
+# --profile come from the run's recorded options, not from the environment
+test_bulk_post_pass_recorded_config() {
+  local sh block check out f opts
+  draft_setup
+  mkdir -p "$TEST_TMP/home"
+  printf 'pr_posting:\n  ignore_authors:\n    - k8s-ci-robot\n' > "$TEST_TMP/alt-config.yml"
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    for opts in "[\"--config\",\"$TEST_TMP/alt-config.yml\"]" "[\"--no-meta-review\",\"--config=$TEST_TMP/alt-config.yml\"]"; do
+      rm -rf "$TEST_TMP/gh-state" "$TEST_TMP/gh.log" "$BULK_REPO/.cc-review/config.yml"
+      draft_comments "$(jq -c '. + [{id:"IC_robot",body:"/retest",author:{login:"k8s-ci-robot",__typename:"User"}}]' \
+        "$DRAFT_FIXTURES/scope/comments.json")"
+      draft_reviews "$(jq -c 'map(del(.comments.nodes[].pullRequestReviewThread))' "$DRAFT_FIXTURES/scope/reviews.json")"
+      bulk_post_setup
+      f="$POST_RUN_DIR/state.json"
+      block="$TEST_TMP/post-pass.sh"; check="$TEST_TMP/thread-check.sh"
+      bulk_md_block 'PR_DIR/post.err' "$POST_RUN" > "$block"
+      bulk_md_block 'PR_DIR/check.err' "$POST_RUN" > "$check"
+      assert_contains "$sh: the Post pass reads the recorded options" "$(cat "$block")" 'CONFIG_FLAG=$(opt --config)'
+      assert_contains "$sh: the thread-action check reads the recorded options" "$(cat "$check")" 'CONFIG_FLAG=$(opt --config)'
+      # Without the recorded --config the robot comment withholds
+      assert_contains "$sh: without --config the robot withholds" "$(run_bulk_block "$sh" "$check")" "comment IC_robot by k8s-ci-robot"
+      jq --argjson o "$opts" '.options = $o' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+      out="$(CONFIG_FLAG= PROFILE_FLAG= run_bulk_block "$sh" "$check")"
+      assert_contains "$sh: the check applies the recorded --config ($opts)" "$out" "CHECK rc=0 OK"
+      out="$(CONFIG_FLAG= PROFILE_FLAG= run_bulk_block "$sh" "$block")"
+      assert_contains "$sh: the post applies the recorded --config ($opts)" "$out" "POST rc=0 POSTED"
+    done
+  done
+  # Every bulk.md block that initializes the config sets both flags first
+  awk '/^```bash$/ { buf = ""; inb = 1; next }
+    inb && /^```$/ { if (buf ~ /resolve_config_init/) { n++; if (buf !~ /CONFIG_FLAG=/ || buf !~ /PROFILE_FLAG=/) bad++ } inb = 0; next }
+    inb { buf = buf $0 "\n" }
+    END { printf "%d %d", n, bad }' "$BULK_MD" > "$TEST_TMP/config-blocks"
+  assert_eq "every config block sets CONFIG_FLAG and PROFILE_FLAG" "0" "$(cut -d' ' -f2 "$TEST_TMP/config-blocks")"
+}
+
+test_review_noninteractive_policy_block() {
+  local block sh d out
+  block="$TEST_TMP/policy-single.sh"
+  md_block "$REVIEW_MD" 'echo "APPROVAL policy"' > "$block"
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    d="$TEST_TMP/policy-$sh"
+    rm -rf "$d"; mkdir -p "$d"
+    cp "$DRAFT_FIXTURES/slots-basic.json" "$d/slots.json"
+    python3 -B "$REVIEW_DRAFT" assemble --slots "$d/slots.json" --facts "$DRAFT_FIXTURES/facts-uncurated.json" \
+      --out "$d" --inputs-key k >/dev/null
+    printf '[]\n' > "$d/lint.json"
+    out="$(DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" "$sh" "$block" 2>&1)"
+    assert_eq "$sh: a clean draft is approved by policy" "APPROVAL policy" "$out"
+    assert_json "$sh: the policy approval records the checked fingerprint" "$(cat "$d/approval.json")" \
+      '"\(.answer) \(.fingerprint)"' "policy $(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$d")"
+    rm -f "$d/approval.json"
+    printf '[{"rule":"commit","location":"payload","message":"no pinned commit"}]\n' > "$d/lint.json"
+    assert_eq "$sh: a commit finding is stale" "STALE commit" "$(DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" "$sh" "$block" 2>&1)"
+    printf '[{"rule":"dash","location":"summary body","message":"em or en dash in prose"}]\n' > "$d/lint.json"
+    assert_eq "$sh: a failing draft is withheld" "WITHHELD [dash] summary body: em or en dash in prose" \
+      "$(DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" "$sh" "$block" 2>&1)"
+    rm -f "$d/lint.json"
+    assert_eq "$sh: a missing check withholds" "WITHHELD the draft check did not run" \
+      "$(DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" "$sh" "$block" 2>&1)"
+    assert_eq "$sh: no approval without a clean check" "no" "$([ -e "$d/approval.json" ] && echo yes || echo no)"
+  done
+}
+
+test_bulk_state_withheld() {
+  local run md
+  run="$(new_run review)"
+  bstate pr-set "$run" 10 '.status="actioned"' '.decision=["post"]' >/dev/null
+  bstate pr-set "$run" 11 '.status="withheld"' '.decision=["post"]' \
+    '.reason="check findings: [dash] summary body: em or en dash in prose"' >/dev/null
+  assert_eq "withheld is a PR status" "withheld" "$(bstate pr-get "$run" 11 .status)"
+  assert_eq "a withheld PR is finished for the run" "" "$(bstate open-prs "$run")"
+  md="$(cat "$(bstate summary "$run")")"
+  assert_contains "withheld PRs need attention" "$md" "## Needs attention"
+  assert_contains "the withheld PR and its reason are listed" "$md" \
+    "- #11 review withheld: check findings: [dash] summary body: em or en dash in prose"
+  assert_not_contains "the prefix is not repeated" "$md" "review withheld: review withheld"
+  # A posted review whose thread actions were withheld is not a withheld review
+  bstate record "$run" 10 review_id 4242 >/dev/null
+  bstate pr-set "$run" 10 '.status="withheld"' '.reason="conversation changed: new conversation items: comment IC_9 by carol"' >/dev/null
+  md="$(cat "$(bstate summary "$run")")"
+  assert_contains "a posted review with withheld thread replies says so" "$md" \
+    "- #10 review posted, thread replies withheld: conversation changed: new conversation items: comment IC_9 by carol"
+  assert_not_contains "the posted review is not called withheld" "$md" "- #10 review withheld"
+  assert_contains "the posted review keeps its link" "$md" "pullrequestreview-4242"
+  assert_contains "the plain withheld review keeps its wording" "$md" "- #11 review withheld: check findings"
+  assert_eq "the run finishes with a withheld PR" "finished" "$(bstate finish "$run")"
+  assert_eq "a finished run with a withheld PR is not unfinished work" "" "$(bstate find-unfinished review)"
+  # A review run without withheld PRs keeps its summary unchanged
+  run="$(new_run review)"
+  bstate pr-set "$run" 10 '.status="actioned"' >/dev/null
+  assert_not_contains "no attention section without a withheld PR" "$(cat "$(bstate summary "$run")")" "Needs attention"
+}
+
+test_review_draft() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_review_draft.py" 2>&1)"; then
+    _pass
+  else
+    _fail "review draft Python suite" "$output"
+  fi
+}
+
+test_review_command_draft_flow() {
+  local step section
+  step="$(md_section "$REVIEW_MD" "Step 7.5: PR Review Posting")"
+  for section in "Draft Half" "Approve Half" "Post Half" "7.5k3: Preview and Approve" "7.5l2: Thread Actions"; do
+    assert_contains "Step 7.5 has $section" "$step" "### $section"
+  done
+  assert_eq "the halves come in order" "Draft Half,Approve Half,Post Half" \
+    "$(printf '%s\n' "$step" | grep -E '^### (Draft|Approve|Post) Half$' | sed 's/^### //' | paste -sd, -)"
+  for needle in 'review_draft.py' '"$DRAFT_TOOL" assemble' '"$DRAFT_TOOL" lint' '"$DRAFT_TOOL" preview' 'post-review.sh' \
+    'DRAFT_DIR="$REVIEW_RUN_DIR/post"' 'DRAFT_DIR="$PR_DIR/post"'; do
+    assert_contains "Step 7.5 uses $needle" "$step" "$needle"
+  done
+  assert_contains "7.5f writes the proposed thread actions" "$(md_section "$REVIEW_MD" "7.5f: Resolve Fixed Threads")" 'thread-actions.json'
+  assert_contains "approval records the fingerprint" "$(md_section "$REVIEW_MD" "7.5k3: Preview and Approve")" '"$DRAFT_TOOL" fingerprint --draft "$DRAFT_DIR"'
+  assert_contains "the post uses the approved fingerprint" "$(md_section "$REVIEW_MD" "7.5l: Post Review")" '--approved-fingerprint "$APPROVED_FINGERPRINT"'
+  assert_not_contains "no direct post_review call is left in review.md" "$(cat "$REVIEW_MD")" 'post_review "$OWNER"'
+  assert_not_contains "no direct post_review call is left in bulk.md" "$(cat "$BULK_MD")" 'post_review "$OWNER"'
+  assert_contains "Step 8 reports withheld reviews" "$(md_section "$REVIEW_MD" "Step 8: Console Summary")" "**withheld**"
+  assert_contains "slots mark repro scenarios" "$(md_section "$REVIEW_MD" "7.5k: Assemble Review Submission")" '`repro_present` is true when any posted finding'
+  assert_contains "slots carry no unrecorded test result" "$(md_section "$REVIEW_MD" "7.5k: Assemble Review Submission")" 'unless an entry of `executed[]` in `FACTS_FILE` backs it'
+  assert_contains "the prose rewrite edits slot text only" "$(md_section "$REVIEW_MD" "7.5i: Format Comment Bodies")" 'never on assembled bodies'
+  assert_contains "the voice template starts examples with the severity" "$(cat "$ROOT/review/core/templates/reviewer-voice.md")" '**Critical**: Null pointer dereference'
+  assert_contains "the voice template limits the rewrite scope" "$(cat "$ROOT/review/core/templates/reviewer-voice.md")" '## Rewrite Scope'
+  assert_contains "a failing draft is redrafted once" "$(md_section "$REVIEW_MD" "7.5k2: Truncation Guard")" '**Redraft once (FR-013).**'
+  assert_contains "a commit finding is never redrafted" "$(md_section "$REVIEW_MD" "7.5k2: Truncation Guard")" 'A `commit` finding'
+  assert_contains "non-interactive review approves a clean draft by policy" "$(md_section "$REVIEW_MD" "7.5k3: Preview and Approve")" '{answer: "policy", fingerprint: $fp, at: $at}'
+  assert_contains "non-interactive review withholds a failing draft" "$(md_section "$REVIEW_MD" "7.5k3: Preview and Approve")" 'WITHHELD'
+  assert_contains "thread actions still run without a review" "$(md_section "$REVIEW_MD" "7.5h: Reject-All Guard")" "**Thread actions without a review.**"
+  assert_not_contains "7.5m reads the post result, not a raw response" "$(md_section "$REVIEW_MD" "7.5m: Error Recovery")" 'REVIEW_RESPONSE'
+  assert_not_contains "review.md keeps edited text in two fields" "$(cat "$REVIEW_MD")" 'edited_text'
+  assert_not_contains "bulk.md keeps edited text in two fields" "$(cat "$BULK_MD")" 'edited_text'
+  assert_contains "7.5g stores the edited description and fix separately" "$(md_section "$REVIEW_MD" "7.5g: Interactive Local Review")" '`edited_description` and `edited_fix`'
+  assert_contains "7.5g records curation as a run fact" "$(md_section "$REVIEW_MD" "7.5g: Interactive Local Review")" 'facts-set --facts "$FACTS_FILE" --curated "$CURATED"'
+  assert_contains "the drill-down records curation" "$(md_section "$BULK_MD" "Allowed actions")" 'facts-set --facts "$RUN_DIR/pr-<n>/facts.json" --curated true'
+  assert_contains "fix rounds record the test outcome" "$(md_section "$REVIEW_MD" "Step 6: Autonomous Fix Loop")" 'facts-set --facts "$FACTS_FILE"'
+  assert_contains "the fix worker records the test outcome" "$(md_section "$REVIEW_MD" "(f) Fix rounds")" 'review_draft.py facts-set --executed'
+  assert_contains "analysis records its time" "$(cat "$REVIEW_MD")" '> "$SCOPE_DIR/analyzed-at.json"'
+  assert_contains "7.5l2 checks before every thread action" "$(md_section "$REVIEW_MD" "7.5l2: Thread Actions")" '--check-only'
+  assert_contains "thread actions without a review get their own approval" "$(md_section "$REVIEW_MD" "7.5h: Reject-All Guard")" 'thread_actions_only: true'
+  assert_contains "the post passes ignored authors" "$(md_section "$REVIEW_MD" "7.5l: Post Review")" 'resolve_config_list pr_posting.ignore_authors'
+  assert_contains "bulk thread actions are checked" "$(md_section "$BULK_MD" "Post Pass")" '--check-only'
+}
+
+test_bulk_command_three_pass_apply() {
+  local section approve post
+  section="$(md_section "$BULK_MD" "Review Decision and Apply")"
+  assert_eq "Prepare, Approve and Post passes in that order" "Prepare Pass,Approve Pass,Post Pass" \
+    "$(printf '%s\n' "$section" | grep -E '^#### (Prepare|Approve|Post) Pass$' | sed 's/^#### //' | paste -sd, -)"
+  approve="$(md_section "$BULK_MD" "Approve Pass")"
+  post="$(md_section "$BULK_MD" "Post Pass")"
+  assert_contains "the approve pass shows the full preview" "$approve" 'post/preview.md` in full'
+  assert_contains "the approve pass has no approve-all shortcut" "$approve" 'There is no "approve all" choice'
+  assert_not_contains "no approve-all option is offered" "$approve" '**Approve all**'
+  assert_contains "answers are recorded immediately" "$approve" ".approval={answer: env.ANSWER, fingerprint: env.FP"
+  assert_contains "the approve pass can stop and resume" "$approve" "**Stop (resume later)**"
+  assert_contains "a skip after a push is actioned" "$approve" "fixes pushed, review not posted"
+  assert_contains "the post uses the recorded approval fingerprint" "$post" '--approved-fingerprint "$(get .approval.fingerprint)"'
+  assert_contains "the post calls post-review.sh" "$post" '"$S/post-review.sh" "$@"'
+  assert_contains "the post passes the analyzed history" "$post" '--history "$PR_DIR/scope/history.json"'
+  assert_contains "the prepare pass dispatches the drafting worker" "$(md_section "$BULK_MD" "Prepare Pass")" 'drafting worker of `review.md` "Worker Mode (bulk)" (g)'
+  assert_contains "the post maps CHANGED" "$post" '`CHANGED <hash> <reason>`'
+  assert_contains "only applying PRs are asked" "$approve" 'PRs with status `applying` that have a recorded `.draft`'
+  assert_contains "only applying PRs are posted" "$post" 'with status `applying`, a decision that contains `post`'
+  assert_contains "withheld is named for unattended runs" "$post" 'set `withheld` with the reason'
+}
+
+test_unattended_policy_withholds() {
+  local section run block sh dir st
+  section="$(md_section "$BULK_MD" "Unattended Policy")"
+  assert_contains "clean drafts get a policy approval" "$section" '.approval={answer: "policy", fingerprint: env.FP'
+  assert_contains "a failing check withholds the review" "$section" "'.status=\"withheld\"'"
+  assert_contains "a CHANGED result withholds the review" "$section" 'A `CHANGED` result of `post-review.sh` in the Post pass'
+  assert_contains "no approve pass and no question" "$section" "There is no Approve pass and no question"
+  assert_contains "the no-prompt rule is kept" "$section" "may ask the user anything when \`BULK_MODE=unattended\`"
+  assert_contains "the Post pass withholds CHANGED unattended" "$(md_section "$BULK_MD" "Post Pass")" 'set `withheld` with the reason'
+  assert_contains "withheld thread replies after a posted review are named" "$(md_section "$BULK_MD" "Post Pass")" \
+    '`review posted, thread replies withheld: <reason>`, not as a withheld review'
+  # The policy block as written, under bash and zsh
+  make_bulk_repo
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    run="$(CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" init review unattended "$BULK_SELECTOR" '[]' acme widget me)"
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" set-prs "$run" "$BULK_SEED" '[]' >/dev/null
+    dir="$BULK_REPO/.cc-review/bulk/$run"
+    for n in 10 11; do
+      CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$run" "$n" '.status="applying"' \
+        '.decision=["post"]' ".draft={fingerprint:\"fp$n\",inputs_key:\"k$n\"}" ".expected_head=\"$DRAFT_HEAD\"" >/dev/null
+      mkdir -p "$dir/pr-$n/post"
+      jq --arg m "$run/pr-$n" '.run_marker = $m' "$DRAFT_FIXTURES/slots-basic.json" > "$dir/pr-$n/post/slots.json"
+    done
+    jq '.went_well[0] = "The parser is fast — really fast."' "$dir/pr-11/post/slots.json" > "$TEST_TMP/s.json" \
+      && mv "$TEST_TMP/s.json" "$dir/pr-11/post/slots.json"
+    for n in 10 11; do
+      python3 -B "$REVIEW_DRAFT" assemble --slots "$dir/pr-$n/post/slots.json" --facts "$dir/pr-$n/facts.json" \
+        --out "$dir/pr-$n/post" --inputs-key "k$n" >/dev/null
+      # a clean lint.json left by the worker does not count: the block checks again
+      printf '[]\n' > "$dir/pr-$n/post/lint.json"
+    done
+    block="$TEST_TMP/policy-approval.sh"
+    bulk_md_block 'policy approval' "$run" > "$block"
+    "$sh" "$block" >/dev/null 2>&1
+    st="$(cat "$dir/state.json")"
+    assert_json "$sh: a clean draft is approved by policy" "$st" '.prs[0].approval | "\(.answer) \(.fingerprint)"' "policy fp10"
+    assert_json "$sh: a failing draft is withheld" "$st" '.prs[1] | "\(.status) \(.approval)"' "withheld null"
+    assert_json "$sh: the withheld reason names the check finding" "$st" '.prs[1].reason' \
+      "check findings: [dash] summary body: em or en dash in prose"
+    # a request for changes is never approved by the unattended policy
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$run" 10 '.approval=null' >/dev/null
+    jq '.event = "REQUEST_CHANGES"' "$dir/pr-10/post/slots.json" > "$TEST_TMP/s.json" && mv "$TEST_TMP/s.json" "$dir/pr-10/post/slots.json"
+    python3 -B "$REVIEW_DRAFT" assemble --slots "$dir/pr-10/post/slots.json" --facts "$dir/pr-10/facts.json" \
+      --out "$dir/pr-10/post" --inputs-key k10 >/dev/null
+    "$sh" "$block" >/dev/null 2>&1
+    assert_json "$sh: a request for changes is withheld" "$(cat "$dir/state.json")" '.prs[0] | "\(.status) \(.reason)"' \
+      "withheld the draft is not a plain comment"
+    # a draft pinned to another commit is stale, not withheld (FR-014a)
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$run" 10 '.status="applying"' '.reason=null' \
+      '.expected_head="ffffffffffffffffffffffffffffffffffffffff"' >/dev/null
+    "$sh" "$block" >/dev/null 2>&1
+    assert_json "$sh: another pinned commit is stale" "$(cat "$dir/state.json")" '.prs[0] | "\(.status) \(.approval)"' "stale null"
+  done
+}
+
+# bulk_thread_only_setup <mode>: a review run with PR 7 decided "post", whose
+# draft holds proposed thread actions and no review (scope from draft_setup).
+# Sets TO_RUN and TO_DIR.
+bulk_thread_only_setup() {
+  local seed
+  seed="[{\"number\":7,\"title\":\"Parser\",\"author\":\"alice\",\"head_ref\":\"topic-7\",\"head_sha\":\"$DRAFT_HEAD\",\"base_ref\":\"main\",\"head_repo_url\":\"https://github.com/alice/widget.git\",\"is_cross_repo\":true,\"authored_by_user\":false,\"updated_at\":\"2026-10-20T10:00:00Z\"}]"
+  TO_RUN="$(CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" init review "$1" "$BULK_SELECTOR" '[]' acme widget me)"
+  CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" set-prs "$TO_RUN" "$seed" '[]' >/dev/null
+  TO_DIR="$BULK_REPO/.cc-review/bulk/$TO_RUN"
+  mkdir -p "$TO_DIR/pr-7/post"
+  cp -R "$TEST_TMP/scope" "$TO_DIR/pr-7/scope"
+  cp "$DRAFT_FIXTURES/facts-uncurated.json" "$TO_DIR/pr-7/facts.json"
+  printf '[]\n' > "$TO_DIR/pr-7/findings.json"
+  printf '[]\n' > "$TO_DIR/pr-7/post/findings-to-post.json"
+  printf '[{"thread_id":"PRRT_kwDOA1","reply_body":"Fixed in the latest commit.","resolve":true,"activity":{}}]\n' \
+    > "$TO_DIR/pr-7/post/thread-actions.json"
+  CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$TO_RUN" 7 '.status="applying"' \
+    '.decision=["post"]' ".expected_head=\"$DRAFT_HEAD\"" >/dev/null
+}
+
+test_bulk_thread_actions_without_review() {
+  local sh w reuse rec prev appr edit check done_block policy out fp fp2 st md rc
+  # The documented flow
+  w="$(md_section "$REVIEW_MD" "(g) Drafting worker")"
+  assert_contains "the worker drafts thread actions without a review" "$w" "**3. Thread actions without a review.**"
+  assert_contains "the worker records no approval" "$w" "no approval and no write call"
+  assert_contains "the worker names the thread-actions-only status" "$w" "lint=<n> thread-actions-only"
+  assert_contains "7.5h hands bulk thread actions to the Approve pass" "$(md_section "$REVIEW_MD" "7.5h: Reject-All Guard")" \
+    "In bulk mode the drafting worker (Worker Mode (g), item 3) only drafts such thread actions"
+  assert_contains "the Prepare pass records a thread-actions-only draft" "$(md_section "$BULK_MD" "Prepare Pass")" \
+    'thread_actions_only: (env.TAO == "true")'
+  assert_contains "the Approve pass asks about thread actions alone" "$(md_section "$BULK_MD" "Approve Pass")" \
+    'A draft of thread actions alone (`.draft.thread_actions_only` is true)'
+  assert_contains "the Post pass performs thread actions alone" "$(md_section "$BULK_MD" "Post Pass")" \
+    '**Thread actions without a review** (`.draft.thread_actions_only` is true, FR-001)'
+  assert_contains "unattended mode withholds changed thread actions" "$(md_section "$BULK_MD" "Unattended Policy")" \
+    'A draft of thread actions alone (no review is posted for the PR, `.draft.thread_actions_only`)'
+  assert_contains "a resume does not repeat them" "$(md_section "$BULK_MD" "Resume")" \
+    'Thread actions without a review have no `review_id`'
+  draft_setup
+  mkdir -p "$TEST_TMP/home"
+  w="$TEST_TMP/to-worker.sh"; reuse="$TEST_TMP/to-reuse.sh"
+  md_block "$REVIEW_MD" 'STATUS ok nothing-to-post' > "$w"
+  md_block "$REVIEW_MD" 'Item 1: reuse an unchanged draft' > "$reuse"
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    rm -rf "$TEST_TMP/gh-state"
+    draft_comments "$(cat "$DRAFT_FIXTURES/scope/comments.json")"
+    bulk_thread_only_setup deferred
+    rec="$TEST_TMP/to-record.sh"; prev="$TEST_TMP/to-preview.sh"; appr="$TEST_TMP/to-approve.sh"
+    edit="$TEST_TMP/to-edit.sh"; check="$TEST_TMP/to-check.sh"; done_block="$TEST_TMP/to-done.sh"
+    bulk_md_block 'DRAFT #' "$TO_RUN" > "$rec"
+    bulk_md_block 'payload.json: the check covers the thread-action text' "$TO_RUN" > "$prev"
+    bulk_md_block 'APPROVAL #' "$TO_RUN" | sed -e 's/{approved|skipped}/approved/' > "$appr"
+    bulk_md_block 'assemble keeps the inline' "$TO_RUN" > "$edit"
+    bulk_md_block 'PR_DIR/check.err' "$TO_RUN" > "$check"
+    bulk_md_block 'N" thread_actions_done' "$TO_RUN" > "$done_block"
+    # Drafting worker: thread actions alone, no payload left, no approval
+    printf '{"event":"COMMENT","body":"stale"}\n' > "$TO_DIR/pr-7/post/payload.json"
+    out="$(PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" "$sh" "$w" 2>&1)"
+    fp="$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TO_DIR/pr-7/post")"
+    assert_eq "$sh: the worker drafts the thread actions alone" \
+      "STATUS ok draft=$TO_DIR/pr-7/post fingerprint=$fp lint=0 thread-actions-only" "$out"
+    assert_eq "$sh: no payload is left in the draft" "no" "$([ -e "$TO_DIR/pr-7/post/payload.json" ] && echo yes || echo no)"
+    assert_eq "$sh: the worker records no approval" "no" "$([ -e "$TO_DIR/pr-7/post/approval.json" ] && echo yes || echo no)"
+    assert_json "$sh: draft.json marks thread actions alone" "$(cat "$TO_DIR/pr-7/post/draft.json")" '.thread_actions_only' "true"
+    assert_contains "$sh: the worker renders the preview" "$(cat "$TO_DIR/pr-7/post/preview.md")" "no review will be posted"
+    out="$(PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" RUN_MARKER="$TO_RUN/pr-7" "$sh" "$reuse" 2>&1)"
+    assert_eq "$sh: a resumed worker reuses the thread actions with the contract line" \
+      "STATUS ok draft=$TO_DIR/pr-7/post fingerprint=$fp lint=0 thread-actions-only" "$out"
+    # Prepare pass records the draft
+    "$sh" "$rec" >/dev/null 2>&1
+    assert_json "$sh: the state records a thread-actions-only draft" "$(cat "$TO_DIR/state.json")" \
+      '.prs[0].draft | "\(.fingerprint) \(.thread_actions_only)"' "$fp true"
+    # Approve pass: the preview renders without a review, the check covers the thread-action text
+    out="$("$sh" "$prev" 2>&1)"; rc=$?
+    assert_eq "$sh: the Approve pass renders the preview" "0 preview.md" "$rc $(basename "$out")"
+    assert_eq "$sh: the check of thread actions alone is clean" "[]" "$(jq -c . "$TO_DIR/pr-7/post/lint.json" 2>&1)"
+    assert_contains "$sh: the preview names the thread action" "$(cat "$TO_DIR/pr-7/post/preview.md")" "- Thread \`PRRT_kwDOA1\`: reply, resolve yes"
+    # An edit of the reply text changes the recorded fingerprint, nothing is assembled
+    "$sh" "$appr" >/dev/null 2>&1
+    jq '.[0].reply_body = "Fixed: the loop now stops on empty input."' "$TO_DIR/pr-7/post/thread-actions.json" > "$TEST_TMP/ta.json" \
+      && mv "$TEST_TMP/ta.json" "$TO_DIR/pr-7/post/thread-actions.json"
+    "$sh" "$edit" >/dev/null 2>&1
+    fp2="$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TO_DIR/pr-7/post")"
+    assert_json "$sh: an edit records the new fingerprint" "$(cat "$TO_DIR/state.json")" '.prs[0].draft.fingerprint' "$fp2"
+    assert_eq "$sh: an edit assembles no review" "no" "$([ -e "$TO_DIR/pr-7/post/payload.json" ] && echo yes || echo no)"
+    assert_contains "$sh: the edited reply is previewed" "$(cat "$TO_DIR/pr-7/post/preview.md")" "> Fixed: the loop now stops on empty input."
+    assert_contains "$sh: the old approval no longer matches" "$(run_bulk_block "$sh" "$check")" "CHECK rc=1 REFUSED fingerprint"
+    "$sh" "$appr" >/dev/null 2>&1
+    assert_json "$sh: the approval records the fingerprint" "$(cat "$TO_DIR/state.json")" \
+      '.prs[0] | "\(.approval.answer) \(.approval.fingerprint == .draft.fingerprint)"' "approved true"
+    # Post pass: the check passes for thread actions alone and posts nothing
+    assert_contains "$sh: the check passes for approved thread actions" "$(run_bulk_block "$sh" "$check")" "CHECK rc=0 OK"
+    assert_eq "$sh: the check posts nothing" "0" "$(posted_count)"
+    draft_comments "$(jq -c '. + [{id:"IC_new",body:"Wait",author:{login:"carol",__typename:"User"}}]' "$DRAFT_FIXTURES/scope/comments.json")"
+    assert_contains "$sh: a new comment holds the thread actions back" "$(run_bulk_block "$sh" "$check")" "comment IC_new by carol"
+    draft_comments "$(cat "$DRAFT_FIXTURES/scope/comments.json")"
+    # The thread actions are recorded as done, so nothing runs twice
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" record "$TO_RUN" 7 reply 101 9001 >/dev/null
+    out="$("$sh" "$done_block" 2>&1)"
+    assert_contains "$sh: the done mark is recorded" "$out" "THREAD ACTIONS #7 done"
+    st="$(cat "$TO_DIR/state.json")"
+    assert_json "$sh: thread_actions_done is recorded" "$st" '.prs[0].actions.thread_actions_done' "true"
+    assert_json "$sh: no review id for thread actions alone" "$st" '.prs[0].actions.review_id' "null"
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$TO_RUN" 7 '.status="actioned"' >/dev/null
+    md="$(cat "$(CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" summary "$TO_RUN")")"
+    assert_contains "$sh: the summary names the thread actions" "$md" "1 replies; thread actions done, no review posted"
+    assert_not_contains "$sh: the summary has no review link" "$md" "pullrequestreview-"
+    # Unattended: the policy approves thread actions alone, an empty draft is withheld
+    bulk_thread_only_setup unattended
+    PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" "$sh" "$w" >/dev/null 2>&1
+    bulk_md_block 'DRAFT #' "$TO_RUN" > "$rec"
+    "$sh" "$rec" >/dev/null 2>&1
+    policy="$TEST_TMP/to-policy.sh"
+    bulk_md_block 'policy approval' "$TO_RUN" > "$policy"
+    out="$("$sh" "$policy" 2>&1)"
+    assert_eq "$sh: unattended thread actions are approved by policy" "#7: policy approval" "$out"
+    assert_json "$sh: the policy approval binds the drafted thread actions" "$(cat "$TO_DIR/state.json")" \
+      '.prs[0] | "\(.approval.answer) \(.approval.fingerprint == .draft.fingerprint) \(.status)"' "policy true applying"
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$TO_RUN" 7 '.approval=null' >/dev/null
+    printf '[]\n' > "$TO_DIR/pr-7/post/thread-actions.json"
+    "$sh" "$policy" >/dev/null 2>&1
+    assert_json "$sh: a draft without a review or thread actions is withheld" "$(cat "$TO_DIR/state.json")" \
+      '.prs[0] | "\(.status) \(.reason) \(.approval)"' "withheld the draft holds neither a review nor thread actions null"
+    # A CHANGED result withholds them; the summary does not call it a review
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$TO_RUN" 7 \
+      '.reason="conversation changed: new conversation items: comment IC_new by carol"' >/dev/null
+    md="$(cat "$(CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" summary "$TO_RUN")")"
+    assert_contains "$sh: withheld thread actions are named" "$md" \
+      "- #7 no review to post, thread replies withheld: conversation changed: new conversation items: comment IC_new by carol"
+    assert_not_contains "$sh: no withheld review is reported" "$md" "#7 review withheld"
+  done
+}
+
+# continuation_actions <file> [<reply text of the PR comment>]: thread actions
+# with a resolution, a continuation reply and a PR conversation comment
+continuation_actions() {
+  jq -n --arg pc "${2:-The config default from the earlier summary is still unset.}" '[
+    {thread_id:"PRRT_kwDOA9",reply_body:"Fixed in the latest commit.",resolve:true,activity:{}},
+    {kind:"continuation",thread_id:"PRRT_kwDOA1",source_id:"thread:PRRT_kwDOA1",
+     reply_body:"The retry still swallows the timeout error.",resolve:false},
+    {kind:"pr-comment",source_id:"review:9001",source_url:"https://github.com/acme/widget/pull/7#pullrequestreview-9001",
+     reply_body:$pc}]' > "$1"
+}
+
+test_continuation_thread_actions() {
+  local sh w policy prev rec block d out fp st run changed
+  # The documented flow: drafted in 7.5f, sent only in the post phase
+  assert_contains "Follow-up Continuity drafts continuation responses" "$(md_section "$REVIEW_MD" "Follow-up Continuity (mandatory final policy)")" \
+    "they are sent only in the post phase (7.5l2), after approval"
+  assert_not_contains "Follow-up Continuity no longer prepares a response outside the draft" \
+    "$(md_section "$REVIEW_MD" "Follow-up Continuity (mandatory final policy)")" "prepare a linked PR conversation response"
+  for needle in '"kind": "continuation"' '"kind": "pr-comment"' 'continuity.json' 'never resolves'; do
+    assert_contains "7.5f collects continuation responses: $needle" "$(md_section "$REVIEW_MD" "7.5f: Resolve Fixed Threads")" "$needle"
+  done
+  assert_contains "the drafting worker drafts continuation responses in 7.5f" "$(md_section "$REVIEW_MD" "(g) Drafting worker")" \
+    "are drafted in 7.5f into"
+  for needle in 'post_pr_comment "$OWNER" "$REPO" "$PR_NUMBER"' 'cc-review-continuation:v1' '**Continuation replies**' '**PR conversation comments**'; do
+    assert_contains "7.5l2 sends continuation responses: $needle" "$(md_section "$REVIEW_MD" "7.5l2: Thread Actions")" "$needle"
+  done
+  assert_contains "7.5k3 edits continuation text" "$(md_section "$REVIEW_MD" "7.5k3: Preview and Approve")" '`kind`, `thread_id`, `source_id`, `source_url` and `activity` are not editable'
+  assert_contains "7.5h previews thread actions alone" "$(md_section "$REVIEW_MD" "7.5h: Reject-All Guard")" 'python3 -B "$DRAFT_TOOL" preview --draft "$DRAFT_DIR"'
+  assert_contains "7.5h offers Edit for thread actions alone" "$(md_section "$REVIEW_MD" "7.5h: Reject-All Guard")" '**Edit** changes `thread-actions.json` only'
+  assert_contains "the bulk Approve pass edits continuation text" "$(md_section "$BULK_MD" "Approve Pass")" '`kind`, `thread_id`, `source_id`, `source_url` and `activity` are not editable'
+  assert_contains "the bulk Post pass records PR comments" "$(md_section "$BULK_MD" "Post Pass")" 'pr_comment <source_id> <comment id>'
+  assert_contains "a resume does not post a PR comment twice" "$(md_section "$BULK_MD" "Resume")" 'pr_comment <source_id> <comment id>'
+  assert_contains "the platform has a PR comment helper" "$(cat "$SCRIPTS/platform.sh")" 'post_pr_comment() {'
+  draft_setup
+  mkdir -p "$TEST_TMP/home"
+  w="$TEST_TMP/ct-worker.sh"; block="$TEST_TMP/ct-single.sh"
+  md_block "$REVIEW_MD" 'STATUS ok nothing-to-post' > "$w"
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    rm -rf "$TEST_TMP/gh-state" "$TEST_TMP/gh.log"
+    draft_threads "$(cat "$DRAFT_FIXTURES/scope/threads.json")"
+    draft_comments "$(cat "$DRAFT_FIXTURES/scope/comments.json")"
+    # Drafting worker: the continuation text is checked; a dash is a finding
+    bulk_thread_only_setup unattended
+    continuation_actions "$TO_DIR/pr-7/post/thread-actions.json" "$(jq -rn '"The default is still unset \u2014 see the summary."')"
+    out="$(PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" "$sh" "$w" 2>&1)"
+    fp="$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$TO_DIR/pr-7/post")"
+    assert_eq "$sh: the worker reports the check findings of the continuation text" \
+      "STATUS ok draft=$TO_DIR/pr-7/post fingerprint=$fp lint=1 thread-actions-only" "$out"
+    assert_json "$sh: the finding names the PR comment" "$(cat "$TO_DIR/pr-7/post/lint.json")" '.[0] | "\(.rule) \(.location)"' \
+      "dash thread action 3 (PR comment)"
+    for needle in '- Thread `PRRT_kwDOA1`: continuation reply, resolve no' '- PR conversation comment, continues `review:9001`' \
+      '> The retry still swallows the timeout error.'; do
+      assert_contains "$sh: the preview shows $needle" "$(cat "$TO_DIR/pr-7/post/preview.md")" "$needle"
+    done
+    # Unattended policy: the failing continuation text withholds the thread actions
+    rec="$TEST_TMP/ct-record.sh"; policy="$TEST_TMP/ct-policy.sh"
+    bulk_md_block 'DRAFT #' "$TO_RUN" > "$rec"
+    bulk_md_block 'policy approval' "$TO_RUN" > "$policy"
+    "$sh" "$rec" >/dev/null 2>&1
+    out="$("$sh" "$policy" 2>&1)"
+    assert_eq "$sh: unattended thread actions with a check finding are withheld" "#7: withheld" "$out"
+    assert_json "$sh: the withheld reason names the continuation finding" "$(cat "$TO_DIR/state.json")" '.prs[0].reason' \
+      "check findings: [dash] thread action 3 (PR comment): em or en dash in prose"
+    # A clean draft is approved by policy; an unbacked claim is not
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$TO_RUN" 7 '.status="applying"' '.reason=null' >/dev/null
+    continuation_actions "$TO_DIR/pr-7/post/thread-actions.json"
+    PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" "$sh" "$w" >/dev/null 2>&1
+    "$sh" "$rec" >/dev/null 2>&1
+    assert_eq "$sh: clean continuation text is approved by policy" "#7: policy approval" "$("$sh" "$policy" 2>&1)"
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$TO_RUN" 7 '.approval=null' >/dev/null
+    continuation_actions "$TO_DIR/pr-7/post/thread-actions.json" 'I verified the default and all tests pass.'
+    PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" "$sh" "$w" >/dev/null 2>&1
+    "$sh" "$rec" >/dev/null 2>&1
+    "$sh" "$policy" >/dev/null 2>&1
+    assert_json "$sh: claim and result rules apply to a PR comment" "$(cat "$TO_DIR/state.json")" '.prs[0] | "\(.status) \(.reason)"' \
+      'withheld check findings: [claim] thread action 3 (PR comment): unsupported first-person claim "I verified"; [result] thread action 3 (PR comment): test result "tests pass" without a recorded test run'
+    # Approve pass preview block renders and checks the continuation entries
+    prev="$TEST_TMP/ct-preview.sh"
+    bulk_md_block 'payload.json: the check covers the thread-action text' "$TO_RUN" > "$prev"
+    "$sh" "$prev" >/dev/null 2>&1
+    assert_contains "$sh: the Approve pass preview names the PR comment" "$(cat "$TO_DIR/pr-7/post/preview.md")" \
+      '- PR conversation comment, continues `review:9001`'
+    assert_json "$sh: the Approve pass checks the continuation text" "$(cat "$TO_DIR/pr-7/post/lint.json")" 'map(.rule) | join(",")' "claim,result"
+    # Single PR, thread actions without a review: check, preview, policy approval
+    d="$TEST_TMP/ct-single-$sh"; rm -rf "$d"; mkdir -p "$d"
+    continuation_actions "$d/thread-actions.json" 'Still open.See the summary.'
+    md_block "$REVIEW_MD" 'no payload, the check covers the reply text' > "$block"
+    DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" FACTS_FILE="$DRAFT_FIXTURES/facts-uncurated.json" REVIEWED_HEAD="$DRAFT_HEAD" \
+      RUN_MARKER="$DRAFT_MARKER" "$sh" "$block" >/dev/null 2>&1
+    assert_contains "$sh: single PR previews the PR comment" "$(cat "$d/preview.md")" '- PR conversation comment, continues `review:9001`'
+    md_block "$REVIEW_MD" 'the user approved the preview' > "$TEST_TMP/ct-approve.sh"
+    out="$(DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" ANSWER=policy "$sh" "$TEST_TMP/ct-approve.sh" 2>&1)"
+    assert_eq "$sh: single PR withholds failing thread actions by policy" \
+      'WITHHELD [spacing] thread action 3 (PR comment): sentence end without a space before ".S"' "$out"
+    assert_eq "$sh: no approval for withheld thread actions" "no" "$([ -e "$d/approval.json" ] && echo yes || echo no)"
+    continuation_actions "$d/thread-actions.json"
+    DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" FACTS_FILE="$DRAFT_FIXTURES/facts-uncurated.json" REVIEWED_HEAD="$DRAFT_HEAD" \
+      RUN_MARKER="$DRAFT_MARKER" "$sh" "$block" >/dev/null 2>&1
+    out="$(DRAFT_DIR="$d" DRAFT_TOOL="$REVIEW_DRAFT" ANSWER=policy "$sh" "$TEST_TMP/ct-approve.sh" 2>&1)"
+    assert_eq "$sh: clean thread actions are approved by policy" "APPROVAL policy thread actions" "$out"
+    assert_json "$sh: the approval binds the thread actions alone" "$(cat "$d/approval.json")" \
+      '"\(.thread_actions_only) \(.fingerprint)"' "true $(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$d")"
+    # Post phase: the PR comment is posted once, with its marker
+    md_block "$REVIEW_MD" 'PR conversation comment: entry I' > "$TEST_TMP/ct-pr-comment.sh"
+    md_block "$REVIEW_MD" 'Continuation reply: entry I' > "$TEST_TMP/ct-continuation.sh"
+    rm -rf "$TEST_TMP/gh-state" "$TEST_TMP/gh.log"
+    out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh env CORE_DIR="$ROOT/review/core" DRAFT_DIR="$d" I=2 \
+      RUN_MARKER="$DRAFT_MARKER" OWNER=acme REPO=widget PR_NUMBER=7 GH_USER=me "$sh" "$TEST_TMP/ct-pr-comment.sh" 2>&1)"
+    assert_eq "$sh: the PR comment is posted" "PR-COMMENT POSTED 1001" "$out"
+    assert_contains "$sh: the PR comment goes to the PR conversation" "$(cat "$TEST_TMP/gh.log")" "api repos/acme/widget/issues/7/comments --method POST"
+    assert_json "$sh: the posted comment is the approved text with the marker" "$(cat "$TEST_TMP/gh-state/requests/001.json")" '.body' \
+      "The config default from the earlier summary is still unset.
+
+<!-- cc-review-continuation:v1 $DRAFT_MARKER review:9001 -->"
+    draft_comments "$(jq -c --arg b "$(jq -r .body "$TEST_TMP/gh-state/requests/001.json")" \
+      '. + [{id:"IC_mine",databaseId:1001,body:$b,author:{login:"me",__typename:"User"}}]' "$DRAFT_FIXTURES/scope/comments.json")"
+    out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh env CORE_DIR="$ROOT/review/core" DRAFT_DIR="$d" I=2 \
+      RUN_MARKER="$DRAFT_MARKER" OWNER=acme REPO=widget PR_NUMBER=7 GH_USER=me "$sh" "$TEST_TMP/ct-pr-comment.sh" 2>&1)"
+    assert_eq "$sh: a retried PR comment is found, not posted again" "PR-COMMENT FOUND 1001" "$out"
+    assert_eq "$sh: one PR comment request in all" "1" "$(posted_count)"
+    out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh env CORE_DIR="$ROOT/review/core" DRAFT_DIR="$d" I=1 \
+      RUN_MARKER="$DRAFT_MARKER" OWNER=acme REPO=widget PR_NUMBER=7 GH_USER=me "$sh" "$TEST_TMP/ct-pr-comment.sh" 2>&1)"
+    assert_eq "$sh: the PR comment block refuses another kind" "PR-COMMENT FAILED entry 1 is not a pr-comment entry" "$out"
+    # Post phase: the continuation reply goes to the existing thread, never resolves it
+    out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh env CORE_DIR="$ROOT/review/core" DRAFT_DIR="$d" I=1 \
+      RUN_MARKER="$DRAFT_MARKER" OWNER=acme REPO=widget PR_NUMBER=7 GH_USER=me "$sh" "$TEST_TMP/ct-continuation.sh" 2>&1)"
+    assert_eq "$sh: the continuation reply is posted in the thread" "CONTINUATION POSTED 1002 101" "$out"
+    assert_contains "$sh: it replies to the root comment" "$(cat "$TEST_TMP/gh.log")" "pulls/7/comments/101/replies"
+    assert_contains "$sh: the reply carries the continuation marker" "$(cat "$TEST_TMP/gh.log")" \
+      "cc-review-continuation:v1 $DRAFT_MARKER thread:PRRT_kwDOA1"
+    assert_not_contains "$sh: a continuation never resolves" "$(cat "$TEST_TMP/gh.log")" "resolveReviewThread"
+    draft_threads "$(jq -c --arg m "<!-- cc-review-continuation:v1 $DRAFT_MARKER thread:PRRT_kwDOA1 -->" \
+      '.[0].comments.nodes += [{id:"PRRC_mine",databaseId:1002,body:("Still open.\n" + $m),author:{login:"me",__typename:"User"}}]' \
+      "$DRAFT_FIXTURES/scope/threads.json")"
+    out="$(cd "$BULK_REPO" && FAKE_GH_DIR="$TEST_TMP/gh" with_fake_gh env CORE_DIR="$ROOT/review/core" DRAFT_DIR="$d" I=1 \
+      RUN_MARKER="$DRAFT_MARKER" OWNER=acme REPO=widget PR_NUMBER=7 GH_USER=me "$sh" "$TEST_TMP/ct-continuation.sh" 2>&1)"
+    assert_eq "$sh: a retried continuation reply is found, not posted again" "CONTINUATION FOUND 1002" "$out"
+  done
+  # Bulk state: a PR comment is recorded once, counts as acted and is linked
+  run="$(new_run review)"
+  assert_eq "pr_comment needs a positive id" "2" "$(bstate record "$run" 10 pr_comment review:9001 x >/dev/null 2>&1; echo $?)"
+  bstate record "$run" 10 pr_comment review:9001 1001 >/dev/null
+  bstate record "$run" 10 pr_comment review:9001 1001 >/dev/null
+  assert_json "the PR comment is recorded by its source" "$(state_of "$run")" '.prs[0].actions.pr_comments | tojson' '{"review:9001":1001}'
+  bstate pr-set "$run" 10 '.status="failed"' '.reason="boom"' >/dev/null
+  assert_eq "a PR with a posted PR comment is partially applied, not failed" "partially-applied" "$(bstate pr-get "$run" 10 .status)"
+  assert_contains "the summary links the PR comment" "$(cat "$(bstate summary "$run")")" "PR comment https://github.com/"
+  # The CHANGED choices of a review that was not posted get their own reasons
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    bulk_thread_only_setup deferred
+    run="$TO_RUN"
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$run" 7 \
+      '.draft={fingerprint:"fp7",inputs_key:"k7",thread_actions_only:false}' >/dev/null
+    printf 'CHANGED abc123 new conversation items: comment IC_new by carol\n' > "$BULK_REPO/.cc-review/bulk/$run/pr-7/post-result.txt"
+    changed="$TEST_TMP/ct-changed.sh"
+    bulk_md_block 'POST CHANGED #' "$run" | sed -e 's/{CHOICE}/rerun/' > "$changed"
+    "$sh" "$changed" >/dev/null 2>&1
+    st="$(cat "$BULK_REPO/.cc-review/bulk/$run/state.json")"
+    assert_json "$sh: Re-run later after CHANGED is stale with the reason" "$st" '.prs[] | select(.number == 7) | "\(.status) \(.reason)"' \
+      "stale review not posted, conversation changed; re-run needed: new conversation items: comment IC_new by carol"
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" pr-set "$run" 7 '.status="applying"' \
+      '.actions.pushed_sha="abc1234"' >/dev/null
+    bulk_md_block 'POST CHANGED #' "$run" | sed -e 's/{CHOICE}/skip/' > "$changed"
+    "$sh" "$changed" >/dev/null 2>&1
+    assert_json "$sh: Skip after CHANGED with pushed fixes keeps the FR-020 reason" "$(cat "$BULK_REPO/.cc-review/bulk/$run/state.json")" \
+      '.prs[] | select(.number == 7) | "\(.status) \(.reason)"' "actioned fixes pushed, review not posted"
+  done
+}
+
+test_bulk_state_thread_actions_done() {
+  local run
+  run="$(new_run review)"
+  assert_eq "the record form takes no value" "2" "$(bstate record "$run" 10 thread_actions_done x >/dev/null 2>&1; echo $?)"
+  bstate record "$run" 10 thread_actions_done >/dev/null
+  assert_json "thread_actions_done is recorded" "$(state_of "$run")" '.prs[0].actions.thread_actions_done' "true"
+  # Recorded thread actions count as acted: the PR is never failed and re-analyzed
+  bstate pr-set "$run" 10 '.status="failed"' '.reason="boom"' >/dev/null
+  assert_eq "a PR with done thread actions is partially applied, not failed" "partially-applied" "$(bstate pr-get "$run" 10 .status)"
+}
+
+test_review_worker_reuses_unchanged_draft() {
+  local block prd out fp sh
+  block="$TEST_TMP/reuse.sh"
+  md_block "$REVIEW_MD" 'Item 1: reuse an unchanged draft' > "$block"
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    prd="$TEST_TMP/reuse-$sh"
+    rm -rf "$prd"; mkdir -p "$prd/post"
+    jq '[.comments[], .summary_only[] | {id}] + [{id: "FIXED", resolution: "fixed"}, {id: "OLD", scope: "carried"}]' \
+      "$DRAFT_FIXTURES/slots-basic.json" > "$prd/findings.json"
+    cp "$DRAFT_FIXTURES/facts-uncurated.json" "$prd/facts.json"
+    jq '[.[] | select(.resolution != "fixed" and .scope != "carried")]' "$prd/findings.json" > "$prd/post/findings-to-post.json"
+    cp "$DRAFT_FIXTURES/slots-basic.json" "$prd/post/slots.json"
+    python3 -B "$REVIEW_DRAFT" assemble --slots "$prd/post/slots.json" --facts "$prd/facts.json" --out "$prd/post" \
+      --inputs-key "$(python3 -B "$REVIEW_DRAFT" inputs-key --expected-head "$DRAFT_HEAD" \
+        --findings "$prd/post/findings-to-post.json" --facts "$prd/facts.json")" >/dev/null
+    fp="$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$prd/post")"
+    run_reuse() {
+      PR_DIR="$prd" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="${1:-$DRAFT_HEAD}" RUN_MARKER="$DRAFT_MARKER" "$sh" "$block" 2>&1
+    }
+    out="$(run_reuse)"
+    assert_eq "$sh: an unchanged draft is reused with the contract line" "STATUS ok draft=$prd/post fingerprint=$fp lint=0" "$out"
+    assert_eq "$sh: the reused draft gets a fresh preview" "yes" "$([ -f "$prd/post/preview.md" ] && echo yes)"
+    assert_eq "$sh: reuse keeps the fingerprint" "$fp" "$(python3 -B "$REVIEW_DRAFT" fingerprint --draft "$prd/post")"
+    # A reuse ends the worker: nothing after the block runs (no drafting)
+    cp "$block" "$TEST_TMP/reuse-then-draft.sh"
+    printf 'echo ITEM-2\n' >> "$TEST_TMP/reuse-then-draft.sh"
+    out="$(PR_DIR="$prd" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" RUN_MARKER="$DRAFT_MARKER" \
+      "$sh" "$TEST_TMP/reuse-then-draft.sh" 2>&1)"
+    assert_not_contains "$sh: the worker stops after a reuse" "$out" "ITEM-2"
+    out="$(PR_DIR="$prd" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD=ffffffffffffffffffffffffffffffffffffffff \
+      RUN_MARKER="$DRAFT_MARKER" "$sh" "$TEST_TMP/reuse-then-draft.sh" 2>&1)"
+    assert_eq "$sh: without a reuse the worker goes on to drafting" "ITEM-2" "$out"
+    # A reused draft whose pinned commit is not the expected head is stale
+    cp "$prd/post/payload.json" "$TEST_TMP/payload.keep"
+    jq '.commit_id = "ffffffffffffffffffffffffffffffffffffffff"' "$TEST_TMP/payload.keep" > "$prd/post/payload.json"
+    assert_eq "$sh: a reused draft with another commit is stale" "STATUS failed reason=stale-commit" "$(run_reuse)"
+    # A check that cannot run (usage error 2) gives no status line with an
+    # empty count: the worker drafts again
+    printf '[{"thread_id":"PRRT_1","kind":"retry","reply_body":"x"}]\n' > "$prd/post/thread-actions.json"
+    out="$(PR_DIR="$prd" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" RUN_MARKER="$DRAFT_MARKER" \
+      "$sh" "$TEST_TMP/reuse-then-draft.sh" 2>&1)"
+    assert_eq "$sh: a reused draft whose check fails to run is drafted again" "ITEM-2" "$out"
+    assert_eq "$sh: no check result is left behind" "no" "$([ -e "$prd/post/lint.json" ] && echo yes || echo no)"
+    printf '[]\n' > "$prd/post/thread-actions.json"
+    cp "$TEST_TMP/payload.keep" "$prd/post/payload.json"
+    out="$(run_reuse ffffffffffffffffffffffffffffffffffffffff)"
+    assert_eq "$sh: another head is not reused" "" "$out"
+    python3 -B "$REVIEW_DRAFT" facts-set --facts "$prd/facts.json" \
+      --executed '{"round":1,"command":"go test ./...","outcome":"passed"}'
+    out="$(run_reuse)"
+    assert_eq "$sh: changed run facts are not reused" "" "$out"
+  done
+  w="$(md_section "$REVIEW_MD" "(g) Drafting worker")"
+  assert_contains "the worker stops after a reuse" "$w" 'A `STATUS` line from this block ends the worker'
+  assert_not_contains "the reuse prints no private status line" "$w" "REUSE fingerprint"
+}
+
+# A post decision with neither a review nor thread actions left (the fix
+# rounds fixed everything): the worker succeeds without a draft and the
+# Prepare pass finishes the PR as actioned
+test_bulk_nothing_to_post() {
+  local sh w rec out st
+  w="$(md_section "$REVIEW_MD" "(g) Drafting worker")"
+  assert_contains "the worker contract names nothing-to-post" "$w" '`STATUS ok nothing-to-post`'
+  assert_contains "the Prepare pass maps nothing-to-post" "$(md_section "$BULK_MD" "Prepare Pass")" '`STATUS ok nothing-to-post`'
+  draft_setup
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    bulk_thread_only_setup deferred
+    printf '[]\n' > "$TO_DIR/pr-7/post/thread-actions.json"
+    # leftovers of an earlier attempt are not posted
+    printf '{"event":"COMMENT","body":"stale"}\n' > "$TO_DIR/pr-7/post/payload.json"
+    printf '{"inputs_key":"old"}\n' > "$TO_DIR/pr-7/post/draft.json"
+    md_block "$REVIEW_MD" 'STATUS ok nothing-to-post' > "$TEST_TMP/worker3.sh"
+    out="$(PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" "$sh" "$TEST_TMP/worker3.sh" 2>&1)"
+    assert_eq "$sh: nothing to post is not a failure" "0 STATUS ok nothing-to-post" "$? $out"
+    assert_eq "$sh: no review is drafted" "no no" \
+      "$([ -e "$TO_DIR/pr-7/post/payload.json" ] && echo yes || echo no) $([ -e "$TO_DIR/pr-7/post/draft.json" ] && echo yes || echo no)"
+    rm -f "$TO_DIR/pr-7/post/thread-actions.json"
+    out="$(PR_DIR="$TO_DIR/pr-7" CORE_DIR="$ROOT/review/core" EXPECTED_HEAD="$DRAFT_HEAD" "$sh" "$TEST_TMP/worker3.sh" 2>&1)"
+    assert_eq "$sh: no thread-actions file is nothing to post too" "0 STATUS ok nothing-to-post" "$? $out"
+    rec="$TEST_TMP/nothing.sh"
+    bulk_md_block 'NOTHING TO POST #' "$TO_RUN" > "$rec"
+    out="$("$sh" "$rec" 2>&1)"
+    assert_eq "$sh: the Prepare pass records nothing to post" "NOTHING TO POST #7: nothing to post" "$out"
+    st="$(cat "$TO_DIR/state.json")"
+    assert_json "$sh: the PR is finished as actioned" "$st" '.prs[0] | "\(.status)|\(.reason)|\(.draft)"' "actioned|nothing to post|null"
+    assert_eq "$sh: the Approve and Post passes and a resume skip it" "" \
+      "$(CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" open-prs "$TO_RUN")"
+    # After pushed fixes the reason says so
+    bulk_thread_only_setup deferred
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" record "$TO_RUN" 7 pushed_sha abc1234 >/dev/null
+    bulk_md_block 'NOTHING TO POST #' "$TO_RUN" > "$rec"
+    out="$("$sh" "$rec" 2>&1)"
+    assert_eq "$sh: after fixes the reason names them" "NOTHING TO POST #7: nothing left to post after the fixes" "$out"
+    assert_json "$sh: actioned after the fixes" "$(cat "$TO_DIR/state.json")" '.prs[0] | "\(.status)|\(.reason)"' \
+      "actioned|nothing left to post after the fixes"
+  done
+}
+
+# A CHANGED result of the check before thread actions on a posted review:
+# deferred mode records the user's Skip or Re-run later, unattended withholds
+test_bulk_thread_check_changed_after_post() {
+  local sh block out post st
+  post="$(md_section "$BULK_MD" "Post Pass")"
+  assert_contains "deferred mode asks on CHANGED before thread actions" "$post" \
+    "\`CHANGED <hash> <reason>\`, deferred mode: show the reason and ask **Post anyway** (dispatch the thread-action subagent again"
+  assert_contains "CHANGED before thread actions is never partially applied in deferred mode" "$post" \
+    'Never set `partially-applied` for a `CHANGED` result in deferred mode.'
+  assert_contains "7.5l2 offers Re-run later" "$(md_section "$REVIEW_MD" "7.5l2: Thread Actions")" \
+    '**Skip** the remaining thread actions, or **Re-run later**'
+  assert_contains "the continuity recheck offers three choices" "$(md_section "$REVIEW_MD" "Follow-up Continuity (mandatory final policy)")" \
+    '**Post anyway** (accept exactly these changes), **Skip** or **Re-run later**'
+  assert_not_contains "the continuity recheck no longer renews approval" "$(md_section "$REVIEW_MD" "Follow-up Continuity (mandatory final policy)")" \
+    'renew approval'
+  draft_setup
+  mkdir -p "$TEST_TMP/home"
+  for sh in bash zsh; do
+    command -v "$sh" >/dev/null 2>&1 || continue
+    rm -rf "$TEST_TMP/gh-state"
+    draft_reviews "$(jq -c 'map(del(.comments.nodes[].pullRequestReviewThread))' "$DRAFT_FIXTURES/scope/reviews.json")"
+    draft_comments "$(jq -c '. + [{id:"IC_new",body:"Wait",author:{login:"carol",__typename:"User"}}]' "$DRAFT_FIXTURES/scope/comments.json")"
+    bulk_post_setup
+    CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" record "$POST_RUN" 7 review_id 1001 >/dev/null
+    bulk_md_block 'PR_DIR/check.err' "$POST_RUN" > "$TEST_TMP/check.sh"
+    out="$(run_bulk_block "$sh" "$TEST_TMP/check.sh")"
+    assert_contains "$sh: the check reports the change" "$out" "CHECK rc=1 CHANGED "
+    assert_contains "$sh: the check line is kept for the choice" "$(cat "$POST_RUN_DIR/pr-7/thread-check.txt")" \
+      "new conversation items: comment IC_new by carol"
+    block="$TEST_TMP/choice.sh"
+    for choice in skip rerun withhold; do
+      bulk_md_block 'THREAD CHECK #' "$POST_RUN" | sed -e "s/{CHOICE}/$choice/" > "$block"
+      out="$(run_bulk_block "$sh" "$block")"
+      st="$(cat "$POST_RUN_DIR/state.json")"
+      case "$choice" in
+        skip) assert_json "$sh: Skip finishes the posted review" "$st" '.prs[0] | "\(.status)|\(.reason)"' \
+          "actioned|review posted, thread replies skipped" ;;
+        rerun) assert_json "$sh: Re-run later marks the PR stale" "$st" '.prs[0] | "\(.status)|\(.reason)"' \
+          "stale|review posted, thread replies need a re-run: history changed: comment IC_new by carol; new conversation items: comment IC_new by carol" ;;
+        withhold) assert_json "$sh: unattended withholds the thread replies" "$st" '.prs[0] | "\(.status)|\(.reason)"' \
+          "withheld|conversation changed: history changed: comment IC_new by carol; new conversation items: comment IC_new by carol"
+          assert_contains "$sh: the summary names withheld thread replies" \
+            "$(cat "$(CC_REVIEW_BULK_DIR="$BULK_REPO/.cc-review/bulk" bash "$BULK_STATE" summary "$POST_RUN")")" \
+            "- #7 review posted, thread replies withheld: conversation changed: history changed: comment IC_new by carol; new conversation items: comment IC_new by carol" ;;
+      esac
+      assert_json "$sh: the review id stays recorded ($choice)" "$st" '.prs[0].actions.review_id' "1001"
+    done
+    printf 'OK\n' > "$POST_RUN_DIR/pr-7/thread-check.txt"
+    bulk_md_block 'THREAD CHECK #' "$POST_RUN" | sed -e "s/{CHOICE}/skip/" > "$block"
+    assert_contains "$sh: a choice needs a CHANGED check" "$(run_bulk_block "$sh" "$block")" "was not CHANGED"
+  done
+}
+
+test_bulk_resume_reasks_changed_draft() {
+  local approve resume post
+  approve="$(md_section "$BULK_MD" "Approve Pass")"
+  resume="$(md_section "$BULK_MD" "Resume")"
+  post="$(md_section "$BULK_MD" "Post Pass")"
+  assert_contains "a matching approval is not asked again" "$approve" \
+    'Skip a PR whose `.approval.answer` is `approved` and whose `.approval.fingerprint` equals `.draft.fingerprint`'
+  assert_contains "a changed draft is asked again" "$approve" \
+    'also when an earlier approval belongs to another fingerprint'
+  assert_contains "resume reuses only a matching approval" "$resume" \
+    'skips a PR whose recorded `.approval.fingerprint` equals `.draft.fingerprint` and asks again when the draft changed since approval'
+  assert_contains "resume reuses a draft only for unchanged inputs" "$resume" \
+    'reuses `$PR_DIR/post` when its `draft.json` inputs key'
+  assert_contains "the Post pass posts only a matching approval" "$post" \
+    '`.approval.fingerprint` equals `.draft.fingerprint`'
 }
 
 # ---------------------------------------------------------------------------
@@ -4619,6 +5717,26 @@ main() {
   run_test test_bulk_apply_reviewer_transient_resolution_stays_retryable
   run_test test_review_scope
   run_test test_review_continuity
+  run_test test_review_draft
+  run_test test_post_review_guards
+  run_test test_post_review_posts_exact_bytes
+  run_test test_post_review_check_only
+  run_test test_post_review_ignored_authors
+  run_test test_post_review_outside_repo
+  run_test test_bulk_post_pass_block
+  run_test test_bulk_post_pass_recorded_config
+  run_test test_review_noninteractive_policy_block
+  run_test test_bulk_state_withheld
+  run_test test_review_command_draft_flow
+  run_test test_bulk_command_three_pass_apply
+  run_test test_unattended_policy_withholds
+  run_test test_bulk_thread_actions_without_review
+  run_test test_continuation_thread_actions
+  run_test test_bulk_state_thread_actions_done
+  run_test test_review_worker_reuses_unchanged_draft
+  run_test test_bulk_nothing_to_post
+  run_test test_bulk_thread_check_changed_after_post
+  run_test test_bulk_resume_reasks_changed_draft
   run_test test_bulk_apply_marker_validates_completion_evidence
   run_test test_platform_thread_collection_discloses_truncation
   run_test test_bulk_select_full_override

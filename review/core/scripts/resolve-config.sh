@@ -370,6 +370,24 @@ resolve_config_file() {
   printf ''
 }
 
+# resolve_config_list <key>
+# Prints the string items of a list value, one per line (nothing when the key
+# is missing, empty or not a list), from the merged config when it exists,
+# otherwise from the resolved config file.
+resolve_config_list() {
+  local key="$1" yq_path file
+  _cc_review_valid_key "$key" || return 0
+  yq_path="$(_cc_review_yq_path "$key")"
+  if [ -n "$CC_REVIEW_MERGED_CONFIG" ] && [ -f "$CC_REVIEW_MERGED_CONFIG" ]; then
+    file="$CC_REVIEW_MERGED_CONFIG"
+  else
+    file="$(resolve_config_file)"
+  fi
+  [ -n "$file" ] || return 0
+  yq -r "(${yq_path} // []) | select(type == \"!!seq\") | .[] | select(type == \"!!str\")" "$file" 2>/dev/null \
+    | awk 'NF'
+}
+
 resolve_config() {
   local key="$1"
   local default="${2:-}"

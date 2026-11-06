@@ -22,6 +22,10 @@ Explain the impact using the finding's severity and rationale. Connect the issue
 
 Provide a concrete, actionable mitigation. When possible, include a code snippet showing the fix. If the fix is non-trivial, describe the approach rather than prescribing exact code.
 
+## Rewrite Scope
+
+The fallback template below is the single format contract for inline comments: every comment starts with the severity label (`**Critical**:`, `**Important**:`, `**Minor**:`, `**Notable**:`), followed by the `**Why this matters**:` and `**Suggested fix**:` parts and the source footer, in that order. cc-review assembles these labels and the footer itself (`review_draft.py assemble`). The prose rewrite with this voice profile edits only the text inside each part ("what is wrong", "why it matters", "suggested fix") and the summary prose; it never adds, removes, merges or rewords a label or the source footer, and it keeps file paths, line numbers, identifiers, commands and numbers exactly.
+
 ## Tone Guidelines
 
 - Be direct without being dismissive
@@ -32,9 +36,11 @@ Provide a concrete, actionable mitigation. When possible, include a code snippet
 
 ## Example Output by Severity
 
+Each example starts with the severity label, as the fallback template does; the former title moves into the first sentence.
+
 ### Critical
 
-**Null pointer dereference on line 42**: `user.Profile.Name` is accessed without checking whether `Profile` is nil. The `GetUser` function returns a nil `Profile` when the user has not completed onboarding.
+**Critical**: Null pointer dereference on line 42. `user.Profile.Name` is accessed without checking whether `Profile` is nil. The `GetUser` function returns a nil `Profile` when the user has not completed onboarding.
 
 **Why this matters**: This will panic in production for any un-onboarded user hitting this endpoint, causing a 500 error and request loss.
 
@@ -45,13 +51,17 @@ if user.Profile != nil {
 }
 ```
 
+_Source: correctness agent_
+
 ### Minor
 
-**Redundant error check on line 87**: The `WriteFile` return value is checked twice, once here and once in the caller. The outer check makes this one unreachable.
+**Minor**: Redundant error check on line 87. The `WriteFile` return value is checked twice, once here and once in the caller. The outer check makes this one unreachable.
 
 **Why this matters**: Dead code adds maintenance burden and can mislead future readers into thinking this branch is reachable.
 
 **Suggested fix**: Remove the inner error check and let the caller handle it.
+
+_Source: architecture agent_
 
 ## Fallback Template
 

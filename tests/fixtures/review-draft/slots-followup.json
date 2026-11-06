@@ -1,0 +1,63 @@
+{
+  "event": "COMMENT",
+  "commit_id": "0123456789abcdef0123456789abcdef01234567",
+  "run_marker": "20261102-120000-review/pr-7",
+  "completion": "<!-- cc-review-incomplete:v1 -->",
+  "comments": [
+    {
+      "id": "FINDING-1",
+      "path": "src/parser.go",
+      "line": 42,
+      "start_line": 40,
+      "severity": "Important",
+      "what": "The parser drops the last token when the input ends without a newline.",
+      "why": "Files saved by editors that omit the final newline lose their last field, so the import silently truncates data.",
+      "fix": "Flush the pending token after the scan loop ends, before returning the result.",
+      "source": "correctness agent (also flagged by: test-quality agent)",
+      "source_agent": "correctness",
+      "user_text": false,
+      "removed": false
+    },
+    {
+      "id": "FINDING-2",
+      "path": "src/server.go",
+      "line": 88,
+      "severity": "Critical",
+      "what": "The handler logs the full request body, including the session token.",
+      "why": "Anyone with read access to the logs can replay a user session.",
+      "fix": "Log only the request path and status, or redact the `Authorization` header before logging.",
+      "source": "security agent",
+      "source_agent": "security",
+      "user_text": false,
+      "removed": false
+    }
+  ],
+  "summary_only": [
+    {
+      "id": "FINDING-3",
+      "severity": "Minor",
+      "file": "docs/usage.md",
+      "line": 3,
+      "description": "The usage example still shows the removed `--legacy` flag.",
+      "source": "correctness agent",
+      "source_agent": "correctness",
+      "reason": "Location is outside the PR diff (line 3)."
+    }
+  ],
+  "follow_up": "Two of the three concerns from the earlier review are addressed. The open one about the session token in the logs is still present at this head.",
+  "went_well": [
+    "`ParseConfig` in `src/config.go` validates every field before use and returns a precise error.",
+    "The new table tests in `src/parser_test.go` cover empty input and Unicode identifiers."
+  ],
+  "counts": {
+    "rejected": 1
+  },
+  "gate": "FAIL",
+  "reviewers": [
+    "correctness",
+    "security",
+    "test-quality"
+  ],
+  "repro_present": false,
+  "attribution_override": null
+}

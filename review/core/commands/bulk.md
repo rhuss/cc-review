@@ -23,9 +23,9 @@ This file is executed by the "Bulk Mode" hand-off of `commands/review.md` (`BULK
 
 For review runs, each PR follows review.md's Prior Review Context and Follow-up Continuity sections. Keep `history-input.json`, manual summary attribution, `history.json`, candidate/concern assessments and `continuity.json` under `$PR_DIR/scope/` through analysis, fix, apply and resume. Every reviewer, merge, critic, report and fix worker receives the absolute history path. History remains relevant in full fallback and `--full` and never substitutes for a completed baseline.
 
-Decision tables and drill-down reports show linked existing material source conversations and pending questions separately from new findings. An empty new-findings list is not a no-issues result when existing material concerns or uncertainty remain. Do not propose the no-findings marker shortcut for those PRs; use the approved accurate follow-up progress/continuation policy. Optional earlier suggestions are nonblocking and not mandatory bulk fixes.
+Decision tables and drill-down reports show linked existing material source conversations and pending questions separately from new findings. An empty new-findings list is not a no-issues result when existing material concerns or uncertainty remain. Do not propose the no-findings marker shortcut for those PRs; use the approved accurate follow-up progress/continuation policy. Continuation responses (a reply in the linked existing thread, or a linked PR conversation comment for a summary-only discussion) are drafted with the PR's thread actions by the drafting worker (`review.md` 7.5f), shown in the Approve pass preview and sent only in the Post pass after approval. Optional earlier suggestions are nonblocking and not mandatory bulk fixes.
 
-Before each push/post/reply/resolution or resumed publication, use review.md's fresh history/head comparison as well as the existing head and exact verification checks. Preserve analyzed artifacts for comparison. Changed conversations at the same head require refreshed assessment and approval for changed actions, or withholding them. Reuse only genuinely current decisions and retain existing action idempotency. Manual history supplies no new thread-resolution permission.
+Before each push/post/reply/resolution/PR comment or resumed publication, use review.md's fresh history/head comparison as well as the existing head and exact verification checks. Preserve analyzed artifacts for comparison. Changed conversations at the same head require refreshed assessment and approval for changed actions, or withholding them. Reuse only genuinely current decisions and retain existing action idempotency. Manual history supplies no new thread-resolution permission.
 
 ## Prerequisites
 
@@ -60,11 +60,12 @@ Keep `CORE_DIR` and `PROJECT_DIR` for the header line. `PROJECT_DIR` is the one 
 
 ### Config Resolution
 
-Configuration is resolved from `PROJECT_DIR` with the same layers and flags as `review.md` and applies to every PR. `CONFIG_FLAG` and `PROFILE_FLAG` come from the arguments (empty when not given). A block that needs a config value re-runs the init, which is cheap and gives the same result:
+Configuration is resolved from `PROJECT_DIR` with the same layers and flags as `review.md` and applies to every PR. `CONFIG_FLAG` and `PROFILE_FLAG` come from the arguments: replace `{CONFIG_FLAG}` and `{PROFILE_FLAG}` below with their values (empty when not given), since a new shell does not know them. A block that needs a config value re-runs the init, which is cheap and gives the same result; once the run exists, such a block reads both values from the run's recorded options with the `opt` helper (see the Prepare and Post passes):
 
 ```bash
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID=""
 S="$CC_REVIEW_CORE_DIR/scripts"; cd "$PROJECT_DIR" || exit 1
+CONFIG_FLAG="{CONFIG_FLAG}"; PROFILE_FLAG="{PROFILE_FLAG}"
 source "$S/resolve-config.sh"
 resolve_config_init --config "${CONFIG_FLAG:--}" --profile "${PROFILE_FLAG:--}" || exit 1
 resolve_config_validate_types || exit 1
@@ -576,6 +577,8 @@ Only PRs with status `analyzed` and no recorded `decision` are decided; `failed`
    - **Stop (resume later)**: record nothing, leave the run in `deciding`, print the summary and how to continue (`--bulk --resume`), and stop.
 3. Follow-up questions that a choice needs (the "review findings" drill-down, triage human comments, edits) belong to this same step.
 
+For review runs, the drafted reviews are not shown here: the Approve pass of apply ([Review Decision and Apply](#review-decision-and-apply)) shows every draft in full after all drafts exist, and has its own **Stop (resume later)**: the PRs answered before the stop keep their recorded approvals or skips, and a resume asks only for the unanswered previews and for drafts that changed since their approval.
+
 Record each decision as soon as it is made, so an interrupted decision step loses nothing (the value is a JSON array, for example `["post"]`, `["fix","post"]`):
 
 ```bash
@@ -593,7 +596,7 @@ The policy, per undecided analyzed PR:
 
 | Command | PR | Decision | What happens |
 |---|---|---|---|
-| review | with findings | `["post"]` | the posting worker posts all new findings with `REVIEW_EVENT_OVERRIDE=COMMENT`: a non-blocking comment review, never a request for changes (FR-023) |
+| review | with findings | `["post"]` | the drafting worker drafts all new findings with `REVIEW_EVENT_OVERRIDE=COMMENT`: a non-blocking comment review, never a request for changes (FR-023); a draft with a clean check is posted without a question, one that still fails the check is `withheld` |
 | review | without findings | `["marker"]` | the no-findings marker (`bulk-apply.sh marker`) |
 | review | any | never `fix` | unattended mode changes no code on any PR branch |
 | triage | with a prepared plan (`proposed` is `apply`) | `["apply"]` | the bot part of the plan: push the prepared commit, post the bot and cc-review thread replies, resolve the handled threads (FR-024) |
@@ -616,6 +619,49 @@ for N in $(jq -r '.prs[] | select(.status == "analyzed" and .decision == null) |
   esac
   DECISION="$DECISION" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.decision=(env.DECISION | fromjson)' >/dev/null
   echo "#$N: $DECISION"
+done
+```
+
+**Drafted reviews in unattended mode** (FR-014, FR-027). There is no Approve pass and no question: after the Prepare pass the policy decides for every drafted PR, with the same drafting, structure, attribution and check rules as deferred mode. A draft whose check is clean after its one redraft is approved by policy with the fingerprint of the checked draft (`.approval = {answer: "policy", fingerprint}`, FR-025), and the Post pass posts it. The block below runs the check again itself (it is deterministic), so the policy never relies on a `lint.json` left by the drafting worker, and it approves only a plain comment (FR-027). A draft that still fails the check is not posted: the PR gets the status `withheld` with the remaining check findings as the reason. A `CHANGED` result of `post-review.sh` in the Post pass (the conversation or the history changed since analysis) also sets `withheld`, with the reason `conversation changed: <reason>`. A draft of thread actions alone (no review is posted for the PR, `.draft.thread_actions_only`) is approved by policy with the same rule as the `INTERACTIVE` false path of `review.md` 7.5h: there is no review to check, but the check covers the thread-action text (the continuation replies and PR conversation comments are generated text), so the policy approves exactly the drafted thread actions with the fingerprint of the draft when that check is clean, and withholds them with the check findings otherwise. The Post pass performs approved thread actions after the same check before each action; a `CHANGED` result there withholds them (`withheld`). `.reason` holds only the cause; the summary lists every `withheld` PR under "Needs attention" as `review withheld: <reason>` (thread actions alone: `no review to post, thread replies withheld: <reason>`), and the next run selects it again. When the review was posted and only its thread actions were held back (a `CHANGED` result of the thread-action check after `POSTED`, so `.actions.review_id` is recorded), the PR is also `withheld`, and the summary lists it as `review posted, thread replies withheld: <reason>`.
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+for N in $(jq -r '.prs[] | select(.status == "applying" and .draft != null and .actions.review_id == null
+  and .actions.thread_actions_done != true
+  and (.approval == null or .approval.fingerprint != .draft.fingerprint)) | .number' "$RUN_DIR/state.json"); do
+  D="$RUN_DIR/pr-$N/post"
+  rm -f "$D/lint.json"
+  # The check covers the review and the thread-action text; a draft of thread
+  # actions alone (review.md 7.5h) has no payload, its check covers the text only
+  python3 -B "$S/review_draft.py" lint --draft "$D" --facts "$RUN_DIR/pr-$N/facts.json" \
+    --expected-head "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" .expected_head)" --run-marker "$RUN_ID/pr-$N" >/dev/null 2>&1
+  if [ ! -f "$D/payload.json" ] && ! { [ "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.draft.thread_actions_only == true')" = true ] \
+      && jq -e 'type == "array" and length > 0' "$D/thread-actions.json" >/dev/null 2>&1; }; then
+    REASON="the draft holds neither a review nor thread actions"
+  elif ! jq -e 'type == "array"' "$D/lint.json" >/dev/null 2>&1; then
+    REASON="the draft check did not run"
+  elif jq -e 'any(.[]; .rule == "commit")' "$D/lint.json" >/dev/null; then
+    # no pinned commit, or another one than the expected head: stale (FR-014a)
+    "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.status="stale"' \
+      ".reason=\"stale, re-run needed: the draft's pinned commit is missing or differs from the expected head; review not posted\"" >/dev/null
+    echo "#$N: stale"
+    continue
+  elif [ "$(jq length "$D/lint.json")" -gt 0 ]; then
+    REASON="check findings: $(jq -r 'map("[\(.rule)] \(.location): \(.message)") | join("; ")' "$D/lint.json")"
+  elif [ -f "$D/payload.json" ] && [ "$(jq -r '.event // ""' "$D/payload.json" 2>/dev/null)" != COMMENT ]; then
+    REASON="the draft is not a plain comment"
+  else
+    REASON=""
+  fi
+  if [ -z "$REASON" ]; then
+    FP=$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" .draft.fingerprint) "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" \
+      '.approval={answer: "policy", fingerprint: env.FP, at: (now | todate)}' >/dev/null
+    echo "#$N: policy approval"
+  else
+    REASON="$REASON" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.status="withheld"' '.reason=env.REASON' >/dev/null
+    echo "#$N: withheld"
+  fi
 done
 ```
 
@@ -703,13 +749,23 @@ Only an `analyzed` PR without a decision gets actions (FR-019):
 
 "Apply proposed actions" gives `["post"]` or `["marker"]`; it never applies fixes.
 
-**Review findings** (the one place where the coordinator reads findings, FR-018): for that PR, present `$PR_DIR/findings.json` in the single-PR Step 7.5g format of `review.md` (shortcut first; Critical and Important findings one at a time with accept, reject or edit; Minor and Notable findings in batches), as part of this decision step. Write the accepted findings, with any `edited_text`, as a JSON array to `$PR_DIR/accepted.json` with your file-write tool (never through a shell literal: findings quote PR code), record `["post"]`, and drop the findings from your context before the next PR. When the user accepts none, record `["skip"]`. Nothing is recorded while the drill-down is in progress: a decision step interrupted inside it leaves the PR undecided, and a resume offers it again.
+**Review findings** (the one place where the coordinator reads findings, FR-018): for that PR, present `$PR_DIR/findings.json` in the single-PR Step 7.5g format of `review.md` (shortcut first; Critical and Important findings one at a time with accept, reject or edit; Minor and Notable findings in batches), as part of this decision step. Write the accepted findings, with any `edited_description` and `edited_fix` (two separate fields, FR-003a), as a JSON array to `$PR_DIR/accepted.json` with your file-write tool (never through a shell literal: findings quote PR code), record `["post"]`, and drop the findings from your context before the next PR. When the user accepts none, record `["skip"]`. Record the curation fact when the drill-down ends (FR-008): `python3 -B "$S/review_draft.py" facts-set --facts "$RUN_DIR/pr-<n>/facts.json" --curated true` only when the user chose "let me go through them" and answered every Critical and Important finding individually (when there is no Critical or Important finding, only when they answered the findings one by one: the Minor and Notable findings cherry-picked individually), otherwise `--curated false`, the same rule as `review.md` 7.5g; batch acceptance alone ("Accept all" or "Reject all" for a severity batch) is not curation; **Post review** and "Apply proposed actions" (all findings without per-finding questions) also record `--curated false`. Never infer curation from the existence of `accepted.json`. Nothing is recorded while the drill-down is in progress: a decision step interrupted inside it leaves the PR undecided, and a resume offers it again.
 
 ### Apply
 
 For each PR with a review decision, after the generic head check of [Apply](#apply) (`HEAD ok`) and with the status set to `applying`, run the decision's parts in this order. The worker inputs are those of Review Analysis, with `EXPECTED_HEAD` read again from the state (`pr-get ... .expected_head`), since a push moves it.
 
-**Head check before every part.** Run the generic head check of [Apply](#apply) again immediately before the push of fix commits, immediately before dispatching the posting worker, and immediately before the marker, whatever happened before (a fix round that made no commit still gets its check before the post). Only `HEAD ok` continues; every other result is handled as described there.
+Apply runs in three passes (FR-018), so the user reads every drafted review in one sitting before anything is posted, and drafting never makes them wait between previews (SC-006):
+
+1. **Prepare**: for every PR in state order, the `fix` part (rounds and push), then the draft of the review for every PR whose decision contains `post`. Nothing is posted.
+2. **Approve**: every draft is shown in full and answered, one at a time in state order (deferred mode; unattended mode applies the [Unattended Policy](#unattended-policy) instead).
+3. **Post**: the approved drafts are posted one PR at a time with `post-review.sh`, then the `marker` decisions, each after a fresh head check.
+
+**Head check before every part.** Run the generic head check of [Apply](#apply) again immediately before the push of fix commits, immediately before each `post-review.sh` call, and immediately before the marker, whatever happened before (a fix round that made no commit still gets its check before the post). Only `HEAD ok` continues; every other result is handled as described there.
+
+#### Prepare Pass
+
+For each PR in state order, run the parts its decision contains:
 
 **1. `fix`** (when the decision contains it). Skip this whole part when `.actions.pushed_sha` is already recorded: the fixes of this run are on the PR branch (a resumed run), and running the rounds again would apply them a second time on top of the pushed commit. Otherwise work in the PR's kept worktree; when `.worktree` is null or the directory is gone, set `failed` with `worktree missing; re-run needed` and go to the next PR:
 1. Read the round limit: config `max_fix_rounds`, with the run's recorded `--max-rounds` applied on top, exactly as `review.md` Config Resolution does for a single PR:
@@ -751,18 +807,246 @@ With `["fix"]` alone, the PR is done after the push.
 
 A PR that has recorded actions (a push, a review, replies) is never stored as `failed`: `bulk-state.sh pr-set` turns `failed` into `partially-applied` for it, so a resume applies the rest instead of analyzing the PR again and forgetting what was already pushed or posted.
 
-**2. `post`** (when the decision contains it): skip this part when `.actions.review_id` is already recorded (a resumed run). Otherwise run the generic head check immediately before dispatching (always, whether or not the fix part pushed; after a push the expected head is the pushed commit), then dispatch the posting worker of `review.md` "Worker Mode (bulk)" (g) with `EXPECTED_HEAD`, `RUN_MARKER`, `PR_DIR`, `PROJECT_DIR`, `OWNER`, `REPO`, and `GH_USER` from `.gh_user` in the run state, plus:
+**2. Draft** (when the decision contains `post`): skip this part when `.actions.review_id` or `.actions.thread_actions_done` is already recorded (a resumed run). Otherwise dispatch the drafting worker of `review.md` "Worker Mode (bulk)" (g) with `EXPECTED_HEAD` (read again from the state, since a push moves it), `RUN_MARKER`, `PR_DIR`, `PROJECT_DIR`, `OWNER`, `REPO`, and `GH_USER` from `.gh_user` in the run state, plus:
 - `CAN_REQUEST_CHANGES`: `true` when the PR author is not the authenticated user (`authored_by_user` is false; GitHub does not let authors request changes on their own PR), otherwise `false`. The worker skips Step 5b, so it only knows this value from you; deferred mode then follows the 7.5k rule (a request for changes on someone else's PR with Critical or Important findings).
-- `JUST_PUSHED`: `true` when this run pushed fix commits to the PR (`.actions.pushed_sha` is set), so the worker retries a "head moved" answer briefly while GitHub catches up with the push.
 - in unattended mode `REVIEW_EVENT_OVERRIDE=COMMENT` (it wins over `CAN_REQUEST_CHANGES`, so an unattended run never blocks a PR).
 
-With fixes applied, the worker posts only the findings the rounds did not fix. Map its status line:
-- `STATUS ok review_id=<id> ...`: `"$S/bulk-state.sh" record "$RUN_ID" "$N" review_id <id>` (skip the record for `review_id=none`); show the review link to the user
-- `STATUS failed reason=head-moved`: set `stale` with `stale, re-run needed: the PR head moved; review not posted`
+With fixes applied, the draft holds only the findings the rounds did not fix. The worker writes nothing to GitHub. It reuses an existing draft whose inputs key (expected head, findings to post, run facts) is unchanged, so a resumed run keeps the fingerprint the user approved. Map its status line:
+- `STATUS ok draft=<dir> fingerprint=<sha> lint=<n>`, optionally followed by `thread-actions-only`: record the draft (the inputs key and whether it holds thread actions alone come from its `draft.json`). `thread-actions-only` means that no review is posted for this PR but thread actions are due (`review.md` 7.5h): the draft holds `thread-actions.json` (resolutions, continuation replies or PR conversation comments) and no `payload.json`, and the worker made no write call and recorded no approval. Such a draft goes through the Approve and Post passes like a review draft (FR-001):
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"
+INPUTS_KEY=$(jq -r '.inputs_key' "$RUN_DIR/pr-$N/post/draft.json") TAO=$(jq -r '.thread_actions_only == true' "$RUN_DIR/pr-$N/post/draft.json") \
+  FP=$(python3 -B "$S/review_draft.py" fingerprint --draft "$RUN_DIR/pr-$N/post") \
+  "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.draft={fingerprint: env.FP, inputs_key: env.INPUTS_KEY, thread_actions_only: (env.TAO == "true")}' >/dev/null
+echo "DRAFT #$N $("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" .draft | jq -c .)"
+```
+
+- `STATUS ok nothing-to-post`: there is neither a review nor a thread action left to post (for example, the fix rounds fixed every finding). This is not a failure: record the PR as finished, `actioned` with the reason `nothing left to post after the fixes` when this run pushed fixes, otherwise `nothing to post`, and remove its worktree. The Approve and Post passes and a resumed run skip it (only `applying` PRs are asked and posted, and `actioned` is final):
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"
+REASON="nothing to post"
+[ -n "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.actions.pushed_sha // ""')" ] && REASON="nothing left to post after the fixes"
+REASON="$REASON" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.status="actioned"' '.reason=env.REASON' '.draft=null' '.approval=null' >/dev/null || exit 1
+if [ -n "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.worktree // ""')" ]; then
+  "$S/pr-worktree.sh" remove "$RUN_DIR/pr-$N/wt" && "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.worktree=null' >/dev/null
+fi
+echo "NOTHING TO POST #$N: $REASON"
+```
+
+- `STATUS failed reason=stale-commit`: set `stale` with `stale, re-run needed: the draft's pinned commit is missing or differs from the expected head; review not posted`
 - `STATUS failed reason=rate-limited`: pause as in Rate Limits
 - anything else: set `failed` with the reason
 
-**3. `marker`** (FR-021a), after the generic head check (`HEAD ok`) immediately before it:
+With `["fix"]` alone, or once the draft is recorded, the Prepare pass goes on to the next PR. `marker` and `skip` decisions have nothing to prepare.
+
+#### Approve Pass
+
+**Deferred mode.** After the Prepare pass has finished for every PR, go through the PRs with status `applying` that have a recorded `.draft` and no recorded `.actions.review_id` or `.actions.thread_actions_done`, in state order (a PR that became `stale`, `failed` or `withheld` keeps its old draft in the state but is not asked about). Skip a PR whose `.approval.answer` is `approved` and whose `.approval.fingerprint` equals `.draft.fingerprint`: the user already approved exactly this draft (a resumed run). Every other drafted PR is asked again, also when an earlier approval belongs to another fingerprint (its draft changed since approval). For each PR, one at a time:
+
+1. Render the check and the preview again from the draft files (both are deterministic and leave the fingerprint unchanged; this way the preview always shows the payload that the approval below fingerprints, also after an interrupted drafting worker), then print `$RUN_DIR/pr-<n>/post/preview.md` in full (this preview is the one place besides the findings drill-down where you read a PR's content; drop it from your context before the next PR). When the preview lists remaining check findings, say so in one sentence. Every preview lists the proposed thread actions: resolutions (thread, reply text, resolve yes or no), continuation replies in existing threads and PR conversation comments, each with its text. A draft of thread actions alone (`.draft.thread_actions_only` is true) has no review to check: its check covers the thread-action text only, and its preview says that no review will be posted; say so in one sentence.
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; D="$RUN_DIR/pr-$N/post"
+# A draft of thread actions alone has no payload.json: the check covers the thread-action text
+python3 -B "$S/review_draft.py" lint --draft "$D" --facts "$RUN_DIR/pr-$N/facts.json" \
+  --expected-head "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" .expected_head)" --run-marker "$RUN_ID/pr-$N"
+python3 -B "$S/review_draft.py" preview --draft "$D" || exit 1
+```
+
+2. Ask one question about this PR only: **Approve**, **Edit** (describe a change in plain words), **Skip** (post nothing), or **Stop (resume later)**. There is no "approve all" choice: every posted review was read.
+3. Record the answer the moment it is given (FR-019):
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; ANSWER="{approved|skipped}"
+FP=$(python3 -B "$S/review_draft.py" fingerprint --draft "$RUN_DIR/pr-$N/post") || exit 1
+ANSWER="$ANSWER" FP="$FP" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" \
+  '.approval={answer: env.ANSWER, fingerprint: env.FP, at: (now | todate)}' >/dev/null
+echo "APPROVAL #$N $ANSWER $FP"
+```
+
+- **Approve**: record `approved`. For thread actions alone the fingerprint covers `thread-actions.json` alone, as in `review.md` 7.5h.
+- **Edit**: a change to the proposed thread actions (for thread actions alone, the only kind of change) goes to `$RUN_DIR/pr-<n>/post/thread-actions.json` only, with your file-write tool (never through a shell literal): the `reply_body` text of a resolution, a continuation reply or a PR conversation comment, `resolve` from true to false, or removing an entry (this drops that reply or comment); `kind`, `thread_id`, `source_id`, `source_url` and `activity` are not editable. Then run the block below (it skips the assembly when there is no `payload.json`) and ask again. For a review draft, apply a change to the review as `review.md` 7.5k3 describes (slot text, `removed`, `attribution_override` or the downgrade to a plain comment in `$RUN_DIR/pr-<n>/post/slots.json`, with your file-write tool; paths, lines, `commit_id` and the run marker are not editable). Then re-assemble, check and preview in your own context with `review_draft.py` only (no worker), with the draft's own inputs key and facts, record the new fingerprint as `.draft.fingerprint`, and ask again:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; D="$RUN_DIR/pr-$N/post"; T="$S/review_draft.py"
+KEY=$(jq -r '.inputs_key' "$D/draft.json")
+MARKER="$RUN_ID/pr-$N"; HEAD=$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" .expected_head)
+if [ -f "$D/payload.json" ]; then
+  # assemble keeps the inline comment limit recorded in draft.json
+  python3 -B "$T" assemble --slots "$D/slots.json" --facts "$RUN_DIR/pr-$N/facts.json" --out "$D" --inputs-key "$KEY" >/dev/null || exit 1
+fi
+# The check covers the review (when there is one) and the thread-action text
+python3 -B "$T" lint --draft "$D" --facts "$RUN_DIR/pr-$N/facts.json" --expected-head "$HEAD" --run-marker "$MARKER"
+python3 -B "$T" preview --draft "$D" >/dev/null
+FP=$(python3 -B "$T" fingerprint --draft "$D") "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.draft.fingerprint=env.FP' >/dev/null
+```
+
+- **Skip**: record `skipped`, then set the status: `skipped` (no review, no marker, no thread action, the next run selects the PR again, FR-021a), or `actioned` with the reason `fixes pushed, review not posted` (thread actions alone: `fixes pushed, review and thread replies not posted`, the FR-020 reason naming the thread replies that were not posted either) when this run already pushed fixes (`.actions.pushed_sha` is set, FR-020). Remove the worktree as in Skip.
+- **Stop (resume later)**: the PRs answered so far keep their recorded answers. Leave the run in `applying`, print the summary and how to continue (`--bulk --resume`), and stop. A resume continues with the unanswered previews.
+
+**Unattended mode**: no Approve pass and no question; the [Unattended Policy](#unattended-policy) decides.
+
+#### Post Pass
+
+A PR with status `applying`, a decision that contains `post` and an already recorded `.actions.review_id` was posted by an interrupted run: do not post it again; dispatch only the seeding and thread-action subagent described under `POSTED` below (it skips the replies and resolutions already recorded in `.actions`), then continue to Done.
+
+For each PR in state order with status `applying`, a decision that contains `post`, a review draft (`.draft.thread_actions_only` is not true; thread actions alone follow below) and no recorded `.actions.review_id`, only when `.approval.answer` is `approved` (or `policy`, unattended) and `.approval.fingerprint` equals `.draft.fingerprint`: run the generic head check immediately before the post, then post the approved draft. `post-review.sh` checks the fingerprint, the pinned commit, the live head (briefly retried after a push by this run, `JUST_PUSHED`), this run's marker, the Follow-up Continuity history and the conversation since analysis, and only then posts `payload.json` byte for byte:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; PR_DIR="$RUN_DIR/pr-$N"; get() { "$S/bulk-state.sh" pr-get "$RUN_ID" "$N" "$1"; }
+# --config and --profile of the run, from its recorded options (as in the Prepare pass)
+opt() { jq -r --arg f "$1" '.options as $o
+  | ([$o | to_entries[] | select(.value == $f) | $o[.key + 1]] + [$o[] | select(startswith($f + "=")) | ltrimstr($f + "=")])
+  | map(select(. != null)) | last // ""' "$RUN_DIR/state.json"; }
+CONFIG_FLAG=$(opt --config); PROFILE_FLAG=$(opt --profile)
+source "$S/resolve-config.sh"
+resolve_config_init --config "${CONFIG_FLAG:--}" --profile "${PROFILE_FLAG:--}" >/dev/null || exit 1
+set -- --draft "$PR_DIR/post" --owner "$(jq -r '.repo.owner' "$RUN_DIR/state.json")" \
+  --repo "$(jq -r '.repo.name' "$RUN_DIR/state.json")" --pr "$N" --user "$(jq -r '.gh_user' "$RUN_DIR/state.json")" \
+  --expected-head "$(get .expected_head)" --run-marker "$RUN_ID/pr-$N" --scope "$PR_DIR/scope" \
+  --approved-fingerprint "$(get .approval.fingerprint)"
+[ -f "$PR_DIR/scope/history.json" ] && set -- "$@" --history "$PR_DIR/scope/history.json"
+# JUST_PUSHED: this run pushed fix commits, so GitHub may lag behind the push
+[ -n "$(get '.actions.pushed_sha // ""')" ] && set -- "$@" --just-pushed
+[ -n "${ACCEPT_CHANGES:-}" ] && set -- "$@" --accept-changes "$ACCEPT_CHANGES"
+# CI accounts that are regular users, treated like bots (pr_posting.ignore_authors)
+for A in $(resolve_config_list pr_posting.ignore_authors); do set -- "$@" --ignore-author "$A"; done
+OUT=$("$S/post-review.sh" "$@" 2>"$PR_DIR/post.err"); RC=$?
+printf '%s\n' "$OUT" > "$PR_DIR/post-result.txt"
+echo "POST rc=$RC $OUT"
+[ "$RC" -eq 0 ] || tail -n 1 "$PR_DIR/post.err"
+```
+
+Map the result to the state:
+- `POSTED <id> <url>` or `FOUND <id>` (this run's review was already on the PR): `"$S/bulk-state.sh" record "$RUN_ID" "$N" review_id <id>` and show the review link to the user. Then dispatch one subagent for the PR that seeds the reviewer activity for the posted inline comments (the seeding paragraph of `review.md` 7.5l) and, only when `$PR_DIR/post/thread-actions.json` is not empty, performs the approved thread actions of `review.md` 7.5l2: the resolutions, the continuation replies in existing threads and the PR conversation comments (its continuation and PR comment blocks, with `DRAFT_DIR="$PR_DIR/post"` and `RUN_MARKER="$RUN_ID/pr-$N"`). It records each completed action the moment it completes, with `bulk-state.sh record` (`reply` for a resolution or continuation reply, `resolved` for a resolution, `pr_comment <source_id> <comment id>` for a PR conversation comment), skips the entries already recorded in `.actions`, and returns `STATUS ok replies=<n> resolved=<n> pr_comments=<n>` (a failure there leaves the PR `partially-applied`). Then continue to Done. Immediately before each reply, each resolution and each PR comment, that subagent runs the check below (`post-review.sh --check-only`: the recorded approval fingerprint, the live head and the conversation since analysis, without posting). Only `OK` lets the action go ahead; with any other result it performs no further thread action for the PR and returns `STATUS failed reason=thread-check: <result line>`. The coordinator maps that result line (FR-024); the review is already on the PR (`.actions.review_id` is recorded) in every case:
+  - `CHANGED <hash> <reason>`, deferred mode: show the reason and ask **Post anyway** (dispatch the thread-action subagent again with `ACCEPT_CHANGES=<hash>`; it skips the replies, resolutions and PR comments already recorded in `.actions`, and a further change is reported again), **Skip** (status `actioned` with the reason `review posted, thread replies skipped`), or **Re-run later** (status `stale` with the reason `review posted, thread replies need a re-run: <reason>`; the next run selects the PR again). Never set `partially-applied` for a `CHANGED` result in deferred mode.
+  - `CHANGED <hash> <reason>`, unattended mode: set `withheld` with the reason `conversation changed: <reason>`; the summary lists the PR under "Needs attention" as `review posted, thread replies withheld: <reason>`, not as a withheld review.
+  - Any other result line (`STALE ...`, `REFUSED ...`, `FAILED ...`): set `partially-applied` with the reason `thread-check: <result line>`. `rc=75`: pause as in Rate Limits.
+
+Record **Skip** and **Re-run later** (deferred) or the withheld thread replies (unattended) with this block; `{CHOICE}` is `skip`, `rerun` or `withhold`. It reads the `CHANGED` line from `$PR_DIR/thread-check.txt`, which the check block below wrote, so the reason is never pasted into the command:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; CHOICE="{CHOICE}"
+CHECK=$(cat "$RUN_DIR/pr-$N/thread-check.txt") || exit 1
+case "$CHECK" in
+  "CHANGED "*) CHANGE="${CHECK#CHANGED * }" ;;
+  *) echo "Error: the last thread-action check was not CHANGED: $CHECK"; exit 1 ;;
+esac
+case "$CHOICE" in
+  skip) PR_STATUS=actioned; REASON="review posted, thread replies skipped" ;;
+  rerun) PR_STATUS=stale; REASON="review posted, thread replies need a re-run: $CHANGE" ;;
+  withhold) PR_STATUS=withheld; REASON="conversation changed: $CHANGE" ;;
+  *) echo "Error: unknown choice '$CHOICE'"; exit 1 ;;
+esac
+PR_STATUS="$PR_STATUS" REASON="$REASON" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.status=env.PR_STATUS' '.reason=env.REASON' >/dev/null
+echo "THREAD CHECK #$N $PR_STATUS: $REASON"
+```
+
+The check the subagent runs before each reply and each resolution:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; PR_DIR="$RUN_DIR/pr-$N"; get() { "$S/bulk-state.sh" pr-get "$RUN_ID" "$N" "$1"; }
+# --config and --profile of the run, from its recorded options (as in the Prepare pass)
+opt() { jq -r --arg f "$1" '.options as $o
+  | ([$o | to_entries[] | select(.value == $f) | $o[.key + 1]] + [$o[] | select(startswith($f + "=")) | ltrimstr($f + "=")])
+  | map(select(. != null)) | last // ""' "$RUN_DIR/state.json"; }
+CONFIG_FLAG=$(opt --config); PROFILE_FLAG=$(opt --profile)
+source "$S/resolve-config.sh"
+resolve_config_init --config "${CONFIG_FLAG:--}" --profile "${PROFILE_FLAG:--}" >/dev/null || exit 1
+set -- --draft "$PR_DIR/post" --owner "$(jq -r '.repo.owner' "$RUN_DIR/state.json")" \
+  --repo "$(jq -r '.repo.name' "$RUN_DIR/state.json")" --pr "$N" --user "$(jq -r '.gh_user' "$RUN_DIR/state.json")" \
+  --expected-head "$(get .expected_head)" --run-marker "$RUN_ID/pr-$N" --scope "$PR_DIR/scope" \
+  --approved-fingerprint "$(get .approval.fingerprint)" --check-only
+[ -f "$PR_DIR/scope/history.json" ] && set -- "$@" --history "$PR_DIR/scope/history.json"
+[ -n "$(get '.actions.pushed_sha // ""')" ] && set -- "$@" --just-pushed
+[ -n "${ACCEPT_CHANGES:-}" ] && set -- "$@" --accept-changes "$ACCEPT_CHANGES"
+for A in $(resolve_config_list pr_posting.ignore_authors); do set -- "$@" --ignore-author "$A"; done
+CHECK=$("$S/post-review.sh" "$@" 2>"$PR_DIR/check.err"); RC=$?
+printf '%s\n' "$CHECK" > "$PR_DIR/thread-check.txt"
+echo "CHECK rc=$RC $CHECK"
+```
+
+Pass the subagent the same `ACCEPT_CHANGES` value the post used, so a change the user accepted with **Post anyway** does not stop the thread actions.
+- `STALE head`, `STALE closed` or `STALE commit`: set `stale` with `stale, re-run needed: the PR head moved; review not posted`.
+- `CHANGED <hash> <reason>`: the conversation or the history changed since analysis. Deferred mode: show the reason and ask **Post anyway** (run the block again with `ACCEPT_CHANGES=<hash>`; a further change is reported again), **Skip** (status `skipped`, or `actioned` with the reason `fixes pushed, review not posted` when this run pushed fixes, as in the Approve pass), or **Re-run later** (status `stale` with the reason `review not posted, conversation changed; re-run needed: <reason>`; the next run selects the PR again). Unattended mode: set `withheld` with the reason `conversation changed: <reason>`, as the [Unattended Policy](#unattended-policy) says. Record the choice with the block below (`{CHOICE}` is `skip`, `rerun` or `withhold`); it reads the `CHANGED` line from `$PR_DIR/post-result.txt` (the Post block wrote it), or, for thread actions without a review, from `$PR_DIR/thread-check.txt`, so the reason is never pasted into the command:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; CHOICE="{CHOICE}"; get() { "$S/bulk-state.sh" pr-get "$RUN_ID" "$N" "$1"; }
+# The review was not posted: a CHANGED result of the post, or of the check
+# before thread actions without a review
+if [ "$(get '.draft.thread_actions_only == true')" = true ]; then
+  RESULT="$RUN_DIR/pr-$N/thread-check.txt"; WHAT="review and thread replies"
+else
+  RESULT="$RUN_DIR/pr-$N/post-result.txt"; WHAT="review"
+fi
+LINE=$(cat "$RESULT") || exit 1
+case "$LINE" in
+  "CHANGED "*) CHANGE="${LINE#CHANGED * }" ;;
+  *) echo "Error: the last result was not CHANGED: $LINE"; exit 1 ;;
+esac
+case "$CHOICE" in
+  skip)
+    if [ -n "$(get '.actions.pushed_sha // ""')" ]; then
+      PR_STATUS=actioned; REASON="fixes pushed, $WHAT not posted"
+    else
+      PR_STATUS=skipped; REASON="$WHAT skipped after a conversation change: $CHANGE"
+    fi ;;
+  rerun) PR_STATUS=stale; REASON="$WHAT not posted, conversation changed; re-run needed: $CHANGE" ;;
+  withhold) PR_STATUS=withheld; REASON="conversation changed: $CHANGE" ;;
+  *) echo "Error: unknown choice '$CHOICE'"; exit 1 ;;
+esac
+PR_STATUS="$PR_STATUS" REASON="$REASON" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.status=env.PR_STATUS' '.reason=env.REASON' >/dev/null
+if [ "$PR_STATUS" != withheld ] && [ -n "$(get '.worktree // ""')" ]; then
+  "$S/pr-worktree.sh" remove "$RUN_DIR/pr-$N/wt" && "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.worktree=null' >/dev/null
+fi
+echo "POST CHANGED #$N $PR_STATUS: $REASON"
+```
+- `REFUSED fingerprint`: the draft changed after the approval. Deferred mode: show the current preview again and ask as in the Approve pass; post only after a new approval. Unattended mode: never ask; set `withheld` with the reason `the draft changed after the policy check`.
+- `REFUSED payload`: the draft is not a plain comment or request for changes, or lacks this run's marker line; nothing was posted. Set `withheld` with the reason `the draft payload is not postable` (both modes) and tell the user in deferred mode.
+- `FAILED <auth|other> <message>`: set `failed` with the message. The recovery file `$PR_DIR/post/recovery.json` exists only when the POST itself failed; a failure to read the PR or its conversation before the POST leaves none.
+- `rc=75`: pause as in Rate Limits.
+
+**Thread actions without a review** (`.draft.thread_actions_only` is true, FR-001). For each such PR in state order with status `applying`, a decision that contains `post` and no recorded `.actions.thread_actions_done`, only when `.approval.answer` is `approved` (or `policy`, unattended) and `.approval.fingerprint` equals `.draft.fingerprint`: run the generic head check, then the thread-action check block above. It runs `post-review.sh --check-only` with the approved fingerprint over the draft, which holds `thread-actions.json` alone (nothing is posted, and there is no pinned commit to compare). Map its result:
+- `CHECK rc=0 OK`: dispatch the thread-action subagent described under `POSTED`, without the seeding (no review was posted), with the same check before each reply, each resolution and each PR comment and the same `ACCEPT_CHANGES`. It performs the resolutions, continuation replies and PR conversation comments of the draft, skips those already recorded in `.actions` (`replies`, `resolved`, `pr_comments`; a resumed run) and records each one with `bulk-state.sh record`. On `STATUS ok replies=<n> resolved=<n> pr_comments=<n>`, record that the thread actions are done, then continue to Done:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"
+# Thread actions without a review: there is no review_id, so this mark keeps a
+# resumed run from preparing, approving or performing them again
+"$S/bulk-state.sh" record "$RUN_ID" "$N" thread_actions_done >/dev/null
+echo "THREAD ACTIONS #$N done $("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.actions | {replies, resolved, pr_comments: (.pr_comments // {})}' | jq -c .)"
+```
+
+  On `STATUS failed reason=thread-check: <result line>`, map that result line as below.
+- `CHANGED <hash> <reason>`: the conversation or the history changed since analysis. Deferred mode: show the reason and ask **Post anyway** (run the check again with `ACCEPT_CHANGES=<hash>`, then continue as for `OK`), **Skip** (status `skipped`, or `actioned` with the reason `fixes pushed, review and thread replies not posted` when this run pushed fixes), or **Re-run later** (status `stale` with the reason `review and thread replies not posted, conversation changed; re-run needed: <reason>`). Record the choice with the recording block of the review's `CHANGED` result above (it reads `$PR_DIR/thread-check.txt` for thread actions alone). Unattended mode: set `withheld` with the reason `conversation changed: <reason>`; the summary lists the PR under "Needs attention" as `no review to post, thread replies withheld: <reason>`.
+- `STALE head`, `STALE closed` or `STALE commit`: set `stale` with `stale, re-run needed: the PR head moved; thread actions not performed`.
+- `REFUSED fingerprint`: `thread-actions.json` changed after the approval. Deferred mode: show the current preview again and ask as in the Approve pass; perform them only after a new approval. Unattended mode: set `withheld` with the reason `the draft changed after the policy check`.
+- `FAILED <auth|other> <message>`: set `failed` with the message (a PR with recorded replies becomes `partially-applied`, so a resume performs the rest).
+- `rc=75`: pause as in Rate Limits.
+
+**`marker`** (FR-021a), in the Post pass, after the generic head check (`HEAD ok`) immediately before it:
 
 ```bash
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
@@ -981,4 +1265,6 @@ Tell the user how many PRs were left for a later run (`OK not-analyzed=<n>`). Wh
 
 **4. Continue.** Tell the user in one line how many PRs are analyzed again, wait for a decision, and are applied. Then run the normal flow from [Analysis Loop](#analysis-loop) on: the analysis loop handles the `reanalyze` PRs (they are `pending` now), the [Pre-Decision Refresh](#pre-decision-refresh) and [Decision Step](#decision-step) cover the undecided analyzed PRs (only undecided PRs are offered; actioned PRs are never decided again), and [Apply](#apply) takes the `apply` list together with the new decisions. Skip each part that has nothing to do.
 
-**Nothing is done twice (FR-028).** Every completed sub-action has its id in the state and is skipped: `bulk-apply.sh` skips recorded pushes, replies and resolutions, and the posting step is skipped when `review_id` is recorded. Before posting a review that is not recorded, the posting worker looks for this run's marker on the PR and reports that review instead (`review.md` Worker Mode (g)); `bulk-apply.sh marker` does the same for the marker, and `bulk-apply.sh triage` records a reply this run already posted (a reply by the user with `<!-- cc-review-triage`, created since the run started) instead of posting it again. A fix push already recorded (`.actions.pushed_sha`) skips the fix rounds.
+**Nothing is done twice (FR-028).** Every completed sub-action has its id in the state and is skipped: `bulk-apply.sh` skips recorded pushes, replies and resolutions, and the posting step is skipped when `review_id` is recorded. Thread actions without a review have no `review_id`: once they are all done, `.actions.thread_actions_done` is recorded and the Prepare, Approve and Post passes skip the PR; a Post pass interrupted during them runs the check again and performs only the replies, resolutions and PR comments not yet recorded. A continuation reply or PR conversation comment (Follow-up Continuity, `review.md` 7.5l2) is recorded the moment it is posted (`reply`, or `pr_comment <source_id> <comment id>`), and its block first looks for its continuation marker (`<!-- cc-review-continuation:v1 <run marker> <source_id> -->`) in the thread or the PR conversation, so a comment that was posted before the record was written is found (`FOUND`) instead of posted again. Before posting a review that is not recorded, `post-review.sh` looks for this run's marker on the PR and reports that review instead (`FOUND`); `bulk-apply.sh marker` does the same for the marker, and `bulk-apply.sh triage` records a reply this run already posted (a reply by the user with `<!-- cc-review-triage`, created since the run started) instead of posting it again. A fix push already recorded (`.actions.pushed_sha`) skips the fix rounds.
+
+**Drafts and approvals survive a resume (FR-019, FR-019a).** The drafting worker reuses `$PR_DIR/post` when its `draft.json` inputs key (expected head, findings to post, run facts) is unchanged, so the fingerprint of an approved draft stays the same; it drafts again only when the draft is missing or its inputs changed. The Approve pass skips a PR whose recorded `.approval.fingerprint` equals `.draft.fingerprint` and asks again when the draft changed since approval, and the Post pass posts only such a matching approval.

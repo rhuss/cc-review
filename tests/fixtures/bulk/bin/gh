@@ -9,6 +9,17 @@
 #   FAKE_GH_FAIL   glob matched against the joined argv; a matching call fails
 #   FAKE_GH_FAIL_AFTER  number of matching calls that succeed before failing (default 0)
 #   FAKE_GH_FAIL_MSG    stderr text of a failing call (default "HTTP 500")
+#   FAKE_GH_EXPECT_REPO  "owner/name": every call must address this repository
+#                  explicitly (--repo/-R, GraphQL owner= and repo= fields, or an
+#                  api repos/<owner>/<name>/ path); a call that addresses another
+#                  one fails, and "repo view" fails as outside a clone
+#   FAKE_GH_POST_STATUS  HTTP status of every review POST (api .../reviews with
+#                  --input): 422 answers "commit_id is not part of the pull
+#                  request", any other value "HTTP <status>"; the request body
+#                  is still recorded
+#
+# Every call with --input copies the request body to $FAKE_GH_STATE/requests/
+# (001.json, 002.json, ... in call order), byte for byte.
 #
 # Fixture files (first match wins):
 #   api user                        user.json
@@ -19,7 +30,9 @@
 #   api graphql (resolveReviewThread)  fixed success answer
 #   api graphql (search)            graphql-search.json
 #   api graphql (reviewThreads)     graphql-threads-<n>.json, graphql-threads.json
-#   api graphql (reviews)           graphql-reviews-<n>.json, graphql-reviews.json
+#   api graphql (reviews)           graphql-reviews-<n>-after-post.json (once a request
+#                                   body was recorded), graphql-reviews-<n>.json,
+#                                   graphql-reviews.json
 #   api .../replies, .../reviews    POST answers {"id": <n>} with an incrementing id
 # A -q/--jq filter is applied to the served JSON, as gh does.
 
@@ -71,6 +84,7 @@ fi
 
 # Pull out the options the fixtures are keyed by
 jq_filter="" search="" number="" query="" input="" method="GET" silent=false
+f_owner="" f_repo="" r_repo=""
 positional=()
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -83,18 +97,47 @@ while [ $# -gt 0 ]; do
       case "$2" in
         query=*) query="${2#query=}" ;;
         number=*) number="${2#number=}" ;;
+        owner=*) f_owner="${2#owner=}" ;;
+        repo=*) f_repo="${2#repo=}" ;;
       esac
       [ "${2%%=*}" = body ] && method=POST
       shift 2 ;;
-    --json|--state|--limit|--repo|-R) shift 2 ;;
+    --repo|-R) r_repo="$2"; shift 2 ;;
+    --json|--state|--limit) shift 2 ;;
     *) positional+=("$1"); shift ;;
   esac
 done
 
+if [ -n "${FAKE_GH_EXPECT_REPO:-}" ]; then
+  wrong=""
+  case "${positional[0]:-} ${positional[1]:-}" in
+    "repo view") echo "fake gh: not a git repository (repo view outside a clone)" >&2; exit 1 ;;
+  esac
+  [ -z "$r_repo" ] || [ "$r_repo" = "$FAKE_GH_EXPECT_REPO" ] || wrong="--repo $r_repo"
+  if [ -n "$f_owner$f_repo" ] && [ "$f_owner/$f_repo" != "$FAKE_GH_EXPECT_REPO" ]; then wrong="owner/repo $f_owner/$f_repo"; fi
+  case "${positional[1]:-}" in
+    repos/*) case "${positional[1]}/" in "repos/$FAKE_GH_EXPECT_REPO/"*) ;; *) wrong="path ${positional[1]}" ;; esac ;;
+  esac
+  if [ "${positional[0]:-}" != api ] && [ -z "$r_repo" ]; then
+    case "${positional[0]:-}" in pr|issue|run) wrong="no --repo" ;; esac
+  fi
+  if [ "${positional[0]:-} ${positional[1]:-}" = "api graphql" ] && [ -z "$f_owner$f_repo" ]; then
+    case "$query" in *repository\(*) wrong="graphql without owner and repo" ;; esac
+  fi
+  if [ -n "$wrong" ]; then
+    echo "fake gh: expected repository $FAKE_GH_EXPECT_REPO, got $wrong" >&2
+    exit 1
+  fi
+fi
+
+requests="${FAKE_GH_STATE:+$FAKE_GH_STATE/requests}"
 if [ -n "$input" ]; then
   method=POST
   [ -n "${FAKE_GH_LOG:-}" ] && printf 'INPUT %s\n' "$(jq -c . "$input" 2>/dev/null || cat "$input")" >> "$FAKE_GH_LOG"
+  [ -n "$requests" ] && mkdir -p "$requests" && cp "$input" "$requests/$(printf '%03d' $(( $(find "$requests" -type f | wc -l) + 1 ))).json"
 fi
+posted=false
+[ -n "$requests" ] && [ -d "$requests" ] && [ -n "$(find "$requests" -type f)" ] && posted=true
 
 out=""
 case "${positional[0]:-} ${positional[1]:-}" in
@@ -118,7 +161,12 @@ case "${positional[0]:-} ${positional[1]:-}" in
       *resolveReviewThread*) out='{"data":{"resolveReviewThread":{"thread":{"isResolved":true}}}}' ;;
       *search*) out=$(fixture graphql-search.json) || exit 1 ;;
       *reviewThreads*) out=$(fixture "graphql-threads-$number.json" graphql-threads.json) || exit 1 ;;
-      *reviews*) out=$(fixture "graphql-reviews-$number.json" graphql-reviews.json) || exit 1 ;;
+      *reviews*)
+        if $posted; then
+          out=$(fixture "graphql-reviews-$number-after-post.json" "graphql-reviews-$number.json" graphql-reviews.json) || exit 1
+        else
+          out=$(fixture "graphql-reviews-$number.json" graphql-reviews.json) || exit 1
+        fi ;;
       *comments\(first:*) out=$(fixture "graphql-comments-$number.json") || exit 1 ;;
       *) echo "fake gh: unknown graphql query" >&2; exit 1 ;;
     esac ;;
@@ -126,6 +174,17 @@ case "${positional[0]:-} ${positional[1]:-}" in
     if [ "$method" != POST ]; then
       echo "fake gh: only POST is supported for: $args" >&2
       exit 1
+    fi
+    if [ -n "$input" ] && [ -n "${FAKE_GH_POST_STATUS:-}" ]; then
+      case "${positional[1]}" in
+        */reviews)
+          if [ "$FAKE_GH_POST_STATUS" = 422 ]; then
+            echo "gh: Unprocessable Entity (HTTP 422): commit_id is not part of the pull request" >&2
+          else
+            echo "gh: HTTP $FAKE_GH_POST_STATUS" >&2
+          fi
+          exit 1 ;;
+      esac
     fi
     out="{\"id\":$(next_id)}" ;;
   *)
