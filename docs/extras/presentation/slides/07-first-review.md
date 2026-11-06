@@ -6,9 +6,9 @@ zoom: 1.1
 # Three ways to run your first review
 
 ```bash
-/review                   # your branch vs main
-/review --pr 42           # a PR, in its own worktree
-/review --profile quick   # cheap: 2 reviewers, 1 round
+/cc-review:review                   # your branch vs main
+/cc-review:review --pr 42           # a PR, in its own worktree
+/cc-review:review --profile quick   # cheap: 2 reviewers, 1 round
 ```
 
 - Profiles: `quick` · `thorough` · `ci`
@@ -20,7 +20,7 @@ zoom: 1.1
 
 **Say:**
 
-"Plain `/review` compares your branch with main. That's the one I use most: before I push, not after."
+"Plain `/cc-review:review` compares your branch with main. That's the one I use most: before I push, not after."
 
 "With `--pr`, cc-review checks the pull request out into its own worktree, so your working tree stays untouched. That's what's running in the background right now."
 

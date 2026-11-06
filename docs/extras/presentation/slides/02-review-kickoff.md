@@ -5,10 +5,10 @@ layout: default
 # A review starts now and finishes during the talk
 
 ```bash
-/review --pr <n> --profile thorough
+/cc-review:review --pr <n> --profile thorough
 ```
 
-<div class="term mt-4">
+<div class="term mt-10">
 <div class="term-head">Gate: <span class="ok">PASS</span> (after fix round 1)</div>
 <table>
 <thead><tr><th>Reviewer</th><th>Found</th><th>Fixed</th><th>Remaining</th><th>Status</th></tr></thead>
@@ -21,9 +21,15 @@ layout: default
 </table>
 </div>
 
-<div class="mt-3 opacity-70 text-center">Illustration: the real table appears at minute 35</div>
+<div class="mt-3 opacity-70 text-center">Illustrative result: real runs look different</div>
 
 <style>
+.slidev-code {
+  font-size: 1.6rem !important;
+  line-height: 1.4 !important;
+  padding: 0.8rem 1.2rem !important;
+  margin-top: 2rem !important;
+}
 .term {
   background: #1e1e1e;
   color: #e5e7eb;

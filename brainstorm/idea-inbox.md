@@ -92,3 +92,12 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: No inbox snapshot fixture item exercises the "Uncertain"/"Inferred" certainty branch (every assessment has `uncertain: false`), so `test_certainty_values_are_known` is a near-tautology. Add an attention item with `uncertain: true` to give the uncertain-responsibility report branch (FR-003) concrete coverage.
 
 > A report/collector change that mishandled uncertain items would have no fixture to surface it.
+
+### user-defined-named-profiles
+
+- **Source**: presentation prep
+- **Date**: 2026-11-06
+- **Reference**: review/core/scripts/resolve-config.sh (profile lookup)
+- **Summary**: `--profile <name>` only resolves bundled profiles in `review/config/profiles/` (quick, thorough, ci); a user or project cannot add their own named profile.
+
+> Look up `<name>.yml` in the project config directory and the user config directory first, then fall back to the bundled profiles, so a team can ship `--profile security-audit` with its repo. Open points: precedence when a project profile shadows a bundled name, listing all available profiles (with their source) in the "unknown profile" error, and whether `init` should scaffold an example profile. Today's workaround is `--config path/to/profile.yml`.

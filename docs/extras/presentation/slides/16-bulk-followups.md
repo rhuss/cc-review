@@ -6,8 +6,8 @@ zoom: 1.1
 # Review many PRs at once, and only what changed
 
 ```bash
-/review --bulk                          # every PR waiting for you
-/review --bulk --resume --unattended    # scheduled runs
+/cc-review:review --bulk                          # every PR waiting for you
+/cc-review:review --bulk --resume --unattended    # scheduled runs
 ```
 
 | PR | Findings | Your decision |

@@ -7,7 +7,7 @@ zoom: 1.3
 # Try it this week
 
 - Install from `rhuss/cc-rhuss-marketplace`
-- Run `/review --profile quick` on your next branch
+- Run `/cc-review:review --profile quick` on your next branch
 - Write one reviewer for a rule your team repeats
 
 <div class="flex items-center justify-center gap-6 mt-6">
@@ -20,7 +20,7 @@ zoom: 1.3
 
 **Say:**
 
-"If you want to try it, three steps, smallest first. Install it from the marketplace. Run `/review --profile quick` on your next branch, before you push. And if you like it, write one reviewer for a rule your team keeps repeating."
+"If you want to try it, three steps, smallest first. Install it from the marketplace. Run `/cc-review:review --profile quick` on your next branch, before you push. And if you like it, write one reviewer for a rule your team keeps repeating."
 
 "The QR code takes you to the repository. For writing reviewers, start with `docs/extras/reviewer-plugins.md`."
 

@@ -1,19 +1,14 @@
 ---
 layout: default
-zoom: 1.3
 ---
 
 # What is running right now
 
-```mermaid
-flowchart LR
-  D[Discover<br/>reviewers] --> P[Dispatch<br/>in parallel]
-  P --> M[Merge &<br/>dedup]
-  M --> V[Meta-review]
-  V --> G[Gate &<br/>fix loop]
-  G --> R[Report]
-```
+<div class="grid grid-cols-[3fr_2fr] gap-8 items-center mt-4">
 
+<img src="/images/pipeline/diagram-excalidraw.svg" alt="Six-step pipeline: discover reviewers, dispatch in parallel and merge and dedup in this section; meta-review, gate and fix loop, and report in the next section" />
+
+<div>
 <v-clicks>
 
 - **Discover**: no hard-coded list
@@ -21,6 +16,9 @@ flowchart LR
 - **Merge**: same spot, same category, one finding
 
 </v-clicks>
+</div>
+
+</div>
 
 <!--
 **Goal:** the centerpiece. Everyone understands the six steps.
