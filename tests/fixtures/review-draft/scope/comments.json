@@ -1,0 +1,20 @@
+[
+  {
+    "id": "IC_kwDOA1",
+    "databaseId": 201,
+    "url": "https://github.com/acme/widget/pull/7#issuecomment-201",
+    "body": "Thanks for the review, I pushed a fix.",
+    "author": {"login": "alice", "__typename": "User"},
+    "createdAt": "2026-10-29T10:00:00Z",
+    "updatedAt": "2026-10-29T10:00:00Z"
+  },
+  {
+    "id": "IC_kwDOA2",
+    "databaseId": 202,
+    "url": "https://github.com/acme/widget/pull/7#issuecomment-202",
+    "body": "Coverage report: 81%.",
+    "author": {"login": "codecov", "__typename": "Bot"},
+    "createdAt": "2026-10-29T10:05:00Z",
+    "updatedAt": "2026-10-29T10:05:00Z"
+  }
+]

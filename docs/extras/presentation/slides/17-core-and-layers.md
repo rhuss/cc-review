@@ -4,7 +4,11 @@ layout: default
 
 # One core, three agents, reviewers found at run time
 
-<img src="/images/core-and-layers/diagram-excalidraw.svg" alt="Claude Code, Codex and OpenCode shims delegate to one core; the core discovers reviewers in three layers: project, user, bundled; the higher layer wins by name" class="w-full mt-10" />
+<div class="flex flex-col justify-center" style="height: calc(100% - 5rem)">
+
+<img src="/images/core-and-layers/diagram-excalidraw.svg" alt="Claude Code, Codex and OpenCode shims delegate to one core; the core discovers reviewers in three layers: project, user, bundled; the higher layer wins by name" class="w-full" />
+
+</div>
 
 <!--
 **Goal:** the architecture in one picture: one core, thin shims, reviewers as discovered files.

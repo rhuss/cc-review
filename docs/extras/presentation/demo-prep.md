@@ -45,7 +45,7 @@ Neither repository has CodeRabbit, Copilot or Greptile reviews on open PRs right
 
 ### Inbox (`/inbox`)
 
-- **ai-openshell/sdk-go**: 6 open PRs and 5 issues, small enough to run fast and show the grouping (needs your attention, waiting on others, no action).
+- **ai-openshell/sdk-go**: 6 open PRs and 5 issues, small enough to run fast and show the grouping (needs your attention, waiting on others, no action) and a short guided tour. Run it from a local checkout so the tour can hand a PR to `triage`.
 - NVIDIA/OpenShell gives a more realistic picture but takes longer on a busy repository.
 
 ## Checklist
@@ -86,7 +86,7 @@ Neither repository has CodeRabbit, Copilot or Greptile reviews on open PRs right
 
 ### inbox, triage, issue (45-55 min)
 
-- `/inbox` on the demo repository: needs your attention, waiting on others, no current action.
+- `/inbox` on the demo repository: the attention table and "My take", waiting on others, no current action. Accept the guided tour, look at one or two items, and hand the PR with review comments to `triage` from the tour, which leads straight into the next step.
 - `/triage --pr <n>` on a PR with review comments: classification, bot profiles, drafted replies.
 - `/issue <n>` on a fresh issue: need, fit, value, reply draft.
 

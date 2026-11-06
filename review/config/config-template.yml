@@ -27,6 +27,16 @@
 #
 # allow_untrusted_checkout:
 #   codex: true
+#
+# Before a review, thread reply or resolution is posted, cc-review withholds it
+# when someone other than you commented on the PR since the analysis. Bots do
+# not count. pr_posting.ignore_authors lists further logins that are treated
+# like bots, for CI accounts that are regular GitHub users (default: none):
+#
+# pr_posting:
+#   ignore_authors:
+#     - k8s-ci-robot
+#     - openshift-ci-robot
 
 severity:
   min_confidence: 70
@@ -41,6 +51,7 @@ pr_posting:
   max_inline_comments: 50
   voice_profile: "reviewer"
   recovery_dir: ".cc-review"
+  ignore_authors: []
 
 output:
   dir: "."

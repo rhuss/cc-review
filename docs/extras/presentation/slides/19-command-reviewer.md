@@ -4,7 +4,9 @@ layout: default
 
 # Wrapping an external tool takes a frontmatter block
 
-```yaml {3|5-7|8|9-12|13-15}
+<div class="flex flex-col justify-center" style="height: calc(100% - 5rem)">
+
+```yaml {3|5-7|8|9-12|13-15|all}
 name: greptile
 display_name: "Greptile"
 kind: command
@@ -21,6 +23,16 @@ output:
   format: parser
   parser: parse.sh
 ```
+
+</div>
+
+<style>
+.slidev-code {
+  font-size: 1.05rem !important;
+  line-height: 1.4 !important;
+  padding: 1rem 1.4rem !important;
+}
+</style>
 
 <!--
 **Goal:** an external tool becomes a reviewer with a frontmatter block and a small parser.

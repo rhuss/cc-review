@@ -143,6 +143,7 @@ pr_posting:
   max_inline_comments: 50
   voice_profile: "reviewer"
   recovery_dir: ".cc-review"
+  ignore_authors: []          # logins treated like bots by the conversation check before posting
 
 output:
   dir: "."

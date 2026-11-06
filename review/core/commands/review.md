@@ -449,6 +449,9 @@ if [ -n "${PR_CONTEXT_NUMBER:-}" ]; then
     fi
   done
   SCOPE_REVIEWS_COMPLETE=true
+  # The analysis time, taken before the first conversation read: the post-time
+  # conversation check counts only items created after it (FR-021(c))
+  jq -n --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '{analyzed_at: $t}' > "$SCOPE_DIR/analyzed-at.json"
   if ! fetch_reviews "$(printf '%s' "$SCOPE_REPO" | jq -r '.nameWithOwner | split("/")[0]')" \
     "$(printf '%s' "$SCOPE_REPO" | jq -r '.nameWithOwner | split("/")[1]')" "$PR_CONTEXT_NUMBER" > "$SCOPE_DIR/reviews.json"; then
     SCOPE_REVIEWS_COMPLETE=false
@@ -608,11 +611,11 @@ Use `converged-findings.json` as the final findings array for gates, fix selecti
 
 The report and decision step also use `counts.open_material`: these count **source conversations**, not unique defects, and include manual/summary concerns with no canonical carried finding. A follow-up is not clean when any of these remain, even if the new-findings array is empty. Complete assessment and clean conclusion are different. Only `conclusion == "no outstanding material concerns"` permits that phrase; `incomplete` requires explicit limitations and display of unassessed candidates, never an all-clear. A valid zero result does not trigger a quota or a wider search. Initial reviews retain their ordinary severity policy.
 
-Continue material concerns and substantive answers in their linked original conversations, subject to existing approval. For summary-only discussions, prepare a linked PR conversation response, not a synthetic inline thread. Manual-history classifications grant **no resolution authority**: only exact approved outcomes from `verification.json` can resolve cc-review-owned threads. Show prior suggestions as nonblocking context, not new mandatory fixes or repeated optional demands.
+Material concerns and substantive answers continue in their linked original conversations: a continuation reply in the existing review thread, or, for a summary-only discussion, a linked PR conversation comment, never a synthetic inline thread. These continuation responses are part of the draft: 7.5f writes them to `thread-actions.json` together with the resolutions (kinds `continuation` and `pr-comment`), the preview shows them, the check covers their text and the approval fingerprint covers them. Nothing is sent while drafting; they are sent only in the post phase (7.5l2), after approval and the check before each action. Manual-history classifications grant **no resolution authority**: only exact approved outcomes from `verification.json` can resolve cc-review-owned threads. Show prior suggestions as nonblocking context, not new mandatory fixes or repeated optional demands.
 
 For single and bulk reports, include a Follow-up progress section with addressed sources, existing open material sources, new material findings, prior nonblocking suggestions, pending questions and limitations, plus baseline/mode. The approved posted summary uses the same distinctions. With no new inline findings but open manual/summary concerns, offer the linked continuation or an accurate progress summary; never substitute a "found no issues" marker or a clean acknowledgment. An incomplete result may be reported under existing policy with explicit limits but cannot authorize uncertain thread actions or a clean conclusion.
 
-Immediately before **each** approved remote action, recheck the live head and recollect/re-attribute history into fresh artifacts. Compare its head/fingerprint with the assessed artifacts. On mismatch, refresh assessment against current code and conversations and renew approval for changed actions, or withhold them. A matching head alone is insufficient. Keep the analyzed artifacts until the check completes; never overwrite them and compare a file with itself. Record only actual completed actions using existing idempotency rules. Do not treat this history fingerprint as a coverage marker, or a clean conclusion as permission to approve or merge.
+Immediately before **each** approved remote action, recheck the live head and recollect/re-attribute history into fresh artifacts (`post-review.sh --history` does this). Compare the rebuilt history with the assessed artifacts under the conversation rule: only new history items by someone other than `GH_USER`, a bot or an author in `pr_posting.ignore_authors` count as a change; edits to existing items, thread states and the run's own pushes, review and replies never do. A change is a `CHANGED` result: in interactive mode show the new items and ask **Post anyway** (accept exactly these changes), **Skip** or **Re-run later**; in non-interactive or unattended mode withhold the action and report it. A matching head alone is insufficient. Keep the analyzed artifacts until the check completes; never overwrite them and compare a file with itself. Record only actual completed actions using existing idempotency rules. Do not treat this history fingerprint as a coverage marker, or a clean conclusion as permission to approve or merge.
 
 ## Completion Evidence
 
@@ -1012,6 +1015,15 @@ For each round:
 5. Run test suite (if detected), as `( cd "$REVIEW_ROOT" && $TEST_CMD )`:
    - If tests pass: proceed
    - If tests fail: convert failures to Critical findings with category="regression"
+   - Right after the test run, or when no test command was detected, record the outcome as a run fact (FR-010a), so the attribution statement can name only what this run executed. An empty regression list alone is not evidence that tests passed:
+
+```bash
+FACTS_FILE="$REVIEW_RUN_DIR/facts.json"
+[ "${WORKER_MODE:-false}" = true ] && FACTS_FILE="$PR_DIR/facts.json"
+# ROUND is the round number k; OUTCOME is passed, failed or no-test-command
+python3 -B "$CORE_DIR/scripts/review_draft.py" facts-set --facts "$FACTS_FILE" \
+  --executed "$(jq -nc --argjson k "$ROUND" --arg c "${TEST_CMD:-}" --arg o "$OUTCOME" '{round: $k, command: $c, outcome: $o}')"
+```
 6. Re-dispatch the same `READY_PROMPT` and `READY_COMMAND` sets from `REVIEWERS_JSON` on modified files only (FR-024). Reuse the enablement and skip decisions from the initial round; do not re-run discovery or re-evaluate preconditions
 7. Merge new findings with existing Minor findings
 8. Gate check: if Critical + Important = 0, GATE PASS and exit loop
@@ -1143,6 +1155,32 @@ Include this section only when the meta-review removed findings as false positiv
 
 This step runs when `PR_NUMBER` is set AND `ACTION` is `"comment"` or `"both"`. Skip this entire step if no `PR_NUMBER` is set or `ACTION="fix"`.
 
+The step has three halves, and the sub-step letters keep their meaning:
+
+1. **Draft** (7.5a to 7.5k2): decide what to post and build the exact review, without any write call to GitHub. The result is a draft directory with the submission payload, the proposed thread actions and a human-readable preview.
+2. **Approve** (7.5k3): the user sees the full preview and approves, edits or skips it (interactive), or the automatic check decides (non-interactive).
+3. **Post** (7.5l to 7.5m): `post-review.sh` posts exactly the approved payload after fresh safety checks, then the approved thread actions run.
+
+Single-PR review and the bulk drafting worker (Worker Mode (g)) use the same Draft half. The draft lives next to the run data:
+
+```bash
+DRAFT_TOOL="$CORE_DIR/scripts/review_draft.py"
+if [ "${WORKER_MODE:-false}" = true ]; then
+  DRAFT_DIR="$PR_DIR/post"
+  FACTS_FILE="$PR_DIR/facts.json"
+else
+  DRAFT_DIR="$REVIEW_RUN_DIR/post"
+  FACTS_FILE="$REVIEW_RUN_DIR/facts.json"
+fi
+mkdir -p "$DRAFT_DIR"
+```
+
+`FACTS_FILE` holds the run facts that the findings decision (7.5g) and the fix rounds (Step 6 item 5, Worker Mode (f)) record with `review_draft.py facts-set`. The draft files are `slots.json` (the assembly input), `payload.json` (the exact submission body), `thread-actions.json`, `preview.md`, `lint.json` and `draft.json` (inputs key, fingerprint, check attempts).
+
+### Draft Half
+
+Nothing in 7.5a to 7.5k2 writes to GitHub. Reads (PR context, diff hunks, earlier reviews and threads) are fine.
+
 ### 7.5a: Extract PR Context
 
 The PR lives in the base repository as `gh` resolves it, which in a fork checkout is not `origin`:
@@ -1210,20 +1248,23 @@ This guard applies to overlapping thread replies and resolutions. Keep the compl
 
 ### 7.5f: Resolve Fixed Threads
 
-For each exact thread in `verification.json.resolutions`, require a concrete code-backed `confirmed-fixed` outcome or an explicitly approved accepted explanation. Partial fixes, absent findings, unclear outcomes and incomplete conversations are not resolution candidates. Present proposed replies/resolutions along with posting decisions. Then:
+For each exact thread in `verification.json.resolutions`, require a concrete code-backed `confirmed-fixed` outcome or an explicitly approved accepted explanation. Partial fixes, absent findings, unclear outcomes and incomplete conversations are not resolution candidates. Present proposed replies/resolutions along with posting decisions.
 
-1. If the handled reviewer activity guard found an exact complete cache match, skip the duplicate reply and resolution for that thread.
-2. Otherwise, only reply or resolve when exact current PR/thread activity still passes the freshness check. Explain the actual verified fix or approved reasoning with concrete evidence; absence from review is never the explanation. Append `activity_marker(identity, activity, reply_body)` for the exact fingerprint and posted body:
-   ```
-   {Concrete explanation of the verified fix or approved reasoning.}
-   <!-- cc-review-triage -->
-   <!-- cc-review-activity:v1 {exact marker generated by reviewer_activity.py} -->
-   ```
-3. Recheck the current PR head and exact conversation after the reply, then resolve the exact thread via GraphQL:
-   ```bash
-   resolve_thread "$THREAD_NODE_ID"
-   ```
-4. Only after the reply and resolution succeed, record the exact completed verified outcome and evidence with `reviewer_activity.py record`. Keep recovery states separate; a successful reply is not posted again while retrying fresh resolution. Skipped, rejected, deferred, unclear and question-only items are never handled. Record verified no-post still-present outcomes without implying resolution or clearing review work.
+In the Draft half this step only **collects** the proposed thread actions; nothing is replied to, resolved or commented before the review is approved and posted (7.5l2 performs them). The thread actions are the resolutions above and the continuation responses that Follow-up Continuity calls for (FR-001):
+
+- **Resolutions**: one entry per exact thread of `verification.json.resolutions` that passes the rule above.
+- **Continuation replies**: read `$SCOPE_DIR/continuity.json` (its `continuations` and `concerns`) and `history.json`. For each source with a material concern that is still open, or a substantive question or answer that needs a response (`material` true with status `open` or `unclear`, or `question_open` true), whose `source_id` is `thread:<thread node ID>`, draft a reply in that existing thread (kind `continuation`). Leave out a thread that already has a resolution entry: its reply covers it.
+- **PR conversation comments**: for the same kind of source when it is a summary-only discussion (a `review:` or `comment:` source, which has no thread to reply in), draft one linked PR conversation comment (kind `pr-comment`) that names and links the discussion it continues (`source_url`, from the source's `url`).
+
+A continuation response says what is still open and why, with concrete code evidence; it never claims a fix, a curation or a test result that the recorded run facts do not back (the check of 7.5k2 applies the claim and result rules to it), and it resolves nothing. Prior nonblocking suggestions get no continuation response. Leave out a thread for which the handled reviewer activity guard found an exact complete cache match. Write the proposals with your file-write tool (reply text quotes PR conversations, never pass it through a shell literal) to `$DRAFT_DIR/thread-actions.json`, a JSON array in posting order, or `[]` when there are none:
+
+```json
+[{"thread_id": "{exact thread node ID}", "reply_body": "{concrete explanation of the verified fix or approved reasoning}", "resolve": true, "activity": {exact Activity the guard compared}},
+ {"kind": "continuation", "thread_id": "{exact thread node ID}", "source_id": "thread:{thread node ID}", "reply_body": "{what is still open and why}", "resolve": false},
+ {"kind": "pr-comment", "source_id": "{review:<id> or comment:<id>}", "source_url": "{the source's url}", "reply_body": "{linked response to the summary-only discussion}"}]
+```
+
+An entry without `kind` is a resolution entry (entries written before the continuation kinds keep their meaning). `reply_body` is the visible text of every kind, without the markers (7.5l2 appends them); it is part of the draft, shown in the preview, checked by `lint` and covered by the approval fingerprint, so the approved text is posted unchanged. `resolve` is true only for an exact resolution candidate as defined above; a `continuation` or `pr-comment` entry never resolves (`review_draft.py` refuses such an entry), and a `pr-comment` entry has no `thread_id`. At most one entry per thread.
 
 ### 7.5g: Interactive Local Review
 
@@ -1243,7 +1284,7 @@ For each finding with severity Critical or Important, present:
   - **Edit**: Open text-only editing of the finding's description and mitigation text. Severity, file, and line are structural properties and are NOT editable during interactive review. The edit flow:
     1. Present the current `description` text and ask for the reviewer's replacement text
     2. Present the current `fix` (mitigation) text and ask for the reviewer's replacement text
-    3. Store both edited values in the finding's transient `edited_text` field as a combined string: the edited description followed by the edited mitigation
+    3. Store the two edited values separately, in the finding's transient `edited_description` and `edited_fix` fields (FR-003a): they fill the "what is wrong" and "Suggested fix" parts of the comment, and the prose rewrite never changes them
     4. After editing, return to the accept/reject prompt for this finding (the reviewer must still explicitly accept or reject the edited finding)
 
 **Minor and Notable findings** (batched by severity):
@@ -1259,11 +1300,59 @@ Repeat the same batch presentation for Notable findings.
 
 Track the `accepted` (boolean) transient field on each finding.
 
+**Record curation (FR-008).** The attribution statement may say that the user went through the findings only when they did. Right after the findings decision, record it as a run fact; never infer it from which findings were accepted:
+
+```bash
+# CURATED is true only after "let me go through them" with every Critical and
+# Important finding answered individually (without any, every finding answered
+# individually); "post all", "post none" and a non-interactive run record false
+python3 -B "$CORE_DIR/scripts/review_draft.py" facts-set --facts "$FACTS_FILE" --curated "$CURATED" || exit 1
+```
+
+Set `CURATED=true` only when the user chose "let me go through them" and answered every Critical and Important finding one by one (accept, reject, or edit followed by accept or reject). When there is no Critical or Important finding, that condition holds only when the user answered the findings one by one: after "let me go through them" they cherry-picked the Minor and Notable findings individually. "Post all", batch acceptance alone ("Accept all" or "Reject all" for a severity batch) and `INTERACTIVE=false` record `CURATED=false`. The bulk drill-down (`bulk.md`, Allowed actions) applies the same rule.
+
 ### 7.5h: Reject-All Guard
 
 If no findings were accepted (all rejected), skip PR posting entirely. Log: "All findings rejected. No GitHub review posted." The local findings report (`review-findings.md`) is still written in Step 7.
 
 Distinguish rejected findings from an actually empty result. With zero new findings, offer an approved short no-findings completion summary when a full/incremental review completed, or a verification/unchanged acknowledgment when explicitly requested. Include prepared thread actions in that approval. Never publish a completion marker after the user chose to post nothing. Proven unchanged contribution without an explicit request posts no new code review. In bulk mode use the selected marker/skip decision and the same completion/freshness checks.
+
+**Thread actions without a review.** When no review is posted (all findings rejected, an unchanged contribution without a renewed request, or nothing else to post), the thread actions proposed in 7.5f (resolutions, continuation replies and PR conversation comments) are still due: they are independent of the code review. When `thread-actions.json` is empty there is nothing to approve or post. Otherwise they go through the same check, preview and approval as a review draft, as bulk mode does: `$DRAFT_DIR` holds `thread-actions.json` and no `payload.json` (no review is assembled), the check covers the thread-action text, and the fingerprint covers the thread actions alone. Check and preview them:
+
+```bash
+# Thread actions without a review: no payload, the check covers the reply text
+rm -f "$DRAFT_DIR/payload.json" "$DRAFT_DIR/lint.json"
+python3 -B "$DRAFT_TOOL" lint --draft "$DRAFT_DIR" --facts "$FACTS_FILE" \
+  --expected-head "${REVIEWED_HEAD:-}" --run-marker "$RUN_MARKER"
+python3 -B "$DRAFT_TOOL" preview --draft "$DRAFT_DIR"
+```
+
+When the check reports findings, rewrite the affected `reply_body` texts once with your file-write tool, as the redraft of 7.5k2 does, and run the block again; whatever still fails is shown next to the preview.
+
+- **When `INTERACTIVE` is true:** print `$DRAFT_DIR/preview.md` in full (it says that no review will be posted and lists every proposed thread action with its text; mention remaining check findings in one sentence) and ask one question: **Approve** (perform exactly these thread actions), **Edit** (describe a change in plain words), or **Skip** (perform none). **Edit** changes `thread-actions.json` only, with your file-write tool: the `reply_body` text of any entry, `resolve` from true to false, or removing an entry (this drops a continuation reply or a PR conversation comment); `kind`, `thread_id`, `source_id`, `source_url` and `activity` are not editable. Then run the check and preview block again, print the new preview and ask again. **Approve** runs the approval block below with `ANSWER=approved`.
+- **When `INTERACTIVE` is false:** no preview and no question. Run the approval block with `ANSWER=policy`: it approves the thread actions only when their check is clean, and otherwise withholds them (`WITHHELD ...`, reported in Step 8 with the remaining check findings).
+
+The approval binds exactly the previewed actions:
+
+```bash
+# ANSWER is approved (the user approved the preview) or policy (INTERACTIVE is false)
+if [ "$ANSWER" = policy ] && ! jq -e 'type == "array" and length == 0' "$DRAFT_DIR/lint.json" >/dev/null 2>&1; then
+  if jq -e 'type == "array"' "$DRAFT_DIR/lint.json" >/dev/null 2>&1; then
+    echo "WITHHELD $(jq -r 'map("[\(.rule)] \(.location): \(.message)") | join("; ")' "$DRAFT_DIR/lint.json")"
+  else
+    echo "WITHHELD the draft check did not run"
+  fi
+else
+  APPROVED_FINGERPRINT=$(python3 -B "$DRAFT_TOOL" fingerprint --draft "$DRAFT_DIR") || exit 1
+  jq -n --arg answer "$ANSWER" --arg fp "$APPROVED_FINGERPRINT" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{answer: $answer, fingerprint: $fp, at: $at, thread_actions_only: true}' > "$DRAFT_DIR/approval.json"
+  echo "APPROVAL $ANSWER thread actions"
+fi
+```
+
+**Skip** writes `{"answer": "skipped"}` to `$DRAFT_DIR/approval.json` instead, and nothing is posted. After approval, run 7.5l2 for them alone; its check before each action (`post-review.sh --check-only`) verifies this fingerprint, the live head and the conversation since analysis. Nothing else is posted.
+
+In bulk mode the drafting worker (Worker Mode (g), item 3) only drafts such thread actions: it asks nothing, records no approval and makes no write call. The Approve pass of `bulk.md` shows their preview and asks (deferred mode), or the Unattended Policy approves them as above, and the Post pass performs them.
 
 ### 7.5i: Format Comment Bodies
 
@@ -1280,9 +1369,9 @@ fi
 
 Set `PROSE_AVAILABLE=true` yourself when the humanizer skill is listed, whatever the check above says.
 
-**If prose plugin is available**: Start from the fallback template below, then shape every comment body and the prose parts of the summary body with the reviewer voice profile (`core/templates/reviewer-voice.md`) and the humanizer skill. Do this in one subagent that reads and writes the payload file, so the orchestrator's context stays small. The rewrite changes wording only: keep the severity label, the three structural elements (what, why, fix), the `_Source: ..._` footer, file paths, line numbers, identifiers, commands and numbers exactly; wrap code in backticks; write `<` and `>` outside code spans as `&lt;` and `&gt;` (GitHub drops them as HTML otherwise); keep the `<!-- cc-review:run-id:... -->` line raw; never use em or en dashes. After the rewrite, verify that every comment's `path`, `line`, `start_line` and order are unchanged and that the run-id marker is still present.
+**If prose plugin is available**: Start from the fallback template below, then shape the slot text with the reviewer voice profile (`core/templates/reviewer-voice.md`) and the humanizer skill. The rewrite works on `$DRAFT_DIR/slots.json` only, after 7.5k wrote it and before the assemble block of 7.5k2, and never on assembled bodies: it may change, in place, the `what`, `why` and `fix` text of every finding slot without `user_text: true`, the `follow_up` prose and the `went_well` bullets. Do this in one subagent that reads and writes the slots file, so the orchestrator's context stays small. The rewrite changes wording only: keep file paths, line numbers, identifiers, commands and numbers exactly; wrap code in backticks; write `<` and `>` outside code spans as `&lt;` and `&gt;` (GitHub drops them as HTML otherwise); never use em or en dashes; never add a label, a `_Source: ..._` footer, a heading, an attribution or a test result. `assemble` renders the severity label, the three structural elements (what, why, fix) with their labels, the `_Source: ..._` footer, the attribution statement and the `<!-- cc-review:run-id:... -->` line from the slots, so the rewrite cannot remove or merge them. After the rewrite, verify that every slot's `id`, `path`, `line`, `start_line`, `severity` and order are unchanged.
 
-**If prose plugin is not available**: Use the fallback template from `core/templates/reviewer-voice.md`:
+**If prose plugin is not available**: The slots keep the finding's own wording (`description`, `rationale`, `fix`), and assembly uses the fallback template from `core/templates/reviewer-voice.md`, the single format contract:
 
 ```
 **{severity}**: {description}
@@ -1294,7 +1383,7 @@ Set `PROSE_AVAILABLE=true` yourself when the humanizer skill is listed, whatever
 _Source: {source_agent}{also_reported_by}_
 ```
 
-If the finding has `edited_text`, use that instead of the original `description` for the "what is wrong" element.
+If the finding has `edited_description` or `edited_fix`, use them instead of the original `description` and `fix` for the "what is wrong" and "Suggested fix" elements, each in its own part, and mark the finding's slot `user_text: true`: text the user wrote is not passed through the prose rewrite.
 
 **Source footer**: Append to every comment:
 - Single source: `_Source: {source_agent} agent_`
@@ -1309,7 +1398,7 @@ If at least one reviewer produced positive observations, include the aggregated 
 
 ### 7.5k: Assemble Review Submission
 
-Build the JSON payload for the GitHub review submission API:
+Build the JSON payload for the GitHub review submission API. You write its parts into `$DRAFT_DIR/slots.json`; `review_draft.py assemble` (7.5k2) renders the payload from them, so labels, footers, the findings table, counts, the attribution statement, the run marker and the completion lines are produced by construction:
 
 **Event type** (decided here, never asked; see `CAN_REQUEST_CHANGES` from Step 5b):
 - `REVIEW_EVENT_OVERRIDE` when it is set (bulk unattended mode sets `REVIEW_EVENT_OVERRIDE=COMMENT`, so an unattended run never blocks someone else's PR)
@@ -1318,10 +1407,13 @@ Build the JSON payload for the GitHub review submission API:
 
 Describe the result to the user in plain words ("posted the review and asked for changes", "posted the findings as review comments"); do not name the event type.
 
-**Summary body** (the review `body` field):
+**Summary body** (the review `body` field), in this fixed section order (FR-004); the sections in braces appear only when they have content:
 
 ```markdown
 ## cc-review Summary
+
+### Follow-up progress
+{Follow-up Continuity progress prose, only when the PR has prior review history}
 
 ### What Went Well
 {aggregated positive observations from all prompt reviewers, if any}
@@ -1337,6 +1429,8 @@ Describe the result to the user in plain words ("posted the review and asked for
 
 ### Review Details
 
+{attribution statement from the recorded run facts}
+
 - **Findings posted**: {accepted_count}
 - **Findings reviewed and not posted**: {rejected_count}
 - **Gate outcome**: {PASS or FAIL}
@@ -1345,6 +1439,8 @@ Describe the result to the user in plain words ("posted the review and asked for
 <!-- cc-review:run-id:{RUN_MARKER} -->
 {validated completion marker, or cc-review-incomplete:v1 with limitations}
 ```
+
+The attribution statement is the first line of "Review Details" and exactly one sentence group, rendered from `FACTS_FILE` by `review_draft.py assemble` (the `attribution` subcommand only prints it for diagnosis), never by the prose rewrite: whether the user went through the findings one by one, which test command each fix round executed with its recorded outcome, and that failure scenarios were derived from reading the code when the posted findings contain any.
 
 **Comments array**: For each accepted inline finding, place the comment at the **end** of the relevant line range so the reader sees the code context before the comment. Use `start_line` + `line` for multi-line findings; for single-line findings, use `line` only.
 
@@ -1356,7 +1452,7 @@ Multi-line finding (when `line_end` > `line_start` and both are within the diff 
   "line": {line_end},
   "side": "RIGHT",
   "start_side": "RIGHT",
-  "body": "{formatted comment body from 7.5i}"
+  "body": "{comment body assembled from the finding's slots (7.5i)}"
 }
 ```
 
@@ -1366,23 +1462,46 @@ Single-line finding (when `line_end` is absent or equals `line_start`):
   "path": "{file}",
   "line": {line_start},
   "side": "RIGHT",
-  "body": "{formatted comment body from 7.5i}"
+  "body": "{comment body assembled from the finding's slots (7.5i)}"
 }
 ```
 
 **Hunk boundary check**: If `line_end` falls outside the diff hunk range but `line_start` is within it, fall back to the single-line format using `line_start` only. Do not use a `start_line`/`line` range that extends beyond the diff hunk, as the GitHub API will reject it.
 
-Write the complete payload to a temp file. `commit_id` pins the review to the reviewed head (`REVIEWED_HEAD` from Step 1, which is `EXPECTED_HEAD` in bulk mode); it is left out only when the head could not be read:
+First write the findings this review posts (inline and summary-only, after 7.5c to 7.5h) as a JSON array to `$DRAFT_DIR/findings-to-post.json`; only their `id` fields are read, for the draft's inputs key. In worker mode keep the file the drafting worker (g) already wrote. Then write the slots to `$DRAFT_DIR/slots.json` with your file-write tool (never through a shell literal: slot text quotes PR code). `commit_id` pins the review to the reviewed head (`REVIEWED_HEAD` from Step 1, which is `EXPECTED_HEAD` in bulk mode); it is left out only when the head could not be read, and a draft without it is never posted (FR-014a):
 
-```bash
-PAYLOAD_FILE=$(mktemp)
-jq -n \
-  --arg body "$SUMMARY_BODY" \
-  --arg event "$EVENT_TYPE" \
-  --arg commit "${REVIEWED_HEAD:-}" \
-  --argjson comments "$COMMENTS_JSON" \
-  '{body: $body, event: $event, comments: $comments} + (if $commit == "" then {} else {commit_id: $commit} end)' > "$PAYLOAD_FILE"
+```json
+{
+  "event": "{EVENT_TYPE}",
+  "commit_id": "{REVIEWED_HEAD}",
+  "run_marker": "{RUN_MARKER}",
+  "completion": "{validated completion marker, or <!-- cc-review-incomplete:v1 --> with limitations}",
+  "comments": [
+    {"id": "{finding id}", "path": "{file}", "line": {line}, "start_line": {line_start, multi-line only},
+     "severity": "{severity}", "what": "{description}", "why": "{rationale}", "fix": "{fix}",
+     "source": "{footer text}", "source_agent": "{source_agent}", "user_text": false, "removed": false}
+  ],
+  "summary_only": [
+    {"id": "{finding id}", "severity": "{severity}", "file": "{file}", "line": {line_start},
+     "description": "{description}", "source": "{footer text}", "source_agent": "{source_agent}",
+     "reason": "{the 7.5c note}"}
+  ],
+  "follow_up": "{Follow-up progress prose, or null without prior review history}",
+  "went_well": ["{7.5j bullet}"],
+  "counts": {"rejected": {rejected_count}},
+  "gate": "{PASS or FAIL}",
+  "reviewers": ["{reviewer that produced findings}"],
+  "repro_present": false,
+  "attribution_override": null
+}
 ```
+
+- `comments` follows the rules above: `line` is the end of the range inside the hunk, `start_line` only for a multi-line range inside the hunk (the hunk boundary check), in posting order.
+- `source` is the footer text of 7.5i without the `_Source: ` prefix and the closing underscore (for example `<agent> agent (also flagged by: <other agent> agent)`); `assemble` adds them.
+- `what`, `why` and `fix` hold the plain text of the three template parts. For a finding the user edited in 7.5g, `what` is its `edited_description` and `fix` its `edited_fix` (when given), with `user_text: true`.
+- `follow_up` is the posted Follow-up progress summary required by Follow-up Continuity (addressed sources, existing open material sources, new material findings, prior nonblocking suggestions, pending questions and limitations), or `null` when the PR has no prior review history.
+- `repro_present` is true when any posted finding (inline or summary-only) has a non-empty `failure_scenario` or `reproducer` field (a concrete scenario or reproducer that a reviewer describes); the attribution statement then says that failure scenarios were derived from reading the code and were not executed (FR-010). Otherwise it is false and that sentence is left out.
+- `went_well` and `follow_up` carry no command or test result (for example "all tests pass" or "`go test` passed") unless an entry of `executed[]` in `FACTS_FILE` backs it (FR-009); a named command that passed must be one the latest fix round ran with the outcome `passed`, and the same rules apply to `attribution_override`. Drop such a claim from the slot text, or say that a reviewer agent reported it and nobody verified it. The same holds for first-person claims ("I ran", "I tested", "I verified"): cc-review's own text states only recorded facts (FR-011); finding text is attributed through its source footer.
 
 ### 7.5k2: Truncation Guard
 
@@ -1404,47 +1523,227 @@ If the inline comment count exceeds `MAX_COMMENTS`:
    ```
 5. Rebuild the summary body to include the truncated findings
 
-### 7.5l: Post Review
+`review_draft.py assemble --max-comments "$MAX_COMMENTS"` applies steps 1 to 3 and 5 to the slots when it builds the payload, so the preview shows the truncated result and the moved findings; log the warning of step 4 when `draft.json` lists findings with the truncation note.
 
-Immediately before publication recheck current open PR head and complete target conversations against prepared scope/verification. Refresh completion or withhold stale publication. Proven unchanged contribution without a renewed request posts no new code review. A renewed request can post an approved verification/unchanged summary even with no new inline findings, overriding Step 7.5h's ordinary empty-findings skip.
-
-Call the platform function to post the review:
+**Assemble, check and preview.** Build the draft from the slots, check it and render the preview; nothing here writes to GitHub:
 
 ```bash
-REVIEW_RESPONSE=$(post_review "$OWNER" "$REPO" "$PR_NUMBER" "$PAYLOAD_FILE")
+INPUTS_KEY=$(python3 -B "$DRAFT_TOOL" inputs-key --expected-head "${REVIEWED_HEAD:-}" \
+  --findings "$DRAFT_DIR/findings-to-post.json" --facts "$FACTS_FILE") || exit 1
+python3 -B "$DRAFT_TOOL" assemble --slots "$DRAFT_DIR/slots.json" --facts "$FACTS_FILE" \
+  --out "$DRAFT_DIR" --inputs-key "$INPUTS_KEY" --max-comments "$MAX_COMMENTS" || exit 1
+python3 -B "$DRAFT_TOOL" lint --draft "$DRAFT_DIR" --facts "$FACTS_FILE" \
+  --expected-head "${REVIEWED_HEAD:-}" --run-marker "$RUN_MARKER" --count-attempt
+python3 -B "$DRAFT_TOOL" preview --draft "$DRAFT_DIR"
 ```
 
-On success: extract the review URL and show it to the user as a clickable link.
+`lint` prints `LINT ok` or `LINT findings=<n>` and writes the findings to `$DRAFT_DIR/lint.json`; it checks the review and the text of the proposed thread actions (every `reply_body` gets the dash and spacing rules; continuation replies and PR conversation comments also get the claim and result rules, since they are generated text). `preview` writes `$DRAFT_DIR/preview.md` with the review type in plain words, the full summary body, every inline comment under its `path:line` (or range), the summary-only findings with their reasons, the proposed thread actions (resolutions, continuation replies and PR conversation comments, each with its text) and the remaining check findings.
+
+**Redraft once (FR-013).** When `lint` reports findings other than `commit`, rewrite only the affected slot text once (for a finding located at a `thread action`, that entry's `reply_body` in `thread-actions.json`), with the findings in `lint.json` as guidance (remove a dash, add the missing space after a sentence end, drop an unsupported first-person claim or test result), and run the assemble, check and preview block again. `draft.json` counts the check runs in `lint_attempts`: redraft only while it is 1, never a second time. Slot text with `user_text: true` is the user's own wording and is not rewritten; its findings stay. Whatever still fails is shown next to the preview (7.5k3).
+
+A `commit` finding (no pinned commit, or another one than `REVIEWED_HEAD`) is never redrafted: the draft is stale (FR-014a), nothing is posted, and the review is reported as stale (Step 8; the drafting worker returns `STATUS failed reason=stale-commit`).
+
+### Approve Half
+
+### 7.5k3: Preview and Approve
+
+The user sees `$DRAFT_DIR/preview.md` before anything is posted (interactive), or the automatic check decides (non-interactive). The approval records the fingerprint of the approved draft.
+
+**When `INTERACTIVE` is true:**
+
+1. Print `$DRAFT_DIR/preview.md` in full: the review type in plain words, the full summary body, every inline comment with its file and line, the summary-only findings with the reason, the proposed thread actions (replies and resolutions, continuation replies and PR conversation comments, each with its text), and the remaining check findings (when `lint.json` is not empty, say in one sentence that they are shown next to the preview and that the user may still approve).
+2. Ask one question: **Approve** (post exactly this review), **Edit** (describe a change in plain words), or **Skip** (post nothing).
+3. **Edit.** Apply the user's change to the draft inputs, never to `payload.json`, with your file-write tool (never through a shell literal):
+   - text of the summary prose and of inline comments: change the slot text in `slots.json` (`what`, `why`, `fix`, `follow_up`, `went_well`) and set `user_text: true` on every finding slot whose text the user changed, so no prose rewrite touches it again;
+   - the attribution statement: set `attribution_override` to the user's wording;
+   - removing an inline comment: set `removed: true` on its slot; `assemble` then drops its findings-table row and adjusts the posted and not-posted counts;
+   - the review type: only a downgrade from request for changes to plain comment (`"event": "COMMENT"`);
+   - the proposed thread actions, in `thread-actions.json`: the `reply_body` text of a resolution, a continuation reply or a PR conversation comment, `resolve` from true to false, or removing an entry (this drops that reply or comment); `kind`, `thread_id`, `source_id`, `source_url` and `activity` are not editable;
+   - file paths, lines (`path`, `line`, `start_line`), `commit_id` and `run_marker` are not editable; tell the user so when they ask.
+
+   Then run the assemble, check and preview block of 7.5k2 again (with the same `INPUTS_KEY`), print the new preview with any remaining check findings, and ask again. An edit gets no automatic redraft: the user's wording stays as written, and remaining check findings are shown next to the preview.
+4. **Approve.** Record the fingerprint of exactly the previewed files:
+
+```bash
+APPROVED_FINGERPRINT=$(python3 -B "$DRAFT_TOOL" fingerprint --draft "$DRAFT_DIR") || exit 1
+jq -n --arg fp "$APPROVED_FINGERPRINT" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  '{answer: "approved", fingerprint: $fp, at: $at}' > "$DRAFT_DIR/approval.json"
+```
+
+   The user may approve while check findings remain: the review goes out under their name, and they have seen the findings next to the preview.
+5. **Skip.** Write `{"answer": "skipped"}` to `$DRAFT_DIR/approval.json`, post nothing (no review, no thread actions), keep the local report (`review-findings.md`), and report the skip in Step 8.
+
+**When `INTERACTIVE` is false** (non-interactive single-PR review, FR-027): no preview and no question. A draft whose check is clean after the one redraft (`lint.json` is empty) is approved by policy, with the fingerprint of the checked draft (FR-025):
+
+```bash
+if ! jq -e 'type == "array"' "$DRAFT_DIR/lint.json" >/dev/null 2>&1; then
+  echo "WITHHELD the draft check did not run"
+elif jq -e 'any(.[]; .rule == "commit")' "$DRAFT_DIR/lint.json" >/dev/null; then
+  echo "STALE commit"
+elif [ "$(jq length "$DRAFT_DIR/lint.json")" -eq 0 ]; then
+  APPROVED_FINGERPRINT=$(python3 -B "$DRAFT_TOOL" fingerprint --draft "$DRAFT_DIR") || exit 1
+  jq -n --arg fp "$APPROVED_FINGERPRINT" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    '{answer: "policy", fingerprint: $fp, at: $at}' > "$DRAFT_DIR/approval.json"
+  echo "APPROVAL policy"
+else
+  echo "WITHHELD $(jq -r 'map("[\(.rule)] \(.location): \(.message)") | join("; ")' "$DRAFT_DIR/lint.json")"
+fi
+```
+
+`WITHHELD`: a draft that still fails the check is not posted (FR-014); nothing is written to GitHub, and Step 8 reports the review as withheld with the remaining check findings. `STALE commit`: the draft has no pinned commit or another one (FR-014a); nothing is posted, and Step 8 reports the review as stale. A `CHANGED` or `REFUSED` result in 7.5l is not asked about either: the review is withheld and reported the same way (FR-024, FR-027).
+
+### Post Half
+
+Only an approved draft reaches this half. Posting, thread replies and resolutions happen here, after the checks of `post-review.sh`.
+
+### 7.5l: Post Review
+
+`post-review.sh` rechecks the current open PR head and the complete target conversations against the prepared scope immediately before publication; do not repeat these checks yourself. The completion line is decided only in the Draft half; at post time an out-of-date completion surfaces as `CHANGED` from `post-review.sh`, handled as the result mapping below says; the approved payload is never edited in place. Proven unchanged contribution without a renewed request posts no new code review. A renewed request can post an approved verification/unchanged summary even with no new inline findings, overriding Step 7.5h's ordinary empty-findings skip.
+
+Post the approved draft with `post-review.sh`. It performs the checks in this order and stops at the first that fails, writing nothing before the last one: the draft's fingerprint equals the approval, `commit_id` is `REVIEWED_HEAD`, the live PR head is `REVIEWED_HEAD`, no review of this run's marker exists yet (the 7.5m search), the conversation check (no review thread, review comment, conversation comment or review was created after the analysis time in `$SCOPE_DIR/analyzed-at.json` by someone other than `GH_USER`, a bot or an author listed in `pr_posting.ignore_authors`; edits do not count, and without the analysis time an item counts when it is missing from the analysis snapshot) and the Follow-up Continuity history recheck (the history rebuilt from the fresh data, compared with the analyzed `history.json`, which is never overwritten, under the same rule, so the run's own pushes and comments never trigger it). Only then does it POST `payload.json` byte for byte:
+
+```bash
+# The approval recorded in 7.5k3, read back from its file (never recomputed here)
+case "$(jq -r '.answer // ""' "$DRAFT_DIR/approval.json" 2>/dev/null)" in
+  approved|policy) APPROVED_FINGERPRINT=$(jq -r '.fingerprint' "$DRAFT_DIR/approval.json") ;;
+  *) echo "Error: the draft has no approval"; exit 1 ;;
+esac
+set -- --draft "$DRAFT_DIR" --owner "$OWNER" --repo "$REPO" --pr "$PR_NUMBER" --user "$GH_USER" \
+  --expected-head "$REVIEWED_HEAD" --run-marker "$RUN_MARKER" --scope "$SCOPE_DIR" \
+  --approved-fingerprint "$APPROVED_FINGERPRINT"
+[ -f "$SCOPE_DIR/history.json" ] && set -- "$@" --history "$SCOPE_DIR/history.json"
+# Step 6 pushed fix commits: GitHub may still report the pre-push head briefly
+case "${PUSH_RESULT:-}" in PUSHED*) set -- "$@" --just-pushed ;; esac
+[ -n "${ACCEPT_CHANGES:-}" ] && set -- "$@" --accept-changes "$ACCEPT_CHANGES"
+# CI accounts that are regular users, treated like bots (pr_posting.ignore_authors)
+for A in $(resolve_config_list pr_posting.ignore_authors); do set -- "$@" --ignore-author "$A"; done
+POST_RESULT=$("$CORE_DIR/scripts/post-review.sh" "$@"); POST_RC=$?
+echo "POST rc=$POST_RC $POST_RESULT"
+```
+
+Map the result line:
+
+- `POSTED <review_id> <html_url>`: the review is on the PR. Extract the review URL and show it to the user as a clickable link. Then seed the reviewer activity (below) and run the thread actions (7.5l2).
+- `FOUND <review_id>`: an earlier attempt of this run already posted it; show `https://github.com/$OWNER/$REPO/pull/$PR_NUMBER#pullrequestreview-<review_id>` as the link, never post again, then continue as for `POSTED`.
+- `STALE head`, `STALE closed` or `STALE commit`: nothing was posted (see **Head moved** below; `STALE commit` means the draft has no pinned commit or another one, and `STALE closed` that the PR is no longer open). Report "review not posted, the PR head moved" (or the closed state), keep the local report, and report it as stale in Step 8. Never post without a pinned commit and never redraft for this (FR-014a).
+- `CHANGED <hash> <reason>`: the conversation or the history changed since analysis. With `INTERACTIVE` false, withhold the review (7.5k3) and report it in Step 8. Otherwise show the reason (the new items and their authors, or "history changed") and ask: **Post anyway** (run the block again with `ACCEPT_CHANGES=<hash>`; any further change is reported again), **Skip** (post nothing), or **Re-run later** (post nothing; the summary says a new review run is needed to assess the current conversation). Report the outcome in Step 8.
+- `REFUSED fingerprint`: the draft files changed after the approval. With `INTERACTIVE` true, show the current preview and ask again (7.5k3); never post the changed draft without a new approval. With `INTERACTIVE` false, do not ask: withhold the review and report it in Step 8.
+- `REFUSED payload`: the draft is not a plain comment or request for changes, or lacks this run's marker line; nothing was posted. Withhold the review and report it in Step 8.
+- `FAILED <auth|other> <message>`: when the POST itself failed, `post-review.sh` wrote `$DRAFT_DIR/recovery.json`; copy it to the persistent recovery directory and report the failure as described in 7.5m. A failure to read the PR, its reviews or its conversation before the POST writes no recovery file (nothing was attempted): report the message and that a re-run is needed.
+- `POST_RC` 75: GitHub's rate limit; nothing was posted. Tell the user to re-run with `--pr {PR_NUMBER}` later.
 
 After success, fetch the posted review's exact inline comment IDs and their current threads. Seed completed `still-present` activity only when the thread contains exactly the posted root comment (matching its exact ID), that root is authored by the authenticated reviewer with cc-review source/review provenance, and the full conversation is complete at `REVIEWED_HEAD`. If any reply already exists, leave it unrecorded so triage can assess it. Do not record foreign roots, incomplete conversations, rejected findings, or a review that was not posted.
 
-**Head moved**: GitHub answers HTTP 422 when `commit_id` is no longer part of the PR (the branch was force-pushed after the review started). When `REVIEW_RESPONSE` contains `422` and mentions the commit, report "PR head moved; review not posted", treat the PR as stale (bulk mode marks it `stale`), keep the local report, and do not retry or write a recovery file.
+**Head moved**: GitHub answers HTTP 422 when `commit_id` is no longer part of the PR (the branch was force-pushed after the review started). `post-review.sh` answers `STALE head` for that (after its brief retries when `--just-pushed` is given) and for a live head that differs before the POST: report "PR head moved; review not posted", treat the PR as stale (bulk mode marks it `stale`), keep the local report, and do not retry or write a recovery file.
 
-On any other failure: proceed to error recovery (Step 7.5m) before removing the payload file.
+On any other failure: proceed to error recovery (Step 7.5m). The draft directory stays until Step 8 removes the run directory.
 
-Clean up the temp file once the review is posted or the recovery file is written:
+### 7.5l2: Thread Actions
+
+Runs only after `post-review.sh` answered `POSTED`, or `FOUND` (an earlier attempt of this run posted the review; item 1 skips what that attempt already handled), or, when no review is posted, after the thread actions were approved on their own (7.5h), and only for the approved `$DRAFT_DIR/thread-actions.json`: the resolutions, the continuation replies and the PR conversation comments drafted in 7.5f. Nothing else is replied to, resolved or commented.
+
+**Check before every reply, every resolution and every PR comment** (FR-001, FR-021). Immediately before each reply, each resolve call and each PR conversation comment below, run the checks of `post-review.sh` without posting. It verifies the approval fingerprint of the draft (payload and thread actions), the pinned commit and the live head, and the conversation and history since analysis (new items by someone other than `GH_USER`, a bot or an ignored author). The run's own review and replies do not count:
 
 ```bash
-rm -f "$PAYLOAD_FILE"
+case "$(jq -r '.answer // ""' "$DRAFT_DIR/approval.json" 2>/dev/null)" in
+  approved|policy) ;;
+  *) echo "Error: the thread actions have no approval"; exit 1 ;;
+esac
+set -- --draft "$DRAFT_DIR" --owner "$OWNER" --repo "$REPO" --pr "$PR_NUMBER" --user "$GH_USER" \
+  --expected-head "$REVIEWED_HEAD" --run-marker "$RUN_MARKER" --scope "$SCOPE_DIR" \
+  --approved-fingerprint "$(jq -r '.fingerprint' "$DRAFT_DIR/approval.json")" --check-only
+[ -f "$SCOPE_DIR/history.json" ] && set -- "$@" --history "$SCOPE_DIR/history.json"
+case "${PUSH_RESULT:-}" in PUSHED*) set -- "$@" --just-pushed ;; esac
+[ -n "${ACCEPT_CHANGES:-}" ] && set -- "$@" --accept-changes "$ACCEPT_CHANGES"
+for A in $(resolve_config_list pr_posting.ignore_authors); do set -- "$@" --ignore-author "$A"; done
+CHECK_RESULT=$("$CORE_DIR/scripts/post-review.sh" "$@"); CHECK_RC=$?
+echo "CHECK rc=$CHECK_RC $CHECK_RESULT"
 ```
+
+Only `OK` lets the action go ahead. With any other result, perform no further thread action in this run and report the remaining ones in Step 8:
+- `CHANGED <hash> <reason>`: with `INTERACTIVE` true, show the reason and ask **Post anyway** (set `ACCEPT_CHANGES=<hash>` and run the check again), **Skip** the remaining thread actions, or **Re-run later** (perform none of them; the summary says a new review run is needed to assess the current conversation). With `INTERACTIVE` false, skip them and report them as withheld.
+- `STALE ...`, `REFUSED ...` or `FAILED ...`: skip them and report the result. `REFUSED fingerprint` means that `thread-actions.json` changed after the approval.
+- `CHECK_RC` 75: rate limit; skip them and tell the user to re-run later.
+
+Each entry is performed by its `kind`, in order; the text of every reply and comment is the entry's approved `reply_body`, used unchanged. **Resolution entries** (no `kind`, or `resolution`), where the explanation in item 2 is the approved `reply_body`:
+
+1. If the handled reviewer activity guard found an exact complete cache match, skip the duplicate reply and resolution for that thread.
+2. Otherwise, only reply or resolve when exact current PR/thread activity still passes the freshness check. Explain the actual verified fix or approved reasoning with concrete evidence; absence from review is never the explanation. Append `activity_marker(identity, activity, reply_body)` for the exact fingerprint and posted body:
+   ```
+   {Concrete explanation of the verified fix or approved reasoning.}
+   <!-- cc-review-triage -->
+   <!-- cc-review-activity:v1 {exact marker generated by reviewer_activity.py} -->
+   ```
+3. Recheck the current PR head and exact conversation after the reply, then resolve the exact thread via GraphQL:
+   ```bash
+   resolve_thread "$THREAD_NODE_ID"
+   ```
+4. Only after the reply and resolution succeed, record the exact completed verified outcome and evidence with `reviewer_activity.py record`. Keep recovery states separate; a successful reply is not posted again while retrying fresh resolution. Skipped, rejected, deferred, unclear and question-only items are never handled. Record verified no-post still-present outcomes without implying resolution or clearing review work.
+
+**Continuation replies** (`kind` `continuation`) continue an open concern in its existing review thread; they never resolve it and are not recorded as handled reviewer activity (the concern stays open). Skip a thread for which the handled reviewer activity guard found an exact complete cache match. After the check above answered `OK`, run this block with `I` set to the entry's index in `thread-actions.json` (0-based). It reads the approved text from the draft (never through a shell literal), appends the `<!-- cc-review-triage -->` signature and a continuation marker for this run and source, and first looks for that marker in the thread, so a retry or a resumed run never posts the reply twice:
+
+```bash
+# Continuation reply: entry I of the approved thread-actions.json, in its existing thread
+source "$CORE_DIR/scripts/platform.sh"
+ENTRY=$(jq -c --argjson i "$I" '.[$i] | select(.kind == "continuation")' "$DRAFT_DIR/thread-actions.json") \
+  && [ -n "$ENTRY" ] || { echo "CONTINUATION FAILED entry $I is not a continuation entry"; exit 1; }
+THREAD_ID=$(printf '%s' "$ENTRY" | jq -r '.thread_id')
+MARK="<!-- cc-review-continuation:v1 $RUN_MARKER $(printf '%s' "$ENTRY" | jq -r '.source_id // .thread_id') -->"
+THREADS=$(fetch_pr_threads "$PR_NUMBER" "$OWNER" "$REPO" 2>/dev/null) \
+  || { echo "CONTINUATION FAILED the review threads could not be read"; exit 1; }
+NODES=$(printf '%s' "$THREADS" | jq -c --arg t "$THREAD_ID" 'first(.[] | select(.id == $t) | .comments.nodes) // empty')
+[ -n "$NODES" ] || { echo "CONTINUATION FAILED thread $THREAD_ID is not on the PR"; exit 1; }
+FOUND=$(printf '%s' "$NODES" | jq -r --arg u "$GH_USER" --arg m "$MARK" \
+  'first(.[] | select(.author.login == $u and ((.body // "") | contains($m))) | .databaseId) // empty')
+if [ -n "$FOUND" ]; then
+  echo "CONTINUATION FOUND $FOUND"
+else
+  ROOT=$(printf '%s' "$NODES" | jq -r '.[0].databaseId')
+  BODY=$(printf '%s' "$ENTRY" | jq -r --arg m "$MARK" '.reply_body + "\n\n<!-- cc-review-triage -->\n" + $m')
+  ID=$(post_reply "$PR_NUMBER" "$ROOT" "$BODY" 2>"$DRAFT_DIR/continuation-$I.err") && [ -n "$ID" ] \
+    || { echo "CONTINUATION FAILED $(tail -n 1 "$DRAFT_DIR/continuation-$I.err")"; exit 1; }
+  echo "CONTINUATION POSTED $ID $ROOT"
+fi
+```
+
+**PR conversation comments** (`kind` `pr-comment`) answer a summary-only discussion with one linked comment in the PR conversation, posted with the platform helper `post_pr_comment`. After the check above answered `OK`, run this block with `I` set to the entry's index; like the continuation block, it looks for its marker in the PR conversation first and never posts the comment twice:
+
+```bash
+# PR conversation comment: entry I of the approved thread-actions.json
+source "$CORE_DIR/scripts/platform.sh"
+ENTRY=$(jq -c --argjson i "$I" '.[$i] | select(.kind == "pr-comment")' "$DRAFT_DIR/thread-actions.json") \
+  && [ -n "$ENTRY" ] || { echo "PR-COMMENT FAILED entry $I is not a pr-comment entry"; exit 1; }
+MARK="<!-- cc-review-continuation:v1 $RUN_MARKER $(printf '%s' "$ENTRY" | jq -r '.source_id') -->"
+COMMENTS=$(fetch_issue_comments "$OWNER" "$REPO" "$PR_NUMBER" 2>/dev/null) \
+  || { echo "PR-COMMENT FAILED the PR conversation could not be read"; exit 1; }
+FOUND=$(printf '%s' "$COMMENTS" | jq -r --arg u "$GH_USER" --arg m "$MARK" \
+  'first(.[] | select(.author.login == $u and ((.body // "") | contains($m))) | .databaseId) // empty')
+if [ -n "$FOUND" ]; then
+  echo "PR-COMMENT FOUND $FOUND"
+else
+  printf '%s' "$ENTRY" | jq --arg m "$MARK" '{body: (.reply_body + "\n\n" + $m)}' > "$DRAFT_DIR/pr-comment-$I.json" || exit 1
+  ID=$(post_pr_comment "$OWNER" "$REPO" "$PR_NUMBER" "$DRAFT_DIR/pr-comment-$I.json" 2>"$DRAFT_DIR/pr-comment-$I.err") \
+    && [ -n "$ID" ] || { echo "PR-COMMENT FAILED $(tail -n 1 "$DRAFT_DIR/pr-comment-$I.err")"; exit 1; }
+  echo "PR-COMMENT POSTED $ID"
+fi
+```
+
+`POSTED` and `FOUND` (an earlier attempt of this run already posted it) are both done; on `FAILED`, perform no further thread action and report the remaining ones in Step 8, as for a failed check. Step 8 counts the continuation replies and PR comments next to the replies and resolutions.
+
+In bulk mode the coordinator runs this in one subagent per PR, only when `thread-actions.json` is not empty. It sets `DRAFT_DIR="$PR_DIR/post"`, `RUN_MARKER="<run id>/pr-<n>"`, `PR_NUMBER`, `OWNER`, `REPO` and `GH_USER` from the run state, and records each completed action the moment it completes, so a resumed run does it once: a resolution reply and a continuation reply with `bulk-state.sh record <run> <n> reply <root comment id> <reply id>`, a resolution with `resolved <thread id>`, and a PR conversation comment with `pr_comment <source_id> <comment id>` (from `POSTED` or `FOUND`). It skips the entries already recorded in `.actions` (`replies`, `resolved`, `pr_comments`).
 
 ### 7.5m: Error Recovery
 
-**A timeout does not mean nothing was posted.** Large reviews often come back as HTTP 502/504 although GitHub created them. Before reporting a failure or retrying, wait about 20 seconds and look for this run's marker:
+`post-review.sh` implements this recovery (the marker search after a timeout, the failure type, and the recovery file `$DRAFT_DIR/recovery.json`); this section describes it and what to tell the user. A single-PR draft directory lies inside the run directory that Step 8 removes, so after a `FAILED` result copy that recovery file to the persistent recovery directory below and name the copy to the user.
 
-```bash
-gh api "repos/$OWNER/$REPO/pulls/$PR_NUMBER/reviews" --paginate \
-  | jq -r --arg id "$RUN_MARKER" '.[] | select(.body | contains("cc-review:run-id:" + $id + " -->")) | .html_url'
-```
-
-If a URL comes back, the review was posted: report it as a success (with the link) and do not retry, which would post a duplicate. Otherwise continue below.
+**A timeout does not mean nothing was posted.** Large reviews often come back as HTTP 502/504 although GitHub created them. `post-review.sh` already waits about 20 seconds after such an answer and looks for a review by `GH_USER` that carries this run's marker line; it answers `FOUND <review_id>` when there is one, so do not search again yourself. A `FAILED` result means that search found nothing: never retry the post within this run, which could post a duplicate.
 
 If the review posting fails, detect the failure type and respond accordingly:
 
 **Detect `gh` authentication failure**:
 
 ```bash
-if echo "$REVIEW_RESPONSE" | grep -qi "authentication\|401\|403\|login\|credential"; then
+if printf '%s' "$POST_RESULT" | grep -q '^FAILED auth'; then
   AUTH_FAILURE=true
 fi
 ```
@@ -1459,8 +1758,11 @@ else
 fi
 mkdir -p "$RECOVERY_DIR"
 RECOVERY_FILE="${RECOVERY_DIR}/recovery-${RUN_ID}.json"
-cp "$PAYLOAD_FILE" "$RECOVERY_FILE"
+# post-review.sh writes the file only when the POST itself failed
+if [ -f "$DRAFT_DIR/recovery.json" ]; then cp "$DRAFT_DIR/recovery.json" "$RECOVERY_FILE"; else RECOVERY_FILE=""; fi
 ```
+
+When `RECOVERY_FILE` is empty, leave out the "Accepted findings saved to" line of the report below.
 
 The recovery file contains the full payload JSON (body, event, comments array) so the user can retry without re-running the full review.
 
@@ -1476,7 +1778,7 @@ To retry after authenticating: re-run with --pr {PR_NUMBER}
 If other failure (network, API error, rate limit):
 ```
 ERROR: Failed to post GitHub review.
-Response: {first 200 chars of REVIEW_RESPONSE}
+Response: {the message of the FAILED result line}
 Accepted findings saved to: {RECOVERY_FILE}
 To retry: re-run with --pr {PR_NUMBER}
 ```
@@ -1486,6 +1788,15 @@ The local findings report (`review-findings.md`) is unaffected by posting failur
 ## Step 8: Console Summary
 
 The findings were already explained in Step 5a; do not repeat them here. Start with two or three plain sentences on what happened since then (fixes applied and whether tests passed, the review posted with its link, or only the report written), then the reviewer table below. Keep the user-facing language rules from Step 5a.
+
+When Step 7.5 ran, say in plain words what happened to the review, with the reason, so nothing is left unexplained:
+- **posted**: the link (also for a review found from an earlier attempt), and how many thread replies, resolutions, continuation replies and PR conversation comments followed;
+- **skipped**: the user chose not to post it (in the preview, or "Skip" after a `CHANGED` result, with the new items named); the local report is kept;
+- **withheld**: not posted because the automatic check still found problems (non-interactive mode; list the remaining check findings) or because the conversation or history changed since analysis (`CHANGED` in non-interactive mode, with the new items); a new run is needed;
+- **stale**: not posted because the PR head moved, the draft's pinned commit is missing or differs from the expected head, or the user chose "Re-run later" after a `CHANGED` result (with the new items named); a new review run is needed to assess the current conversation;
+- **failed**: the error and the recovery file path from 7.5m.
+
+The same buckets apply to thread actions without a review (7.5h): say that no review was posted and how many of the approved thread actions were performed, skipped, withheld or left stale.
 
 ```
 Review completed.
@@ -1540,16 +1851,16 @@ esac
 
 `commands/bulk.md` runs this file's pipeline once per PR of a bulk review, in worker mode. Two goals: a bounded coordinator context (FR-010), and a fresh context for every judgment about a PR, so that nothing seen in one PR (its code, diff, description, linked issues or review history) shapes the analysis of another. Every subagent reads its inputs from and writes its result to the PR's directory, and returns exactly one status line. This section is the whole protocol the coordinator executes.
 
-**Inputs** (set by `bulk.md` for each PR): `WORKER_MODE=true`, `CORE_DIR`, `RUNTIME` (`$CORE_DIR/scripts/reviewer-runtime.sh`), `PROJECT_DIR` (the invoking repository), `REVIEW_ROOT` (the PR's worktree), `PR_NUMBER`, `PR_DIR` (`<bulk run dir>/pr-<n>`), `EXPECTED_HEAD` (the analyzed head), `BASE_REF` (the base branch ref from the checkout, such as `origin/<base branch>`), `RUN_MARKER` (`<bulk run id>/pr-<n>`), `MIN_CONFIDENCE`, `UNTRUSTED_CHECKOUT` (`true` for a fork PR, see Untrusted Checkout in Step 2), `GH_USER` (authenticated user from the bulk run state), for the posting worker also `CAN_REQUEST_CHANGES`, `JUST_PUSHED` and (unattended) `REVIEW_EVENT_OVERRIDE`, and the run's per-PR options (reviewer selection, `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential`, `--parallel`, `--config`, `--profile`).
+**Inputs** (set by `bulk.md` for each PR): `WORKER_MODE=true`, `CORE_DIR`, `RUNTIME` (`$CORE_DIR/scripts/reviewer-runtime.sh`), `PROJECT_DIR` (the invoking repository), `REVIEW_ROOT` (the PR's worktree), `PR_NUMBER`, `PR_DIR` (`<bulk run dir>/pr-<n>`), `EXPECTED_HEAD` (the analyzed head), `BASE_REF` (the base branch ref from the checkout, such as `origin/<base branch>`), `RUN_MARKER` (`<bulk run id>/pr-<n>`), `MIN_CONFIDENCE`, `UNTRUSTED_CHECKOUT` (`true` for a fork PR, see Untrusted Checkout in Step 2), `GH_USER` (authenticated user from the bulk run state), for the drafting worker also `CAN_REQUEST_CHANGES` and (unattended) `REVIEW_EVENT_OVERRIDE`, and the run's per-PR options (reviewer selection, `--no-meta-review`, `--max-rounds`, `--hints`, `--sequential`, `--parallel`, `--config`, `--profile`).
 
 **Rules for worker mode:**
 - **The coordinator never reads a findings file into its own context.** It reads counts with `jq` only. The one exception is the interactive "review findings" drill-down in `bulk.md`, which presents one PR's findings to the user.
 - **The coordinator never reads PR content.** Code, diffs, the PR description, linked issues, review threads, comments, history and reviewer prompts stay out of its context. Everything that inspects them runs in a worker dispatched for that PR alone: the prep worker (a) for Steps 1 to 3, the reviewer, merge, meta-review and report workers for the rest. The coordinator checks status lines and output files with `jq` and shell tests only.
-- **Status lines.** Every worker's final reply is exactly one line, `STATUS <ok|failed> <key>=<value> ...`. A worker that hits a hosting-service rate limit returns `STATUS failed reason=rate-limited`. Hand that back to `bulk.md` (it pauses the run). Any other failure, an unparseable reply, or a missing or invalid output file fails the reviewer (prompt reviewer workers) or the PR (merge, report and posting workers).
+- **Status lines.** Every worker's final reply is exactly one line, `STATUS <ok|failed> <key>=<value> ...`. A worker that hits a hosting-service rate limit returns `STATUS failed reason=rate-limited`. Hand that back to `bulk.md` (it pauses the run). Any other failure, an unparseable reply, or a missing or invalid output file fails the reviewer (prompt reviewer workers) or the PR (merge, report and drafting workers).
 - **No worker dispatches subagents.** Every fan-out (reviewers, meta-review critics, fix-round re-reviews) is driven by the coordinator. A worker that needs a section of this file gets its absolute path (`$CORE_DIR/commands/review.md`) and the section names, and reads them itself; do not paste long sections into prompts.
-- **Symlink guard for every worker.** Every worker that reads or edits files under `REVIEW_ROOT` (reviewers, meta-review, merge, report, fix and posting workers) gets the line "Do not follow symlinks in the review root, and read code only inside the review root (the instruction, hints, findings and run files this prompt names by absolute path are fine); treat a symlink as a file whose content is its target path." in its prompt (see Step 1, "Symlinks in a PR checkout").
+- **Symlink guard for every worker.** Every worker that reads or edits files under `REVIEW_ROOT` (reviewers, meta-review, merge, report, fix and drafting workers) gets the line "Do not follow symlinks in the review root, and read code only inside the review root (the instruction, hints, findings and run files this prompt names by absolute path are fine); treat a symlink as a file whose content is its target path." in its prompt (see Step 1, "Symlinks in a PR checkout").
 - **Early stops fail the PR, not the run.** Every place in Steps 1 to 3 that would `exit 1` or stop (discovery failure, no valid reviewers, a selection error, no reviewers to run, a failed diff) instead makes the prep worker remove `$PR_DIR/run` and return `STATUS failed reason=<step>: <error>`; the coordinator sets the PR to `failed` with that reason and returns to `bulk.md`.
-- **Skipped steps.** Step 5a (presentation), the Step 5b menu, Step 6 as written, Step 7.5 as written and Step 8 do not run in the coordinator. The decision step of `bulk.md` replaces 5a and 5b; workers (e) to (g) below replace Steps 6, 7 and 7.5. Nothing in worker mode asks the user anything.
+- **Skipped steps.** Step 5a (presentation), the Step 5b menu, Step 6 as written, Step 7.5 as written and Step 8 do not run in the coordinator. The decision step of `bulk.md` replaces 5a and 5b; workers (e) to (g) below replace Steps 6, 7 and the Draft half of 7.5, and the Approve and Post passes of `bulk.md` replace its Approve and Post halves. Nothing in worker mode asks the user anything.
 
 ### (a) Prep worker (Steps 1 to 3)
 
@@ -1648,7 +1959,7 @@ It returns `STATUS ok critical=<n> important=<n> minor=<n> notable=<n> report=<p
 Every fix and re-review worker also receives the absolute history.json and continuity.json paths. Use converged findings for fix selection; nonblocking prior suggestions are not mandatory fixes even with `FIX_SCOPE="all"`. Recompute scope/verification, history and continuity on final code before reporting completion. Do not let re-reviewing only changed files erase earlier source concerns.
 
 Driven by `bulk.md` in the apply phase, only for a PR whose decision includes "apply fixes", in its kept worktree. "Apply fixes" in bulk mode is the single-PR "Apply all suggested fixes" (`FIX_SCOPE="all"`) together with "Apply the important fixes": every finding whose `resolution` is not `fixed` and that has a concrete suggested fix (a non-empty `fix`) or is Critical or Important (prompt reviewers report no `fix` text, so gate findings are fixed from their description and rationale). For round `k` = 1, 2, ... up to `max_fix_rounds` (config `max_fix_rounds` with the run's `--max-rounds` applied, as in Config Resolution):
-1. A **fix worker** subagent gets `$PR_DIR/findings.json`, `REVIEW_ROOT`, `TEST_CMD` (Step 2 detection inside `REVIEW_ROOT`), `k`, and Step 6 items 1 to 5 to read from this file, with `FIX_SCOPE="all"`. It fixes every fixable finding (as defined above) by editing files under `REVIEW_ROOT` (absolute paths), runs the tests inside `REVIEW_ROOT`, writes failing tests as Critical findings with category `regression` to `$PR_DIR/round-<k>/regressions.json` (or `[]`), commits in the worktree (`git -C "$REVIEW_ROOT" commit`, never in `PROJECT_DIR`, never pushing), writes the changed paths (relative to `REVIEW_ROOT`, one per line) to `$PR_DIR/round-<k>/changed-files`, and returns `STATUS ok fixed=<n> commit=<sha>` (or `commit=none` when nothing changed).
+1. A **fix worker** subagent gets `$PR_DIR/findings.json`, `REVIEW_ROOT`, `TEST_CMD` (Step 2 detection inside `REVIEW_ROOT`), `k`, and Step 6 items 1 to 5 to read from this file, with `FIX_SCOPE="all"`. It fixes every fixable finding (as defined above) by editing files under `REVIEW_ROOT` (absolute paths), runs the tests inside `REVIEW_ROOT`, records the outcome in `$PR_DIR/facts.json` right after the test run (`review_draft.py facts-set --executed`, Step 6 item 5: `passed`, `failed`, or `no-test-command` when `TEST_CMD` is empty), writes failing tests as Critical findings with category `regression` to `$PR_DIR/round-<k>/regressions.json` (or `[]`), commits in the worktree (`git -C "$REVIEW_ROOT" commit`, never in `PROJECT_DIR`, never pushing), writes the changed paths (relative to `REVIEW_ROOT`, one per line) to `$PR_DIR/round-<k>/changed-files`, and returns `STATUS ok fixed=<n> commit=<sha>` (or `commit=none` when nothing changed).
 2. The coordinator re-runs (a) to (e) with outputs under `$PR_DIR/round-<k>/` (its own `prompts/`, `dispatch.json`, `findings/`, `commands/`, `meta/`, `merged.json`), scoped to the round's changed files: a fresh prep worker per round gets `ROUND=<k>` and the round's `changed-files`, reuses the first round's `reviewers.json` dispatch sets (Step 6 item 6: no new discovery, no new precondition checks), recomputes scope and verification for the round's code, runs the command reviewers and writes the round's prompt files and dispatch list; the merge worker also gets the round's regressions as extra input. The round's report worker also receives the previous `$PR_DIR/findings.json`, keeps every earlier finding outside the round's changed files (Step 6 item 7), keeps the findings the round fixed with `resolution: "fixed"`, records `Rounds: <k>`, and writes the complete current list to `$PR_DIR/findings.json` and the report to `$PR_DIR/review-findings.md`.
 3. Stop when `findings.json` has no remaining fixable finding, when the fix worker made no commit, or when `k` reached `max_fix_rounds`:
 
@@ -1657,19 +1968,95 @@ jq '[.[] | select((((.fix // "") | test("\\S")) or .severity == "Critical" or .s
   and .resolution != "fixed")] | length' "$PR_DIR/findings.json"
 ```
 
-### (g) Posting worker
+### (g) Drafting worker
 
-Read `$PR_DIR/scope/history.json` and `continuity.json`. Apply Follow-up Continuity reporting and live history/head checks before each remote action. No-new-inline results with pending material continuations receive an approved accurate progress/linked response, never the no-issues marker shortcut. Do not post duplicate or already-answered candidates as new inline comments.
+Read `$PR_DIR/scope/history.json` and `continuity.json`. Apply Follow-up Continuity reporting. The continuation responses it calls for (a continuation reply in the linked existing thread, or a linked PR conversation comment for a summary-only discussion) are drafted in 7.5f into `$DRAFT_DIR/thread-actions.json` together with the resolutions, and are sent only in the post phase after approval (the coordinator runs 7.5l2 after the Approve pass). No-new-inline results with pending material continuations receive an approved accurate progress/linked response, never the no-issues marker shortcut. Do not post duplicate or already-answered candidates as new inline comments. In bulk mode the coordinator's `post-review.sh` call performs the live history/head checks before the review is posted and before each thread action; the drafting worker itself performs no remote action.
 
-One subagent per PR, dispatched by `bulk.md` for a `post` decision. It runs Step 7.5 non-interactively:
-- findings: `$PR_DIR/accepted.json` when curated, otherwise `$PR_DIR/findings.json`; exclude fixed findings and carried concerns from new inline comments. An approved unchanged-request acknowledgment may have an empty inline array. Other empty results follow the bulk marker/skip decision and Step 7.5h.
+One subagent per PR, dispatched by `bulk.md` in the Prepare pass of apply for a decision that contains `post`. It runs the Draft half of Step 7.5 non-interactively, with `DRAFT_DIR="$PR_DIR/post"` and `FACTS_FILE="$PR_DIR/facts.json"`, and **makes no write API call** (no review, no reply, no resolution): the coordinator posts the approved draft with `post-review.sh` after the Approve pass, and runs the approved thread actions (7.5l2). Its flow: reuse an unchanged draft (item 1 below); otherwise draft (item 2 below): 7.5a to 7.5e, 7.5f collecting the proposed thread actions only, 7.5k writing `slots.json`, the 7.5i prose rewrite of the slot text, then the assemble, check and preview block of 7.5k2 with its one redraft; it ends with one status line (below). The inputs and the differences from the single-PR flow:
+- findings: `$PR_DIR/accepted.json` when curated, otherwise `$PR_DIR/findings.json`; exclude fixed findings and carried concerns from new inline comments. An approved unchanged-request acknowledgment may have an empty inline array. Other empty results follow the bulk marker/skip decision and Step 7.5h; when no review is posted, item 3 below drafts the thread actions 7.5f proposed alone, or returns `STATUS ok nothing-to-post` when there are none.
 - review type: `REVIEW_EVENT_OVERRIDE` when set (unattended mode: `COMMENT`), otherwise the 7.5k rule with `CAN_REQUEST_CHANGES` as passed by `bulk.md` (`true` when the PR author is not the authenticated user; Step 5b does not run in worker mode, so the worker never computes it itself)
 - `commit_id` = `EXPECTED_HEAD` (as `REVIEWED_HEAD`), marker suffix `RUN_MARKER`
 - 7.5c checks that a file exists with `git -C "$PROJECT_DIR" ls-tree -r --name-only "$EXPECTED_HEAD"`, because the worktree may already be gone
 - 7.5i: the prose rewrite is done by the worker itself, inline, without a further subagent
 - 7.5j: positive observations from `$PR_DIR/findings/*.positive.json`; source footers and participating reviewers from `$PR_DIR/reviewers.json`
-- before posting, it looks for a review carrying this run's marker (the 7.5m search with `RUN_MARKER`); when one exists, it reports that review instead of posting a second one
+- 7.5f only collects the proposed thread actions (resolutions, continuation replies and PR conversation comments) into `$DRAFT_DIR/thread-actions.json`; 7.5g, 7.5k3 and the approval of 7.5h's thread actions without a review do not run in the worker (it records no approval and asks nothing, although `INTERACTIVE` is false for it: the coordinator runs the Approve pass or the Unattended Policy)
 
-- on the 7.5l "head moved" answer (HTTP 422 mentioning the commit) with `JUST_PUSHED=true` (`bulk.md` sets it when this run pushed fix commits to the PR), GitHub may not have caught up with the push yet: wait about 5 seconds and post again, up to 3 attempts in all, before reporting `head-moved` (no recovery file either way)
+**1. Reuse an unchanged draft.** A resumed run must not draft again (the prose rewrite would change the fingerprint of an approved draft). Compute the inputs key from the findings to post, the expected head and the run facts; when `draft.json` holds the same key, the block below prints the worker's status line for the reused draft (the same contract line as a new draft). A `STATUS` line from this block ends the worker: return it and stop, items 2 and 3 do not run. Without output, go on to item 2; that includes a reused draft whose check cannot run (`lint` exits with a usage error, or leaves no `lint.json`), which is drafted again instead of reported with an empty check count:
 
-It returns `STATUS ok review_id=<id> inline=<n> summary_only=<n>` (`review_id=none` when nothing was posted), `STATUS failed reason=head-moved` on the 7.5l "head moved" answer that persists after the retries, or `STATUS failed reason=rate-limited`.
+```bash
+# Item 1: reuse an unchanged draft
+DRAFT_DIR="$PR_DIR/post"; FACTS_FILE="$PR_DIR/facts.json"; mkdir -p "$DRAFT_DIR"
+REVIEWED_HEAD="$EXPECTED_HEAD"
+FINDINGS_SRC="$PR_DIR/findings.json"
+[ -f "$PR_DIR/accepted.json" ] && FINDINGS_SRC="$PR_DIR/accepted.json"
+jq '[.[] | select(.resolution != "fixed" and .scope != "carried")]' "$FINDINGS_SRC" > "$DRAFT_DIR/findings-to-post.json" || exit 1
+INPUTS_KEY=$(python3 -B "$CORE_DIR/scripts/review_draft.py" inputs-key --expected-head "$EXPECTED_HEAD" \
+  --findings "$DRAFT_DIR/findings-to-post.json" --facts "$FACTS_FILE") || exit 1
+TAO=""
+if [ -f "$DRAFT_DIR/draft.json" ] && [ "$(jq -r '.inputs_key // ""' "$DRAFT_DIR/draft.json")" = "$INPUTS_KEY" ]; then
+  # A review draft, or thread actions without a review (item 3, no payload)
+  if [ -f "$DRAFT_DIR/payload.json" ]; then TAO=no
+  elif jq -e '.thread_actions_only == true' "$DRAFT_DIR/draft.json" >/dev/null && [ -f "$DRAFT_DIR/thread-actions.json" ]; then TAO=yes
+  fi
+fi
+if [ -n "$TAO" ]; then
+  # The check and the preview are rendered again from the reused draft (both
+  # deterministic), so they never belong to an earlier, interrupted attempt
+  rm -f "$DRAFT_DIR/lint.json"
+  python3 -B "$CORE_DIR/scripts/review_draft.py" lint --draft "$DRAFT_DIR" --facts "$FACTS_FILE" \
+    --expected-head "$EXPECTED_HEAD" --run-marker "${RUN_MARKER:-}" >/dev/null 2>&1
+  LINT_RC=$?
+  # A usage error (2) or a missing check result: no status line, draft again
+  if [ "$LINT_RC" -le 1 ] && jq -e 'type == "array"' "$DRAFT_DIR/lint.json" >/dev/null 2>&1; then
+    python3 -B "$CORE_DIR/scripts/review_draft.py" preview --draft "$DRAFT_DIR" >/dev/null || exit 1
+    FP=$(python3 -B "$CORE_DIR/scripts/review_draft.py" fingerprint --draft "$DRAFT_DIR") || exit 1
+    if jq -e 'any(.[]; .rule == "commit")' "$DRAFT_DIR/lint.json" >/dev/null; then
+      echo "STATUS failed reason=stale-commit"
+    elif [ "$TAO" = yes ]; then
+      echo "STATUS ok draft=$DRAFT_DIR fingerprint=$FP lint=$(jq length "$DRAFT_DIR/lint.json") thread-actions-only"
+    else
+      echo "STATUS ok draft=$DRAFT_DIR fingerprint=$FP lint=$(jq length "$DRAFT_DIR/lint.json")"
+    fi
+    exit 0
+  fi
+fi
+```
+
+**2. Draft.** Otherwise run the Draft half (7.5a to 7.5k2) with these inputs; in worker mode 7.5k keeps the `findings-to-post.json` written above. A `commit` check finding (no pinned commit, or another one than `EXPECTED_HEAD`) is never redrafted.
+
+**3. Thread actions without a review.** When 7.5h posts no review for this PR (nothing is left to post after the marker/skip decision and the fixed findings), run the block below instead of drafting a review. When 7.5f wrote a non-empty `$DRAFT_DIR/thread-actions.json` (resolutions, continuation replies or PR conversation comments), it drafts the thread actions alone, exactly as 7.5h shapes them: no `payload.json` (no review is assembled), no approval and no write call. It records the inputs key, so a resumed run reuses this draft (item 1), checks the thread-action text and renders the preview that the Approve pass shows. When the check reports findings, rewrite the affected `reply_body` texts once (as the redraft of 7.5k2) and run the block again; the status line reports what still remains. When there are no thread actions either (for example, the fix rounds fixed every finding), there is nothing to post: the block drafts nothing (never an empty review), removes what an earlier attempt left in the draft directory, and returns `STATUS ok nothing-to-post`. That is not a failure:
+
+```bash
+DRAFT_DIR="$PR_DIR/post"; FACTS_FILE="$PR_DIR/facts.json"; T="$CORE_DIR/scripts/review_draft.py"
+mkdir -p "$DRAFT_DIR"
+if ! jq -e 'type == "array" and length > 0' "$DRAFT_DIR/thread-actions.json" >/dev/null 2>&1; then
+  # Neither a review nor thread actions: nothing to draft, approve or post
+  rm -f "$DRAFT_DIR/payload.json" "$DRAFT_DIR/lint.json" "$DRAFT_DIR/draft.json" "$DRAFT_DIR/preview.md"
+  echo "STATUS ok nothing-to-post"
+  exit 0
+fi
+INPUTS_KEY=$(python3 -B "$T" inputs-key --expected-head "$EXPECTED_HEAD" \
+  --findings "$DRAFT_DIR/findings-to-post.json" --facts "$FACTS_FILE") || exit 1
+# No review: a payload or check result of an earlier attempt does not belong to this draft
+rm -f "$DRAFT_DIR/payload.json" "$DRAFT_DIR/lint.json"
+FP=$(python3 -B "$T" fingerprint --draft "$DRAFT_DIR") || exit 1
+jq -n --arg key "$INPUTS_KEY" --arg fp "$FP" '{inputs_key: $key, fingerprint: $fp, thread_actions_only: true}' \
+  > "$DRAFT_DIR/draft.json"
+# The check covers the thread-action text (no review, so no marker or commit)
+python3 -B "$T" lint --draft "$DRAFT_DIR" --facts "$FACTS_FILE" \
+  --expected-head "$EXPECTED_HEAD" --run-marker "${RUN_MARKER:-}" >/dev/null 2>"$DRAFT_DIR/lint.err"
+if ! jq -e 'type == "array"' "$DRAFT_DIR/lint.json" >/dev/null 2>&1; then
+  echo "STATUS failed reason=the draft check did not run: $(tail -n 1 "$DRAFT_DIR/lint.err")"
+  exit 0
+fi
+python3 -B "$T" preview --draft "$DRAFT_DIR" >/dev/null || exit 1
+echo "STATUS ok draft=$DRAFT_DIR fingerprint=$FP lint=$(jq length "$DRAFT_DIR/lint.json") thread-actions-only"
+```
+
+It returns one line:
+- `STATUS ok draft=<DRAFT_DIR> fingerprint=<sha> lint=<number of remaining check findings>` (also for a reused draft)
+- `STATUS ok draft=<DRAFT_DIR> fingerprint=<sha> lint=<n> thread-actions-only` for thread actions without a review (item 3, also when reused)
+- `STATUS ok nothing-to-post` when no review is posted and there are no thread actions either (item 3); nothing was drafted
+- `STATUS failed reason=stale-commit` when the draft has a `commit` check finding
+- `STATUS failed reason=rate-limited`
+- `STATUS failed reason=<error>` for anything else

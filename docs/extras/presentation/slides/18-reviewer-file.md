@@ -4,7 +4,9 @@ layout: default
 
 # A reviewer is one Markdown file
 
-```markdown {2-5|7-9}
+<div class="flex flex-col justify-center" style="height: calc(100% - 5rem)">
+
+```markdown {2-5|7-9|all}
 ---
 name: team-rules
 display_name: "Team Rules"
@@ -18,6 +20,16 @@ feature flags. Stay in your lane.
 
 - Save as `.cc-review/reviewers/team-rules.md`
 - Next run: in the status table; `--only team-rules`
+
+</div>
+
+<style>
+.slidev-code {
+  font-size: 1.3rem !important;
+  line-height: 1.45 !important;
+  padding: 1rem 1.4rem !important;
+}
+</style>
 
 <!--
 **Goal:** writing a reviewer is easy enough to do this week.

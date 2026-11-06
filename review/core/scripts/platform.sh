@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 
+# CC_REVIEW_PLATFORM (github or gitlab), when set, names the platform instead of
+# the origin remote of the current directory; scripts that address the
+# repository explicitly (post-review.sh) set it so the current directory does
+# not matter.
 detect_platform() {
+  if [ -n "${CC_REVIEW_PLATFORM:-}" ]; then
+    echo "$CC_REVIEW_PLATFORM"
+    return 0
+  fi
   local remote_url
   remote_url=$(git remote get-url origin 2>/dev/null) || {
     echo "No git remote 'origin' found" >&2
@@ -17,13 +25,15 @@ detect_platform() {
   esac
 }
 
+# fetch_pr_threads <pr> [<owner> <repo>]: without owner and repo, the
+# repository of the current directory
 fetch_pr_threads() {
-  local pr_number="$1"
+  local pr_number="$1" owner="${2:-}" repo="${3:-}"
   local platform
   platform=$(detect_platform) || return 1
 
   case "$platform" in
-    github) _github_fetch_pr_threads "$pr_number" ;;
+    github) _github_fetch_pr_threads "$pr_number" "$owner" "$repo" ;;
     gitlab)
       echo "GitLab support not yet implemented" >&2
       return 1
@@ -40,6 +50,23 @@ post_reply() {
 
   case "$platform" in
     github) _github_post_reply "$pr_number" "$comment_id" "$body" ;;
+    gitlab)
+      echo "GitLab support not yet implemented" >&2
+      return 1
+      ;;
+  esac
+}
+
+# post_pr_comment <owner> <repo> <pr> <json-body-file>: posts a PR conversation
+# comment (the file holds {"body": ...}, so the text never passes through a
+# shell argument) and prints the new comment's numeric ID
+post_pr_comment() {
+  local owner="$1" repo="$2" pr_number="$3" json_body_file="$4"
+  local platform
+  platform=$(detect_platform) || return 1
+
+  case "$platform" in
+    github) _github_post_pr_comment "$owner" "$repo" "$pr_number" "$json_body_file" ;;
     gitlab)
       echo "GitLab support not yet implemented" >&2
       return 1
@@ -122,7 +149,7 @@ fetch_issue_comments() {
           pullRequest(number: $number) {
             comments(first: 100, after: $cursor) {
               pageInfo { hasNextPage endCursor }
-              nodes { id databaseId url body author { login } createdAt updatedAt }
+              nodes { id databaseId url body author { login __typename } createdAt updatedAt }
             }
           }
         }
@@ -173,16 +200,17 @@ parse_diff_hunks() {
 }
 
 _github_fetch_pr_threads() {
-  local pr_number="$1"
-  local owner repo
-  owner=$(gh repo view --json owner -q '.owner.login') || {
-    echo "Failed to determine repository owner" >&2
-    return 1
-  }
-  repo=$(gh repo view --json name -q '.name') || {
-    echo "Failed to determine repository name" >&2
-    return 1
-  }
+  local pr_number="$1" owner="${2:-}" repo="${3:-}"
+  if [ -z "$owner" ] || [ -z "$repo" ]; then
+    owner=$(gh repo view --json owner -q '.owner.login') || {
+      echo "Failed to determine repository owner" >&2
+      return 1
+    }
+    repo=$(gh repo view --json name -q '.name') || {
+      echo "Failed to determine repository name" >&2
+      return 1
+    }
+  fi
   if [ -z "$owner" ] || [ -z "$repo" ]; then
     echo "Could not extract owner/repo from 'gh repo view'" >&2
     return 1
@@ -233,7 +261,7 @@ _github_fetch_pr_threads() {
                     databaseId
                     url
                     body
-                    author { login }
+                    author { login __typename }
                     createdAt
                     updatedAt
                     originalCommit { oid }
@@ -279,6 +307,21 @@ _github_post_reply() {
   gh api \
     "repos/{owner}/{repo}/pulls/$pr_number/comments/$comment_id/replies" \
     -f body="$body" \
+    --jq '.id'
+}
+
+_github_post_pr_comment() {
+  local owner="$1" repo="$2" pr_number="$3" json_body_file="$4"
+
+  if [ ! -f "$json_body_file" ]; then
+    echo "ERROR: Comment body file not found: $json_body_file" >&2
+    return 1
+  fi
+
+  gh api \
+    "repos/$owner/$repo/issues/$pr_number/comments" \
+    --method POST \
+    --input "$json_body_file" \
     --jq '.id'
 }
 
@@ -356,7 +399,7 @@ _github_fetch_reviews() {
                 databaseId
                 url
                 body
-                author { login }
+                author { login __typename }
                 commit { oid }
                 state
                 submittedAt
@@ -395,7 +438,7 @@ _github_fetch_reviews() {
   # node IDs (needed by resolve_thread) in from the PR's review threads by
   # comment databaseId. Without threads the reviews are returned unchanged.
   local threads
-  if ! threads=$(_github_fetch_pr_threads "$pr_number"); then
+  if ! threads=$(_github_fetch_pr_threads "$pr_number" "$owner" "$repo"); then
     echo "WARNING: review threads for PR #$pr_number are incomplete; valid partial thread IDs are retained" >&2
     if ! printf '%s' "$threads" | jq -e 'type == "array"' >/dev/null 2>&1; then
       threads="[]"

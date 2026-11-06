@@ -128,3 +128,12 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: The Skeptic is supposed to refute findings against the code, but across 6 local runs (128 findings) and the OpenShell runs it removed 0 findings and only marked some as weak, while the user held back 29 findings by hand.
 
 > How it works today: it receives each finding with the reviewer's rationale, confidence and source, reads the cited range plus 20 lines of context, tries to refute it, and answers confirmed, weak or false-positive (false-positive needs cited counter-evidence; confirmed needs nothing). Likely causes: anchoring on the reviewer's narrative, no burden of proof for "confirmed", same model family as the reviewers. Candidate fixes (blind refutation, reachability proof for Critical/Important, cross-vendor second skeptic, a labeled eval set from the OpenShell outcomes) are collected in brainstorm #13.
+
+### enforce-locked-edit-fields
+
+- **Source**: deep-review
+- **Date**: 2026-11-06
+- **Reference**: 011-review-draft-approval
+- **Summary**: FR-016 forbids an approval-time edit from changing paths, lines, the pinned commit or the run marker, but only the LLM instructions enforce it.
+
+> `review_draft.py assemble` could compare the locked fields per slot id against the previous payload of the same inputs key and refuse a change, so the restriction holds by construction like the labels do.
