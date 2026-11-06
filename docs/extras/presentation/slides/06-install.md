@@ -1,6 +1,5 @@
 ---
 layout: default
-zoom: 1.3
 ---
 
 # Two commands to install
@@ -10,9 +9,23 @@ zoom: 1.3
 /plugin install cc-review@cc-rhuss-marketplace
 ```
 
+<div class="mt-10">
+
 - **Codex**: `codex plugin install` from a clone
 - **OpenCode**: `review/opencode/install.sh`
 - Needs `jq`, `yq`, `gh`, Python 3.9+
+
+</div>
+
+<style>
+.slidev-code {
+  font-size: 1.5rem !important;
+  line-height: 1.6 !important;
+  padding: 1rem 1.4rem !important;
+  margin-top: 2rem !important;
+}
+li code { font-size: 0.85em; }
+</style>
 
 <!--
 **Goal:** installing takes a minute; external tools are optional.

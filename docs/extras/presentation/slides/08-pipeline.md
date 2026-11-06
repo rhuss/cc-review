@@ -4,18 +4,14 @@ layout: default
 
 # What is running right now
 
-<div class="grid grid-cols-[3fr_2fr] gap-8 items-center mt-4">
+<div class="flex flex-col items-center justify-center" style="height: calc(100% - 5rem)">
 
-<img src="/images/pipeline/diagram-excalidraw.svg" alt="Six-step pipeline: discover reviewers, dispatch in parallel and merge and dedup in this section; meta-review, gate and fix loop, and report in the next section" />
+<img class="w-[34rem]" src="/images/pipeline/diagram-excalidraw.svg" alt="Six-step pipeline: discover reviewers, dispatch in parallel and merge and dedup in this section; meta-review, gate and fix loop, and report in the next section" />
 
-<div>
-<v-clicks>
-
-- **Discover**: no hard-coded list
-- **Dispatch**: subagents and CLIs together
-- **Merge**: same spot, same category, one finding
-
-</v-clicks>
+<div class="grid grid-cols-3 gap-6 mt-4 w-[42rem] text-center">
+  <div v-click><strong>Discover</strong>: no hard-coded list</div>
+  <div v-click><strong>Dispatch</strong>: subagents and CLIs together</div>
+  <div v-click><strong>Merge</strong>: same spot, same category, one finding</div>
 </div>
 
 </div>

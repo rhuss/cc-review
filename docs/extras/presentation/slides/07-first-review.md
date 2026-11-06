@@ -1,6 +1,5 @@
 ---
 layout: default
-zoom: 1.1
 ---
 
 # Three ways to run your first review
@@ -11,9 +10,23 @@ zoom: 1.1
 /cc-review:review --profile quick   # cheap: 2 reviewers, 1 round
 ```
 
+<div class="mt-10">
+
 - Profiles: `quick` · `thorough` · `ci`
 - Project config: `.cc-review/config.yml`
 - Project knowledge: `.cc-review/review-hints.md`
+
+</div>
+
+<style>
+.slidev-code {
+  font-size: 1.3rem !important;
+  line-height: 1.6 !important;
+  padding: 1rem 1.4rem !important;
+  margin-top: 2rem !important;
+}
+li code { font-size: 0.85em; }
+</style>
 
 <!--
 **Goal:** the three invocations, and the two files that make reviews better.

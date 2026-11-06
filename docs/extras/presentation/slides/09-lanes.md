@@ -1,11 +1,13 @@
 ---
-layout: two-cols-header
+layout: default
 ---
 
 # Six lanes and four outside voices
 
-::left::
-<div class="grid grid-cols-2 gap-3 mt-6 pr-6">
+<div class="flex items-center" style="height: calc(100% - 5rem)">
+<div class="grid grid-cols-[3fr_2fr] gap-10 items-center w-full">
+
+<div class="grid grid-cols-2 gap-3">
   <div class="lane"><carbon-checkmark-outline class="lane-icon" /><span>Correctness</span></div>
   <div class="lane"><carbon-model-alt class="lane-icon" /><span>Architecture</span></div>
   <div class="lane"><carbon-security class="lane-icon" /><span>Security</span></div>
@@ -14,15 +16,18 @@ layout: two-cols-header
   <div class="lane"><ph-target class="lane-icon" /><span>Goal Alignment</span></div>
 </div>
 
-
-::right::
-<div class="mt-20 p-6 rounded-lg border-2 border-dashed" style="border-color: var(--secondary)">
+<div>
+<div class="p-6 rounded-lg border-2 border-dashed" style="border-color: var(--secondary)">
   <div class="flex items-center gap-2 text-xl font-bold"><carbon-plug /> External</div>
   <div class="mt-3 text-lg">CodeRabbit · Codex</div>
   <div class="text-lg opacity-70">Copilot · Greptile (opt-in)</div>
 </div>
 
-<div class="mt-8 text-base opacity-70">Opt-in: Gator, principal-engineer persona from NVIDIA OpenShell</div>
+<div class="mt-6 text-base opacity-70">Opt-in: Gator, principal-engineer persona from NVIDIA OpenShell</div>
+</div>
+
+</div>
+</div>
 
 <style>
 .lane {
