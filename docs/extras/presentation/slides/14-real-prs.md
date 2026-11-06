@@ -5,17 +5,25 @@ zoom: 1.2
 
 # On real PRs, two thirds of the findings get fixed
 
-<div class="grid grid-cols-3 gap-6 mt-6 text-center">
+<div class="flex flex-col justify-center" style="height: calc(100% - 8rem)">
+
+<div class="grid grid-cols-3 gap-6 my-10 text-center">
 <div><div class="text-5xl font-bold" style="color: var(--primary)">208</div>findings, 20 PRs</div>
 <div><div class="text-5xl font-bold" style="color: var(--primary)">64%</div>addressed</div>
 <div><div class="text-5xl font-bold" style="color: var(--secondary)">2%</div>withdrawn or rejected</div>
 </div>
 
-- Double percent-decoding of headers (Codex, #5082)
-- Credentials in startup log (security, #5083)
-- Trace ID mismatch CodeRabbit missed (gator, #4789)
+<div class="w-fit mx-auto">
 
-<div class="text-sm opacity-70 mt-4">NVIDIA/OpenShell, 30 cc-review reviews · Important findings: 87% addressed</div>
+- Double percent-decoding of OTLP headers (Codex, [#5082](https://github.com/NVIDIA/OpenShell/pull/5082#discussion_r4444329585))
+- Credentials in startup log (security, [#5083](https://github.com/NVIDIA/OpenShell/pull/5083#discussion_r4444735412))
+- Trace ID mismatch CodeRabbit missed (gator, [#4789](https://github.com/NVIDIA/OpenShell/pull/4789#discussion_r4336233024))
+
+</div>
+
+<div class="text-sm opacity-70 mt-8 text-center">NVIDIA/OpenShell, 30 cc-review reviews · Important findings: 87% addressed</div>
+
+</div>
 
 <!--
 **Goal:** real-world evidence from an active open-source project.

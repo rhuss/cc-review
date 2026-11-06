@@ -4,31 +4,42 @@ layout: default
 
 # Triage, inbox and issue handle the rest
 
-<div class="grid grid-cols-3 gap-6 mt-10">
-<div class="p-4 rounded-lg border-2" style="border-color: var(--primary)">
+<div class="flex flex-col justify-center" style="height: calc(100% - 5rem)">
 
-**triage**
-
-Bot and human comments; drafts replies
-
+<div class="grid grid-cols-3 gap-6">
+<div class="cmd-box" style="background: #ffd8a8; border-color: #e8590c">
+  <div class="cmd">triage</div>
+  <div>Bot and human comments; drafts replies</div>
 </div>
-<div class="p-4 rounded-lg border-2" style="border-color: var(--primary)">
-
-**inbox**
-
-PRs, issues, Discussions by who acts next
-
+<div class="cmd-box" style="background: #eebefa; border-color: #9c36b5">
+  <div class="cmd">inbox</div>
+  <div>PRs, issues, Discussions by who acts next</div>
 </div>
-<div class="p-4 rounded-lg border-2" style="border-color: var(--primary)">
-
-**issue**
-
-Need, fit, value; reply draft
-
+<div class="cmd-box" style="background: #eebefa; border-color: #9c36b5">
+  <div class="cmd">issue</div>
+  <div>Need, fit, value; reply draft</div>
 </div>
 </div>
 
-<div class="mt-10 text-center">All three live after the slides</div>
+<div class="mt-10 text-center opacity-80">More on this in the demo</div>
+
+</div>
+
+<style>
+.cmd-box {
+  padding: 1.2rem 1.4rem;
+  border-radius: 0.75rem;
+  border: 2px solid;
+  color: #1e1e1e;
+  font-size: 1.25rem;
+}
+.cmd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 700;
+  font-size: 1.6rem;
+  margin-bottom: 0.8rem;
+}
+</style>
 
 <!--
 **Goal:** a short preview of the three commands shown live later.

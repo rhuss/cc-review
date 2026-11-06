@@ -4,6 +4,8 @@ layout: default
 
 # On your own code: fix, test, re-review
 
+<div class="flex flex-col justify-center" style="height: calc(100% - 5rem)">
+
 ```mermaid {scale: 0.9}
 flowchart LR
   F[Fix, run tests] --> R[Re-review<br/>changed files]
@@ -28,6 +30,8 @@ flowchart LR
 - Others' PRs: post, never push
 
 </div>
+</div>
+
 </div>
 
 <!--
