@@ -22,13 +22,13 @@ zoom: 1.3
 
 "If you want to try it, three steps, smallest first. Install it from the marketplace. Run `/review --profile quick` on your next branch, before you push. And if you like it, write one reviewer for a rule your team keeps repeating."
 
-"The QR code takes you to the repository. For writing reviewers, start with `docs/reviewer-plugins.md`."
+"The QR code takes you to the repository. For writing reviewers, start with `docs/extras/reviewer-plugins.md`."
 
 "Questions?"
 
 **Background:**
 
-- `docs/standalone-guide.md` covers everything else: config, profiles, triage, inbox, issue.
+- `docs/extras/standalone-guide.md` covers everything else: config, profiles, triage, inbox, issue.
 - Good questions to have ready: cost per run, how it compares with CodeRabbit alone, running it in CI (the `ci` profile), and the Skeptic's 0 removals.
 
 *Timing: 55-60 minute block*

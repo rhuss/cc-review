@@ -6,14 +6,14 @@
 inputs:
   - id: presentation-outline
     kind: document
-    location: ../presentation/outline.md
+    location: ../extras/presentation/outline.md
     role: Presentation outline; the theory and narrative arc (panel, skeptic, fix loop, architecture)
-    sha256: "838e87291a941a4fa4dd940fe20f4741fbc972dc8d3b3b7186fa22547fc2a37e"
+    sha256: "f98d1a23c8c2d4735b8b69ad765207eed28a1937fdb6be1698d53ea0a95e835e"
     confidential: false
     registered: "2026-11-05"
   - id: presentation-slides
     kind: document
-    location: ../presentation/slides.md
+    location: ../extras/presentation/slides.md
     role: Presentation slides; speaker-level framing of each concept
     sha256: "43662f298383a4e808f311721f9e3fcd2d9068dce5462d64bc59a06577116001"
     confidential: false
@@ -22,40 +22,40 @@ inputs:
     kind: document
     location: ../../README.md
     role: Project README; features, install, usage, configuration, architecture overview
-    sha256: "07243373b171b8e7430ee56de76f869bce72237034b13f8607e10be93ed56fc6"
+    sha256: "63194d19609722ee23d002501814010eb9fed4952db8ae98d3af1b97d191cc65"
     confidential: false
     registered: "2026-11-05"
   - id: docs-reviewer-plugins
     kind: document
-    location: ../reviewer-plugins.md
+    location: ../extras/reviewer-plugins.md
     role: Reviewer plugin reference; prompt and command reviewer formats, trust model
     sha256: "628eb893f2fa46d5685bef6681a3ec3feff92e281049d969a3eaff06757c2add"
     confidential: false
     registered: "2026-11-05"
   - id: docs-standalone-guide
     kind: document
-    location: ../standalone-guide.md
+    location: ../extras/standalone-guide.md
     role: Standalone usage guide; install, first review, PR review, follow-ups, inbox, config
-    sha256: "d44efea60fc56eb392e10e703420847bb81676c2c7fc15431d8ae2e7322b5e80"
+    sha256: "95795e5ecb5292ce062eb7df06f8c6899997bbe98ef111642b990896050681ee"
     confidential: false
     registered: "2026-11-05"
   - id: docs-speckit-guide
     kind: document
-    location: ../speckit-guide.md
+    location: ../extras/speckit-guide.md
     role: spec-kit integration guide; how cc-spex delegates to cc-review
     sha256: "480d78163d1dac04c56208884c6ee7a48abde9cd2487a2751747c4141469ee16"
     confidential: false
     registered: "2026-11-05"
   - id: data-local-reports
     kind: document
-    location: ../presentation/data/local-reports-aggregate.json
+    location: ../extras/presentation/data/local-reports-aggregate.json
     role: Measured data; aggregate of local cc-review reports (fix rates, per-reviewer precision)
     sha256: "07228dae632ffb6bc0d560d166651d89e016551285a27b1684ef57534f6aadc3"
     confidential: false
     registered: "2026-11-05"
   - id: data-openshell-findings
     kind: document
-    location: ../presentation/data/openshell-findings-labeled.jsonl
+    location: ../extras/presentation/data/openshell-findings-labeled.jsonl
     role: Measured data; labeled findings from cc-review runs on the public NVIDIA/OpenShell PRs
     sha256: "59d284bb0e66e7de34b2df6381ea2f3a5386528847ca2586a34f5b440728c98a"
     confidential: false

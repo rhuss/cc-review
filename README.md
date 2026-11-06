@@ -4,10 +4,14 @@ Multi-agent code review plugin for AI coding agents. Works with Claude Code, Cod
 
 cc-review dispatches a set of specialized reviewers against your code changes, merges and deduplicates findings across reviewers and external tools, then runs an autonomous fix loop to resolve Critical and Important issues before you see the report.
 
+## Documentation
+
+The full guide is at **[docs/GUIDE.md](docs/GUIDE.md)**. The [docs/](docs/) directory also holds the talk deck and standalone guides; see [docs/README.md](docs/README.md) for a map.
+
 ## Features
 
 - **6 built-in review agents**: Correctness, Architecture & Idioms, Security, Production Readiness, Test Quality, Goal Alignment
-- **Pluggable reviewers**: add your own reviewer by dropping one markdown file into `.cc-review/reviewers/`; no core changes needed. See [docs/reviewer-plugins.md](docs/reviewer-plugins.md)
+- **Pluggable reviewers**: add your own reviewer by dropping one markdown file into `.cc-review/reviewers/`; no core changes needed. See [docs/extras/reviewer-plugins.md](docs/extras/reviewer-plugins.md)
 - **Autonomous fix loop**: automatically applies fixes for Critical/Important findings, re-reviews, and repeats (up to 3 rounds by default)
 - **External tool integration**: CodeRabbit, GitHub Copilot CLI, Codex CLI, and Greptile CLI run as command reviewers; their findings are merged and deduplicated with agent findings
 - **Gator reviewer (opt-in)**: a pragmatic principal-engineer review persona ported from NVIDIA OpenShell, with an evidence contract for every blocking finding
@@ -247,9 +251,9 @@ Triages open PRs with eligible author or reviewer-owned feedback. Author PRs kee
 
 Continues an unfinished run, or starts a new one, without asking anything. This is the form for scheduled jobs. Unattended reviews are posted as plain comments, no code is changed, and human comments in triage are left for you.
 
-Run state and reports live in `.cc-review/bulk/<run-id>/` (git-ignored); `state.md` shows the progress. See the [standalone guide](docs/standalone-guide.md#bulk-review-and-triage) for the details.
+Run state and reports live in `.cc-review/bulk/<run-id>/` (git-ignored); `state.md` shows the progress. See the [standalone guide](docs/extras/standalone-guide.md#bulk-review-and-triage) for the details.
 
-Review and triage share exact verification evidence and avoid duplicate thread actions. Triage never advances the code-review baseline. Reports disclose scope, personal baseline, actual tool coverage, fallback reasons and incomplete work. A completed no-findings review can establish a baseline when approved and posted with completion evidence; incomplete or unposted work cannot. Command reviewers without delta support may still examine the full PR, with their findings subject to the same scope policy. See the [standalone guide](docs/standalone-guide.md#follow-up-reviews) for details.
+Review and triage share exact verification evidence and avoid duplicate thread actions. Triage never advances the code-review baseline. Reports disclose scope, personal baseline, actual tool coverage, fallback reasons and incomplete work. A completed no-findings review can establish a baseline when approved and posted with completion evidence; incomplete or unposted work cannot. Command reviewers without delta support may still examine the full PR, with their findings subject to the same scope policy. See the [standalone guide](docs/extras/standalone-guide.md#follow-up-reviews) for details.
 
 ## Configuration
 
@@ -320,7 +324,7 @@ category: accessibility
 You are the ACCESSIBILITY REVIEW AGENT. ...
 ```
 
-The reviewer is discovered on the next run, dispatched alongside the built-ins with the common preamble prepended, and shown in the console summary. Reviewers in `~/.cc-review/reviewers/` follow you across projects; a project reviewer with the same name as a bundled one replaces it. External tools are `kind: command` reviewers with `detect`, `invoke`, and an output format declaration. The full format is documented in [docs/reviewer-plugins.md](docs/reviewer-plugins.md).
+The reviewer is discovered on the next run, dispatched alongside the built-ins with the common preamble prepended, and shown in the console summary. Reviewers in `~/.cc-review/reviewers/` follow you across projects; a project reviewer with the same name as a bundled one replaces it. External tools are `kind: command` reviewers with `detect`, `invoke`, and an output format declaration. The full format is documented in [docs/extras/reviewer-plugins.md](docs/extras/reviewer-plugins.md).
 
 ### Review Hints
 
@@ -359,7 +363,7 @@ The review command holds no list of reviewers. `core/scripts/discover-reviewers.
 | user | `~/.cc-review/reviewers/` | middle |
 | bundled | `core/reviewers/` | lowest |
 
-A higher layer replaces a lower one by name, except that a project reviewer edited by the change under review is ignored for that run, and a project `kind: command` reviewer runs nothing until you trust it in `~/.cc-review/trusted-reviewers` (see `docs/reviewer-plugins.md`). Each reviewer is `kind: prompt` (dispatched as a fresh-context subagent with the common preamble prepended) or `kind: command` (an external tool run with a timeout and parsed per its declared output format). Preconditions (`requires: [pr]`, `binary:<name>`), detection results, and config enablement decide which reviewers run; every discovered reviewer appears in the console summary as completed, disabled, skipped, or failed.
+A higher layer replaces a lower one by name, except that a project reviewer edited by the change under review is ignored for that run, and a project `kind: command` reviewer runs nothing until you trust it in `~/.cc-review/trusted-reviewers` (see `docs/extras/reviewer-plugins.md`). Each reviewer is `kind: prompt` (dispatched as a fresh-context subagent with the common preamble prepended) or `kind: command` (an external tool run with a timeout and parsed per its declared output format). Preconditions (`requires: [pr]`, `binary:<name>`), detection results, and config enablement decide which reviewers run; every discovered reviewer appears in the console summary as completed, disabled, skipped, or failed.
 
 ### Bundled Reviewers
 

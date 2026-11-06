@@ -31,7 +31,7 @@
 
 ### Local Materials
 
-**Files reviewed**: README.md, CLAUDE.md, docs/reviewer-plugins.md, docs/standalone-guide.md (outline), review/core/commands/review.md (steps), review/core/agents/{preamble,meta-skeptic,meta-calibrator}.md, review/core/reviewers/{correctness.md, coderabbit/, greptile/}, review/config/profiles/, brainstorm/00-overview.md, review-findings.md (real report of PR #5), git history.
+**Files reviewed**: README.md, CLAUDE.md, docs/extras/reviewer-plugins.md, docs/extras/standalone-guide.md (outline), review/core/commands/review.md (steps), review/core/agents/{preamble,meta-skeptic,meta-calibrator}.md, review/core/reviewers/{correctness.md, coderabbit/, greptile/}, review/config/profiles/, brainstorm/00-overview.md, review-findings.md (real report of PR #5), git history.
 
 **What cc-review is**
 - Multi-agent code review plugin for AI coding agents: Claude Code, Codex, OpenCode (plus an optional spec-kit extension).
@@ -215,8 +215,8 @@
 
 **Local sources**
 - README.md
-- docs/reviewer-plugins.md
-- docs/standalone-guide.md
+- docs/extras/reviewer-plugins.md
+- docs/extras/standalone-guide.md
 - review/core/commands/review.md
 - review/core/agents/preamble.md, meta-skeptic.md, meta-calibrator.md
 - review/core/reviewers/ (correctness.md, coderabbit/, greptile/, gator/)

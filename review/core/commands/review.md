@@ -225,7 +225,7 @@ For re-review rounds (fix loop): narrow scope to only files modified by the most
 
 ## Step 2: Discover Reviewers
 
-Reviewers are plugins discovered from three layers (project `.cc-review/reviewers/`, user `~/.cc-review/reviewers/`, bundled `core/reviewers/`). The review command holds no list of reviewers; everything it dispatches comes from this discovery output. See `docs/reviewer-plugins.md` for the plugin format.
+Reviewers are plugins discovered from three layers (project `.cc-review/reviewers/`, user `~/.cc-review/reviewers/`, bundled `core/reviewers/`). The review command holds no list of reviewers; everything it dispatches comes from this discovery output. See `docs/extras/reviewer-plugins.md` for the plugin format.
 
 Run discovery once. The `pr` precondition means PR context is available: `PR_NUMBER` from `--pr` or auto-detection, otherwise the open PR of the current branch (the same lookup that feeds the `goals` block). Every flag is always passed; `-` means "not available", so preconditions evaluate correctly under any shell. Discovery runs with `--skip-detection`: the `detect` and `auth_check` probes run later, only for command reviewers that are still enabled after config and CLI selection.
 

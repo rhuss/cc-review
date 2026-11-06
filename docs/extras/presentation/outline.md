@@ -208,7 +208,7 @@
 - Install from `rhuss/cc-rhuss-marketplace`
 - Run `/review --profile quick` on your next branch
 - Write one reviewer for a rule your team keeps repeating
-- Links: github.com/rhuss/cc-review, docs/reviewer-plugins.md; Q&A
+- Links: github.com/rhuss/cc-review, docs/extras/reviewer-plugins.md; Q&A
 - Visual: QR code to the repository
 
 ---

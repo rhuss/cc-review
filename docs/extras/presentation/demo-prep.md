@@ -70,7 +70,7 @@ Neither repository has CodeRabbit, Copilot or Greptile reviews on open PRs right
 - [ ] Pre-approve edit and test permissions so the background review never stops on a prompt while slides are shown.
 - [ ] `gh auth status` works; CodeRabbit and Codex CLIs are logged in.
 - [ ] Demo repository checked out on the PR branch, clean working tree.
-- [ ] Slidev running (`npx slidev slides.md` in `docs/presentation`), presenter mode open on the second screen.
+- [ ] Slidev running (`npx slidev slides.md` in `docs/extras/presentation`), presenter mode open on the second screen.
 - [ ] Notifications off, terminal font size up.
 
 ## Run sheet

@@ -64,7 +64,7 @@ git add -A && git commit -m "implement feature"
 
 cc-review will:
 - Determine changed files by diffing against the main branch
-- Discover every reviewer plugin (bundled, `~/.cc-review/reviewers/`, `.cc-review/reviewers/`) and dispatch the enabled ones in parallel; the bundled set is Correctness, Architecture, Security, Production Readiness, Test Quality, Goal Alignment (needs a PR), and the opt-in gator reviewer. See `docs/reviewer-plugins.md` to add your own.
+- Discover every reviewer plugin (bundled, `~/.cc-review/reviewers/`, `.cc-review/reviewers/`) and dispatch the enabled ones in parallel; the bundled set is Correctness, Architecture, Security, Production Readiness, Test Quality, Goal Alignment (needs a PR), and the opt-in gator reviewer. See `docs/extras/reviewer-plugins.md` to add your own.
 - Run the enabled command reviewers whose tool is installed (CodeRabbit and Codex by default) and include their findings
 - Merge and deduplicate all findings
 - Run the autonomous fix loop for Critical/Important findings (up to 3 rounds)
