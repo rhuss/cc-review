@@ -4,6 +4,8 @@ layout: default
 
 # The panel grades itself on every run
 
+<div class="flex flex-col justify-center" style="height: calc(100% - 5rem)">
+
 ```mermaid
 %%{init: {"xyChart": {"width": 900, "height": 300, "titleFontSize": 22, "xAxis": {"labelFontSize": 20}, "yAxis": {"labelFontSize": 20}}}}%%
 xychart-beta
@@ -13,7 +15,9 @@ xychart-beta
   bar [0.90, 0.90, 0.87, 0.87, 0.85, 0.78, 0.74, 0.65]
 ```
 
-- **test-quality** lowest in every run: tune it first
+- **test-quality** lowest in every run: first candidate for review hints or `--no-test-quality`
+
+</div>
 
 <!--
 **Goal:** reviewer quality is measured, not assumed; the scores tell you what to tune.
