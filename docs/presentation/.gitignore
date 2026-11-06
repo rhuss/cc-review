@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.slidev/
+data/local-reports-aggregate.json
+.balance-preview.md
+exports/

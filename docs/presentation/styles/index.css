@@ -1,0 +1,28 @@
+@import './balance-boxes.css';
+/*
+ * Deck-wide styles. Slidev scopes a <style> block inside a slide to that
+ * slide, so global rules must live here.
+ */
+
+/* Colorblind-safe palette: Blue + Orange */
+:root {
+  --primary: #3b82f6;
+  --secondary: #f97316;
+  --neutral: #6b7280;
+  --text: #1f2937;
+}
+
+/* Accessibility: 18pt+ body text */
+.slidev-layout p,
+.slidev-layout li {
+  font-size: 1.25rem;
+}
+.slidev-layout td,
+.slidev-layout th {
+  font-size: 1.1rem;
+}
+
+/* Cover headings */
+.slidev-layout.cover h1 { font-size: 3rem; }
+.slidev-layout.cover h2 { font-size: 2rem; }
+.slidev-layout.cover h3 { font-size: 1.5rem; }
