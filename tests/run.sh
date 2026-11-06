@@ -3481,6 +3481,57 @@ test_bulk_select_triage_keeps_only_own_prs() {
   assert_json "unseen thread pages cannot invent unresolved work" "$out" '.excluded[] | select(.number==21) | .assessment.triage.complete' "false"
 }
 
+test_bulk_select_explicit_list() {
+  local out rc
+  make_bulk_repo
+  mkdir -p "$TEST_TMP/gh"
+  # Two PRs fetched directly by number: a plain open PR and a draft.
+  jq -n '{number:101,title:"Add retry budget",author:{login:"tals"},isDraft:false,
+    headRefOid:"aaa1010000000000000000000000000000000101",headRefName:"topic-101",baseRefName:"main",
+    updatedAt:"2026-11-05T18:30:00Z",isCrossRepository:false,
+    headRepository:{name:"widget"},headRepositoryOwner:{login:"acme"},reviews:[],state:"OPEN"}' > "$TEST_TMP/gh/pr-view-101.json"
+  jq -n '{number:102,title:"WIP cache",author:{login:"me"},isDraft:true,
+    headRefOid:"bbb1020000000000000000000000000000000102",headRefName:"topic-102",baseRefName:"main",
+    updatedAt:"2026-11-04T10:00:00Z",isCrossRepository:false,
+    headRepository:{name:"widget"},headRepositoryOwner:{login:"acme"},reviews:[],state:"OPEN"}' > "$TEST_TMP/gh/pr-view-102.json"
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect review --prs 101,102 --user me)"
+  assert_json "explicit result keeps the shared-assessor shape" "$out" 'has("selected") and has("excluded")' "true"
+  assert_json "the eligible explicit PR is selected" "$out" '[.selected[].number] | join(",")' "101"
+  assert_json "the selected entry carries its assessment" "$out" '.selected[] | select(.number==101) | .assessment.review.eligible' "true"
+  assert_json "a draft bulk would exclude is surfaced, not dropped" "$out" '.excluded[] | select(.number==102) | .reason' "draft"
+  # A repeated number is de-duplicated, preserving order.
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect review --prs 101,101 --user me)"
+  assert_json "a duplicate number is resolved once" "$out" '[.selected[].number] | length' "1"
+  # A PR that cannot be fetched (no such number / no access) is surfaced as an
+  # incomplete excluded entry, not aborted, and the valid PRs still resolve
+  # (FR-018). PR 777 has no fixture, so the fake gh fails for it.
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect review --prs 101,777 --user me)"
+  assert_json "an unfetchable explicit PR is surfaced as excluded" "$out" '[.excluded[].number] | index(777) != null' "true"
+  assert_json "the valid explicit PR still resolves alongside it" "$out" '[.selected[].number] | index(101) != null' "true"
+  assert_json "the unfetchable PR is surfaced via a coverage warning" "$out" '[.warnings[] | select(contains("#777"))] | length > 0' "true"
+  # --prs is mutually exclusive with the other selectors and needs integers;
+  # assert the rejection message, not just the exit code, so the reason is pinned.
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect review --prs 101 --all-open --user me 2>&1 >/dev/null)"; rc=$?
+  assert_eq "--prs with --all-open exits 2" "2" "$rc"
+  assert_contains "--prs with --all-open names the conflict" "$out" "--prs cannot be combined with --all-open or --search"
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect review --prs 101 --search label:x --user me 2>&1 >/dev/null)"; rc=$?
+  assert_eq "--prs with --search exits 2" "2" "$rc"
+  assert_contains "--prs with --search names the conflict" "$out" "--prs cannot be combined with --all-open or --search"
+  FAKE_GH_DIR="$TEST_TMP/gh" bselect review --prs 0 --user me >/dev/null 2>&1; rc=$?
+  assert_eq "--prs rejects a non-positive integer" "2" "$rc"
+  # An empty token in the list is rejected, not silently skipped (parity with
+  # the bulk.md PRS_FLAG guard, which already rejects 1,,2).
+  FAKE_GH_DIR="$TEST_TMP/gh" bselect review --prs 1,,2 --user me >/dev/null 2>&1; rc=$?
+  assert_eq "--prs rejects an empty token in the list" "2" "$rc"
+  # The explicit selector works for triage too (fetched via the reviewer query).
+  shared_action_fixture
+  out="$(FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --prs 7 --user me)"
+  assert_json "triage --prs resolves the explicit PR through the assessor" "$out" '[.selected[].number, .excluded[].number] | index(7) != null' "true"
+  assert_json "triage --prs selects the eligible PR with its role" "$out" '.selected[] | select(.number==7) | .triage_role' "reviewer"
+  FAKE_GH_DIR="$TEST_TMP/gh" bselect triage --prs 7 --search label:x --user me >/dev/null 2>&1; rc=$?
+  assert_eq "triage --prs with --search is a usage error" "2" "$rc"
+}
+
 test_bulk_md_checkout_block() {
   local run sha block sh out st
   for sh in bash zsh; do
@@ -3586,6 +3637,9 @@ test_bulk_md_validation_errors() {
   # The fixed part of every error in contracts/cli-flags.md
   for fragment in \
     "--bulk and --pr cannot be combined; --pr names a single PR" \
+    "--prs and --pr cannot be combined" \
+    "--prs cannot be combined with --all-open or --search" \
+    "--prs takes a comma-separated list of positive integers, got '" \
     "--all-open and --search are mutually exclusive" \
     "--all-open is not supported by triage; bulk triage uses eligible author and reviewer PRs" \
     "--limit must be a positive integer, got '" \
@@ -3631,6 +3685,16 @@ test_bulk_md_validation_errors() {
     assert_eq "$sh: --search qualifier rejected" "Error: --search may not contain 'repo:'; bulk mode always uses open PRs of the current repository" "$out"
     out="$(BULK_COMMAND=triage SEARCH_GIVEN=true SEARCH_QUERY='label:x' "$sh" "$block" 2>&1)"
     assert_eq "$sh: a plain --search passes" "FLAGS OK" "$out"
+    out="$(BULK_COMMAND=review PRS_FLAG='109,44' "$sh" "$block" 2>&1)"
+    assert_eq "$sh: an explicit --prs list passes" "FLAGS OK" "$out"
+    out="$(BULK_COMMAND=review PRS_FLAG=5 PR_FLAG=9 "$sh" "$block" 2>&1)"
+    assert_eq "$sh: --prs with --pr" "Error: --prs and --pr cannot be combined" "$out"
+    out="$(BULK_COMMAND=review PRS_FLAG=5 ALL_OPEN_FLAG=true "$sh" "$block" 2>&1)"
+    assert_eq "$sh: --prs with --all-open" "Error: --prs cannot be combined with --all-open or --search" "$out"
+    out="$(BULK_COMMAND=review PRS_FLAG=5 SEARCH_GIVEN=true SEARCH_QUERY=x "$sh" "$block" 2>&1)"
+    assert_eq "$sh: --prs with --search" "Error: --prs cannot be combined with --all-open or --search" "$out"
+    out="$(BULK_COMMAND=review PRS_FLAG='1,,2' "$sh" "$block" 2>&1)"
+    assert_eq "$sh: --prs rejects a malformed list" "Error: --prs takes a comma-separated list of positive integers, got '1,,2'" "$out"
   done
 }
 
@@ -4317,6 +4381,15 @@ test_inbox() {
   fi
 }
 
+test_inbox_report() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_inbox_report.py" 2>&1)"; then
+    _pass
+  else
+    _fail "inbox report-structure suite" "$output"
+  fi
+}
+
 test_issue_assessment() {
   local output
   if output="$(python3 -B "$ROOT/tests/test_issue_assessment.py" 2>&1)"; then
@@ -4602,6 +4675,7 @@ main() {
   run_test test_bulk_apply_triage_repairs_shared_state
   run_test test_bulk_state_resume_plan_edge_branches
   run_test test_bulk_select_triage_keeps_only_own_prs
+  run_test test_bulk_select_explicit_list
   run_test test_bulk_md_checkout_block
   run_test test_review_md_symlink_filter
   run_test test_shims_pass_bulk_flags
@@ -4634,6 +4708,7 @@ main() {
   run_test test_bulk_state_find_unfinished_lists_corrupt_run
   run_test test_bulk_state_abandon_removes_worktrees
   run_test test_inbox
+  run_test test_inbox_report
   run_test test_issue_assessment
   run_test test_pr_actions
   run_test test_reviewer_summary

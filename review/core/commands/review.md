@@ -13,10 +13,12 @@ argument-hint: "[--pr <number>] [--full] [--spec <path>] [--hints <path>] [--out
 Check the arguments before anything else. Each check below stops with its error and changes nothing:
 
 - `--bulk` (or `--resume`) together with `--pr`: `Error: --bulk and --pr cannot be combined; --pr names a single PR`
+- `--prs` together with `--pr`: `Error: --prs and --pr cannot be combined`
+- `--prs` together with `--all-open` or `--search`: `Error: --prs cannot be combined with --all-open or --search`
 - `--bulk` (or `--resume`) together with `--spec` or `--output`: `Error: --spec is not supported with --bulk` (or `--output`)
-- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --unattended requires --bulk`)
+- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--prs`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --unattended requires --bulk`)
 
-When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk review: set `BULK_COMMAND=review`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file (Prerequisites through Step 8). `bulk.md` runs this file's per-PR pipeline itself, in worker mode (see [Worker Mode (bulk)](#worker-mode-bulk)).
+When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk review: set `BULK_COMMAND=review`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file (Prerequisites through Step 8). `bulk.md` runs this file's per-PR pipeline itself, in worker mode (see [Worker Mode (bulk)](#worker-mode-bulk)). `--prs <n,...>` is the explicit-list selector: it names exactly the PRs to run (for example when `inbox` hands off a tour selection) and is forwarded to `bulk.md` unchanged, which resolves and filters that list through its own eligibility rules.
 
 Without `--bulk` and `--resume`, continue below; nothing in single-PR mode changes.
 

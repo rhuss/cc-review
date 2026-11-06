@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "repository": "acme/widget",
+  "repository_url": "https://github.com/acme/widget",
+  "host": "github.com",
+  "user": "me",
+  "collected_at": "2026-11-06T09:00:00+00:00",
+  "scope": {
+    "types": ["pr", "issue", "discussion"],
+    "limit_per_type": 10,
+    "since": null,
+    "discussion_since": "2026-08-08",
+    "pr_issue_state": "open",
+    "discovery_limit_per_reason": 100,
+    "pr_actions": {
+      "review_mode": "default",
+      "include_review_drafts": false,
+      "include_triage_drafts": true,
+      "bulk_default_limit": 10,
+      "selection": "eligibility within collected candidates; bulk orders oldest updates first"
+    },
+    "detail_collection_timeout_seconds": 120,
+    "known_limits": [
+      "Discussion search cannot match mentions; mentioned Discussions are not discovered."
+    ],
+    "detail_bounds": {
+      "activity": 20,
+      "replies": 10,
+      "body_characters": 2000,
+      "activity_body_characters": 1000,
+      "people": 100
+    }
+  },
+  "sources": [
+    {"type": "pr", "status": "ok", "discovered": 0, "selected": 0, "queries": [], "warnings": []},
+    {"type": "issue", "status": "ok", "discovered": 0, "selected": 0, "queries": [], "warnings": []},
+    {"type": "discussion", "status": "unavailable", "discovered": 0, "selected": 0, "queries": [],
+     "warnings": ["Discussions are disabled for this repository."]}
+  ],
+  "items": [],
+  "warnings": [
+    "discussion: Discussions are disabled for this repository."
+  ]
+}

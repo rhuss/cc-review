@@ -13,4 +13,4 @@ Set CC_REVIEW_CORE_DIR to the resolved absolute directory in every shell block. 
 
 Supported arguments: --repo owner/name, repeatable --type pr,issue,discussion, --limit N, --since YYYY-MM-DD, --help. Do not inject --spec or other review/triage arguments.
 
-Report only; never launch review, triage, or response actions.
+The report is read-only by default and never acts on its own. After it, core inbox.md may offer an opt-in guided tour of the attention items and, only on the user's explicit choice inside a local checkout, hand off to the existing review, triage, issue, or bulk command.

@@ -74,3 +74,21 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: Bulk worktrees and run state live inside the user's working tree, and finished or abandoned runs are kept forever with no retention.
 
 > Tools that ignore nested .gitignore files (linters, test runners, IDE indexers) see full nested checkouts while a run keeps them; placing worktrees under the git common dir and offering a prune option for old runs would bound disk use and avoid that.
+
+### explicit-prs-canonical-equivalence-test
+
+- **Source**: deep-review
+- **Date**: 2026-11-06
+- **Reference**: 012-inbox-tour-orchestration
+- **Summary**: The explicit `--prs` selector test asserts only `.assessment.review.eligible == true`, not that the explicit path's assessment equals the canonical `pr_actions.py assess` output. SC-004/FR-018 ("no separate selection authority that could diverge") would be more strongly pinned by a canonical-equivalence assertion like `test_bulk_select_shared_roles_and_scope`.
+
+> A single-field truthiness check would still pass if the explicit path's assessment diverged in role/reason/exclusion from the canonical assessor.
+
+### uncertain-certainty-fixture-coverage
+
+- **Source**: deep-review
+- **Date**: 2026-11-06
+- **Reference**: 012-inbox-tour-orchestration
+- **Summary**: No inbox snapshot fixture item exercises the "Uncertain"/"Inferred" certainty branch (every assessment has `uncertain: false`), so `test_certainty_values_are_known` is a near-tautology. Add an attention item with `uncertain: true` to give the uncertain-responsibility report branch (FR-003) concrete coverage.
+
+> A report/collector change that mishandled uncertain items would have no fixture to surface it.
