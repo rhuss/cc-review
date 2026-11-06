@@ -16,7 +16,7 @@ layout: default
 <tr><td>Correctness</td><td>4</td><td>4</td><td>0</td><td class="ok">completed</td></tr>
 <tr><td>Production Readiness</td><td>3</td><td>2</td><td>1</td><td class="ok">completed</td></tr>
 <tr><td>CodeRabbit</td><td>3</td><td>2</td><td>1</td><td class="ok">completed</td></tr>
-<tr><td>Greptile</td><td>-</td><td>-</td><td>-</td><td class="warn">skipped (not authenticated)</td></tr>
+<tr><td>Greptile</td><td>-</td><td>-</td><td>-</td><td class="warn">skipped (not logged in)</td></tr>
 </tbody>
 </table>
 </div>
@@ -45,6 +45,7 @@ layout: default
   border: none;
   text-align: right;
   line-height: 1.25;
+  white-space: nowrap;
 }
 .term th { color: #9ca3af; font-weight: 600; border-bottom: 1px solid #4b5563; }
 .term th:first-child, .term td:first-child { text-align: left; }
