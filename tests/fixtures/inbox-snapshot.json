@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "repository": "acme/widget",
+  "repository_url": "https://github.com/acme/widget",
+  "host": "github.com",
+  "user": "me",
+  "collected_at": "2026-11-06T09:00:00+00:00",
+  "scope": {
+    "types": ["pr", "issue", "discussion"],
+    "limit_per_type": 10,
+    "since": null,
+    "discussion_since": "2026-08-08",
+    "pr_issue_state": "open",
+    "discovery_limit_per_reason": 100,
+    "pr_actions": {
+      "review_mode": "default",
+      "include_review_drafts": false,
+      "include_triage_drafts": true,
+      "bulk_default_limit": 10,
+      "selection": "eligibility within collected candidates; bulk orders oldest updates first"
+    },
+    "detail_collection_timeout_seconds": 120,
+    "known_limits": [
+      "Discussion search cannot match mentions; mentioned Discussions are not discovered."
+    ],
+    "detail_bounds": {
+      "activity": 20,
+      "replies": 10,
+      "body_characters": 2000,
+      "activity_body_characters": 1000,
+      "people": 100
+    }
+  },
+  "sources": [
+    {"type": "pr", "status": "ok", "discovered": 3, "selected": 3,
+     "queries": [
+       {"reason": "review_requested", "total": 1, "incomplete": false},
+       {"reason": "authored", "total": 1, "incomplete": false},
+       {"reason": "reviewed", "total": 1, "incomplete": false}
+     ],
+     "warnings": []},
+    {"type": "issue", "status": "ok", "discovered": 2, "selected": 2,
+     "queries": [
+       {"reason": "mentioned", "total": 1, "incomplete": false},
+       {"reason": "assigned", "total": 1, "incomplete": false}
+     ],
+     "warnings": []},
+    {"type": "discussion", "status": "ok", "discovered": 1, "selected": 1,
+     "queries": [
+       {"reason": "commented", "total": 1, "incomplete": false}
+     ],
+     "warnings": []}
+  ],
+  "items": [
+    {
+      "id": "PR_kwDOA1",
+      "type": "pr",
+      "number": 109,
+      "title": "Add retry budget to the client",
+      "url": "https://github.com/acme/widget/pull/109",
+      "author": "tals",
+      "state": "OPEN",
+      "is_draft": false,
+      "updated_at": "2026-11-05T18:30:00+00:00",
+      "reasons": ["review_requested"],
+      "context_complete": true,
+      "warnings": [],
+      "detail": {
+        "body": "Adds a bounded retry budget so a flapping dependency cannot amplify load.",
+        "headRefOid": "aaa1090000000000000000000000000000000109",
+        "comments": {
+          "nodes": [
+            {"author": "tals", "url": "https://github.com/acme/widget/pull/109#issuecomment-1", "body": "@me could you take a look at the budget math?", "updatedAt": "2026-11-05T18:30:00+00:00"}
+          ]
+        }
+      },
+      "assessment": {
+        "host": "github.com", "repository": "acme/widget", "number": 109, "user": "me",
+        "review": {"eligible": true, "role": "reviewer", "reason": "Outstanding personal or team review request", "evidence": [{"kind": "review-request", "reasons": ["review_requested"]}], "uncertain": false, "complete": true, "exclusion": null},
+        "triage": {"eligible": false, "role": "reviewer", "reason": "No fresh owned unresolved cc-review activity", "evidence": [], "uncertain": false, "complete": true, "exclusion": "no-reviewer-activity"}
+      }
+    },
+    {
+      "id": "PR_kwDOA2",
+      "type": "pr",
+      "number": 44,
+      "title": "Normalize config precedence",
+      "url": "https://github.com/acme/widget/pull/44",
+      "author": "me",
+      "state": "OPEN",
+      "is_draft": false,
+      "updated_at": "2026-11-04T12:00:00+00:00",
+      "reasons": ["authored"],
+      "context_complete": true,
+      "warnings": [],
+      "detail": {
+        "body": "Make CLI flags win over env, env over file.",
+        "headRefOid": "bbb0440000000000000000000000000000000044",
+        "reviewThreads": {
+          "nodes": [
+            {"isResolved": false, "path": "config.py", "line": 20, "url": "https://github.com/acme/widget/pull/44#discussion_r9", "comments": {"nodes": [{"author": "rev", "body": "This still reads the file first.", "updatedAt": "2026-11-04T12:00:00+00:00"}]}}
+          ]
+        }
+      },
+      "assessment": {
+        "host": "github.com", "repository": "acme/widget", "number": 44, "user": "me",
+        "review": {"eligible": false, "role": "reviewer", "reason": "No outstanding request or earlier personal cc-review marker", "evidence": [], "uncertain": false, "complete": true, "exclusion": "not-requested"},
+        "triage": {"eligible": true, "role": "author", "reason": "Unresolved feedback on your PR", "evidence": [{"kind": "author-feedback", "count": 1}], "uncertain": false, "complete": true, "exclusion": null}
+      }
+    },
+    {
+      "id": "I_kwDOA3",
+      "type": "issue",
+      "number": 70,
+      "title": "Timeouts after the 1.4 upgrade",
+      "url": "https://github.com/acme/widget/issues/70",
+      "author": "dana",
+      "state": "OPEN",
+      "is_draft": false,
+      "updated_at": "2026-11-05T08:15:00+00:00",
+      "reasons": ["mentioned"],
+      "context_complete": true,
+      "warnings": [],
+      "detail": {
+        "body": "Since 1.4 the client times out under load.",
+        "comments": {
+          "nodes": [
+            {"author": "dana", "url": "https://github.com/acme/widget/issues/70#issuecomment-5", "body": "@me is this the retry change?", "updatedAt": "2026-11-05T08:15:00+00:00"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "D_kwDOA4",
+      "type": "discussion",
+      "number": 12,
+      "title": "Should budgets be per-host or global?",
+      "url": "https://github.com/acme/widget/discussions/12",
+      "author": "lee",
+      "state": "OPEN",
+      "is_draft": false,
+      "updated_at": "2026-11-02T10:00:00+00:00",
+      "reasons": ["commented"],
+      "context_complete": true,
+      "warnings": [],
+      "detail": {
+        "body": "Trying to decide the budget scope.",
+        "isAnswered": false,
+        "comments": {
+          "nodes": [
+            {"author": "lee", "url": "https://github.com/acme/widget/discussions/12#discussioncomment-3", "body": "Follow-up: does the per-host option exist yet?", "updatedAt": "2026-11-02T10:00:00+00:00"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "PR_kwDOA5",
+      "type": "pr",
+      "number": 50,
+      "title": "Document the budget flags",
+      "url": "https://github.com/acme/widget/pull/50",
+      "author": "me",
+      "state": "OPEN",
+      "is_draft": false,
+      "updated_at": "2026-10-30T09:00:00+00:00",
+      "reasons": ["authored"],
+      "context_complete": true,
+      "warnings": [],
+      "detail": {
+        "body": "Docs for the new flags.",
+        "headRefOid": "ccc0500000000000000000000000000000000050",
+        "reviewThreads": {"nodes": []},
+        "comments": {
+          "nodes": [
+            {"author": "me", "url": "https://github.com/acme/widget/pull/50#issuecomment-8", "body": "@kat could you review when you have a moment?", "updatedAt": "2026-10-30T09:00:00+00:00"}
+          ]
+        }
+      },
+      "assessment": {
+        "host": "github.com", "repository": "acme/widget", "number": 50, "user": "me",
+        "review": {"eligible": false, "role": "reviewer", "reason": "No outstanding request or earlier personal cc-review marker", "evidence": [], "uncertain": false, "complete": true, "exclusion": "not-requested"},
+        "triage": {"eligible": false, "role": "author", "reason": "No unresolved feedback on your PR", "evidence": [], "uncertain": false, "complete": true, "exclusion": "no-open-threads"}
+      }
+    },
+    {
+      "id": "I_kwDOA6",
+      "type": "issue",
+      "number": 88,
+      "title": "Typo in the README badge",
+      "url": "https://github.com/acme/widget/issues/88",
+      "author": "me",
+      "state": "OPEN",
+      "is_draft": false,
+      "updated_at": "2026-10-25T15:00:00+00:00",
+      "reasons": ["assigned"],
+      "context_complete": true,
+      "warnings": [],
+      "detail": {
+        "body": "Badge points at the old CI.",
+        "comments": {"nodes": []}
+      }
+    }
+  ],
+  "warnings": []
+}

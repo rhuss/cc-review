@@ -19,10 +19,12 @@ Triage all review comments on a PR: autonomously handle bot comments (assess, ap
 Check the arguments before anything else. Each check below stops with its error and changes nothing:
 
 - `--bulk` (or `--resume`) together with `--pr`: `Error: --bulk and --pr cannot be combined; --pr names a single PR`
+- `--prs` together with `--pr`: `Error: --prs and --pr cannot be combined`
+- `--prs` together with `--all-open` or `--search`: `Error: --prs cannot be combined with --all-open or --search`
 - `--bulk` (or `--resume`) together with `--spec`: `Error: --spec is not supported with --bulk`
-- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --search requires --bulk`)
+- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--prs`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --search requires --bulk`)
 
-When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk triage of the user's own PRs and PRs with fresh reviewer-owned feedback: set `BULK_COMMAND=triage`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file. `bulk.md` runs this file once per PR in a triage worker (see Prepare Mode).
+When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk triage of the user's own PRs and PRs with fresh reviewer-owned feedback: set `BULK_COMMAND=triage`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file. `bulk.md` runs this file once per PR in a triage worker (see Prepare Mode). `--prs <n,...>` is the explicit-list selector: it names exactly the PRs to triage (for example when `inbox` hands off a tour selection) and is forwarded to `bulk.md` unchanged, which resolves and filters that list through its own eligibility rules.
 
 Without `--bulk` and `--resume`, continue below; nothing in single-PR mode changes.
 

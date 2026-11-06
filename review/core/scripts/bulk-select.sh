@@ -200,24 +200,103 @@ classify() {
   cat "$result"
 }
 
+# parse_prs <csv>: echoes the PR numbers space-separated, de-duplicated with
+# input order preserved; exits 2 on a non-positive-integer value or an empty
+# list. Used by the explicit (--prs) selector of review and triage.
+parse_prs() {
+  local raw="$1" out="" n parts
+  local IFS=','
+  read -r -a parts <<< "$raw" || true
+  IFS=' '
+  for n in ${parts[@]+"${parts[@]}"}; do
+    [ -n "$n" ] || { echo "Error: --prs takes a comma-separated list of positive integers, got '$raw'" >&2; exit 2; }
+    case "$n" in
+      *[!0-9]*) echo "Error: --prs takes positive integers, got '$n'" >&2; exit 2 ;;
+    esac
+    [ "$n" -gt 0 ] 2>/dev/null || { echo "Error: --prs takes positive integers, got '$n'" >&2; exit 2; }
+    case " $out " in *" $n "*) continue ;; esac
+    out="${out:+$out }$n"
+  done
+  [ -n "$out" ] || { echo "Error: --prs requires at least one PR number" >&2; exit 2; }
+  printf '%s' "$out"
+}
+
+# explicit_candidates_review <numbers> <out>: one review candidate record per
+# requested PR, fetched directly by number so the shared assessor decides
+# eligibility on exactly the explicit list (FR-017, FR-018).
+explicit_candidates_review() {
+  local numbers="$1" out="$2" n view err acc tmp
+  acc=$(tmpfile); printf '[]\n' > "$acc"
+  for n in $numbers; do
+    view=$(tmpfile); err=$(tmpfile)
+    # state is fetched too so a PR closed since the user picked it is surfaced
+    # as an excluded entry rather than assessed as open. A PR that cannot be
+    # fetched at all (deleted, transferred, access lost) is surfaced as an
+    # incomplete excluded entry too, rather than aborting the whole explicit
+    # list and discarding the valid PRs (FR-018). try still propagates a rate
+    # limit as exit 75, so this mirrors explicit_candidates_triage below.
+    if try "$err" gh pr view "$n" --json "$PR_FIELDS,state" > "$view"; then
+      tmp=$(tmpfile)
+      jq -s '.[0] + [.[1] + {reasons: []}]' "$acc" "$view" > "$tmp"
+      cp "$tmp" "$acc"
+    else
+      selection_warning "PR #$n detail unavailable; assessment incomplete: $(tail -n 1 "$err")"
+      tmp=$(tmpfile)
+      jq --argjson n "$n" '. + [{number:$n,reasons:[],state:"UNKNOWN"}]' "$acc" > "$tmp"
+      cp "$tmp" "$acc"
+    fi
+  done
+  refetch_truncated_reviews "$acc"
+  cp "$acc" "$out"
+}
+
+# explicit_candidates_triage <numbers> <out>: one triage candidate record per
+# requested PR, fetched with the reviewer-context query so both author and
+# reviewer triage can be assessed from the same evidence.
+explicit_candidates_triage() {
+  local numbers="$1" out="$2" n detail record acc tmp err
+  acc=$(tmpfile); printf '[]\n' > "$acc"
+  for n in $numbers; do
+    detail=$(tmpfile); err=$(tmpfile); record=$(tmpfile)
+    if try "$err" gh api graphql -f query="$REVIEWER_QUERY" -f owner="${BULK_REPOSITORY%/*}" \
+        -f repo="${BULK_REPOSITORY#*/}" -F number="$n" > "$detail" \
+        && jq -e --argjson n "$n" '.data.repository.pullRequest | type=="object" and .number==$n' "$detail" >/dev/null; then
+      jq '[.data.repository.pullRequest + {reasons:["explicit"]}]' "$detail" > "$record"
+    else
+      selection_warning "PR #$n reviewer detail unavailable; assessment incomplete"
+      jq -n --argjson n "$n" '[{number:$n,reviewThreads:null,reasons:["explicit"]}]' > "$record"
+    fi
+    tmp=$(tmpfile); jq -s '.[0] + .[1]' "$acc" "$record" > "$tmp"; cp "$tmp" "$acc"
+  done
+  jq 'unique_by(.number)' "$acc" > "$out"
+}
+
 do_review() {
-  local mode=default query="" limit=10 user=""
+  local mode=default query="" limit=10 user="" prs="" PR_NUMBERS=""
+  local usage="Usage: bulk-select.sh review [--all-open | --search <q> | --prs <n,...>] [--limit <n>] --user <login>"
   local FORCE_FULL=false
   while [ $# -gt 0 ]; do
     case "$1" in
       --full) FORCE_FULL=true; shift ;;
       --all-open) mode=all-open; shift ;;
-      --search) [ $# -ge 2 ] || { echo "Usage: bulk-select.sh review [--all-open | --search <q>] [--limit <n>] --user <login>" >&2; exit 2; }
+      --search) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
         mode=search; query="$2"; shift 2 ;;
-      --limit) [ $# -ge 2 ] || { echo "Usage: bulk-select.sh review [--all-open | --search <q>] [--limit <n>] --user <login>" >&2; exit 2; }
+      --prs) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
+        prs="$2"; shift 2 ;;
+      --limit) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
         limit="$2"; shift 2 ;;
-      --user) [ $# -ge 2 ] || { echo "Usage: bulk-select.sh review [--all-open | --search <q>] [--limit <n>] --user <login>" >&2; exit 2; }
+      --user) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
         user="$2"; shift 2 ;;
-      *) echo "Usage: bulk-select.sh review [--all-open | --search <q>] [--limit <n>] --user <login>" >&2; exit 2 ;;
+      *) echo "$usage" >&2; exit 2 ;;
     esac
   done
   [ -n "$user" ] || { echo "Error: --user is required" >&2; exit 2; }
   [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -gt 0 ] || { echo "Error: --limit must be a positive integer, got '$limit'" >&2; exit 2; }
+  if [ -n "$prs" ]; then
+    [ "$mode" = default ] || { echo "Error: --prs cannot be combined with --all-open or --search" >&2; exit 2; }
+    mode=explicit
+    PR_NUMBERS=$(parse_prs "$prs") || exit $?
+  fi
   [ "$mode" != search ] || check_query "$query"
   selection_context
 
@@ -237,6 +316,12 @@ do_review() {
       warn_cap "$candidates"
       refetch_truncated_reviews "$candidates"
       classify "$candidates" "$user" "$limit" "$(drafts_wanted "$query")" review search
+      return ;;
+    explicit)
+      # The explicit list is in review scope like a search set; bulk's own
+      # eligibility (draft, reviewed-at-head, closed) still filters it.
+      explicit_candidates_review "$PR_NUMBERS" "$candidates"
+      classify "$candidates" "$user" "$limit" false review search
       return ;;
   esac
   # review-requested:@me includes requests to the user's teams
@@ -299,12 +384,14 @@ REVIEWER_QUERY='query BulkActionContext($owner: String!, $repo: String!, $number
 }'
 
 do_triage() {
-  local usage="Usage: bulk-select.sh triage [--search <q>] [--limit <n>] --user <login>"
-  local query="" limit=10 user=""
+  local usage="Usage: bulk-select.sh triage [--search <q> | --prs <n,...>] [--limit <n>] --user <login>"
+  local query="" limit=10 user="" prs="" PR_NUMBERS=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --search) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
         query="$2"; shift 2 ;;
+      --prs) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
+        prs="$2"; shift 2 ;;
       --limit) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
         limit="$2"; shift 2 ;;
       --user) [ $# -ge 2 ] || { echo "$usage" >&2; exit 2; }
@@ -314,8 +401,21 @@ do_triage() {
   done
   [ -n "$user" ] || { echo "Error: --user is required" >&2; exit 2; }
   [[ "$limit" =~ ^[0-9]+$ ]] && [ "$limit" -gt 0 ] || { echo "Error: --limit must be a positive integer, got '$limit'" >&2; exit 2; }
+  if [ -n "$prs" ]; then
+    [ -z "$query" ] || { echo "Error: --prs cannot be combined with --all-open or --search" >&2; exit 2; }
+    PR_NUMBERS=$(parse_prs "$prs") || exit $?
+  fi
   [ -z "$query" ] || check_query "$query"
   selection_context
+
+  if [ -n "$prs" ]; then
+    # Explicit list: resolve exactly these PRs for triage (FR-017, FR-018).
+    local ex_candidates
+    ex_candidates=$(tmpfile)
+    explicit_candidates_triage "$PR_NUMBERS" "$ex_candidates"
+    classify "$ex_candidates" "$user" "$limit" false triage
+    return
+  fi
 
   local repo result candidates threadless rest out reviewed detail err n record
   repo=$(tmpfile); result=$(tmpfile); candidates=$(tmpfile); rest=$(tmpfile); out=$(tmpfile)

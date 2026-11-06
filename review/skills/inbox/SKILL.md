@@ -1,6 +1,6 @@
 ---
 name: inbox
-description: Personal repository action overview across PRs, issues, and Discussions
+description: Read-only repository action overview across PRs, issues, and Discussions, with an opt-in guided tour
 argument-hint: "[--repo owner/name] [--type pr,issue,discussion] [--limit N] [--since YYYY-MM-DD]"
 ---
 
@@ -16,4 +16,4 @@ Use the first directory containing commands/inbox.md and scripts/inbox.py. If no
 
 Set CC_REVIEW_CORE_DIR to that absolute directory in every shell block. Read and execute commands/inbox.md, preserving the invoking working directory and forwarding all user arguments unchanged. Supported arguments: --repo, repeatable --type, --limit, --since, --help.
 
-The command is read-only and only suggests follow-up actions.
+The report is read-only by default. After it, inbox may offer an opt-in guided tour of the attention items and, only on the user's explicit choice inside a local checkout, hand off to the existing review, triage, issue, or bulk command. The report and tour never act on their own.

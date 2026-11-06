@@ -85,6 +85,7 @@ Parse the user's arguments. Every value flag consumes the next argument as its v
 | `--bulk` | `BULK_FLAG=true` | |
 | `--all-open` | `ALL_OPEN_FLAG=true` | |
 | `--search <query>` | `SEARCH_GIVEN=true`, `SEARCH_QUERY=<query>` | |
+| `--prs <n,...>` | `PRS_FLAG=<list>` | explicit PR list from a hand-off (for example `inbox`); selector kind `explicit`; mutually exclusive with `--pr`, `--all-open`, `--search` |
 | `--limit <n>` | `LIMIT_FLAG=<n>` | default 10 |
 | `--unattended` | `UNATTENDED_FLAG=true` | |
 | `--resume [<run-id>]` | `RESUME_FLAG=true`, `RESUME_ID` | the next argument is the run id only if it matches `^[0-9]{8}-[0-9]{6}-(review\|triage)(-[0-9]+)?$`; otherwise `RESUME_ID` stays empty and the argument is parsed normally |
@@ -109,6 +110,8 @@ All of these stop before any PR is touched. The last column names where each che
 |---|---|---|
 | bulk flags (`--all-open`, `--search`, `--limit`, `--unattended`) without `--bulk`/`--resume` | `Error: --<flag> requires --bulk` | the Bulk Mode hand-off of `review.md` and `triage.md` (this file only runs with `--bulk` or `--resume`) |
 | `--bulk` with `--pr` | `Error: --bulk and --pr cannot be combined; --pr names a single PR` | the hand-off, and the block below |
+| `--prs` with `--pr` | `Error: --prs and --pr cannot be combined` | the hand-off, and the block below |
+| `--prs` with `--all-open` or `--search` | `Error: --prs cannot be combined with --all-open or --search` | the hand-off, and the block below |
 | `--all-open` with `--search` | `Error: --all-open and --search are mutually exclusive` | below |
 | `--all-open` on triage | `Error: --all-open is not supported by triage; bulk triage uses eligible author and reviewer PRs` | below |
 | `--limit` not a positive integer | `Error: --limit must be a positive integer, got '<v>'` | below |
@@ -124,6 +127,15 @@ For a new run (no `--resume`, or `--resume --unattended` with no unfinished run)
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID=""
 S="$CC_REVIEW_CORE_DIR/scripts"; cd "$PROJECT_DIR" || exit 1
 bulk_fail() { echo "Error: $1" >&2; exit 1; }
+if [ -n "${PRS_FLAG:-}" ]; then
+  if [ -n "${PR_FLAG:-}" ]; then bulk_fail "--prs and --pr cannot be combined"; fi
+  if [ "${ALL_OPEN_FLAG:-}" = true ] || [ "${SEARCH_GIVEN:-}" = true ]; then
+    bulk_fail "--prs cannot be combined with --all-open or --search"
+  fi
+  case "$PRS_FLAG" in
+    ''|*[!0-9,]*|,*|*,|*,,*) bulk_fail "--prs takes a comma-separated list of positive integers, got '$PRS_FLAG'" ;;
+  esac
+fi
 if [ -n "${PR_FLAG:-}" ]; then
   bulk_fail "--bulk and --pr cannot be combined; --pr names a single PR"
 fi
@@ -204,6 +216,7 @@ SELECT_ARGS=(--user "$GH_USER" --limit "${LIMIT_FLAG:-10}")
 [ "${FULL_REVIEW:-false}" = true ] && SELECT_ARGS+=(--full)
 if [ "${ALL_OPEN_FLAG:-}" = true ]; then SELECT_ARGS+=(--all-open); fi
 if [ "${SEARCH_GIVEN:-}" = true ]; then SELECT_ARGS+=(--search "$SEARCH_QUERY"); fi
+if [ -n "${PRS_FLAG:-}" ]; then SELECT_ARGS+=(--prs "$PRS_FLAG"); fi
 # The selection is kept inside the ignored state root until the run exists (FR-033)
 mkdir -p "$PROJECT_DIR/.cc-review/bulk"
 [ -f "$PROJECT_DIR/.cc-review/bulk/.gitignore" ] || printf '*\n' > "$PROJECT_DIR/.cc-review/bulk/.gitignore"
@@ -222,7 +235,7 @@ jq -r '"SELECTED=\(.selected | length)", "EXCLUDED=\(.excluded | length)",
 
 The shared assessor selects review and triage independently. Review retains requested/earlier cc-review marker discovery, broad/search modes and reviewed-at-head ownership policy; a changed head alone is an uncertain possible follow-up unless reliable unchanged-contribution evidence rules it out. Triage selects unresolved feedback on the user's own PRs as `author` and fresh owned cc-review thread/code activity on other authors' PRs as `reviewer`, narrowed by the same `--search`. Triage includes drafts; ordinary review excludes drafts unless the search explicitly opts in. Preserve role, reason, evidence, uncertainty and coverage from selection through state and the decision table.
 
-Always translate the selection's warnings for the user, identifying affected PRs and collection bounds. If `SELECTED` is 0 with coverage warnings or incomplete assessments, say that no executable action was established in the inspected scope and explain the missing evidence; never describe that as a verified empty queue. Otherwise print `No PRs matched` with the selector used (`default`, `all-open`, or the search query) and exclusion counts by reason. Remove `$SELECTION_FILE` and stop without creating a run directory.
+Always translate the selection's warnings for the user, identifying affected PRs and collection bounds. If `SELECTED` is 0 with coverage warnings or incomplete assessments, say that no executable action was established in the inspected scope and explain the missing evidence; never describe that as a verified empty queue. Otherwise print `No PRs matched` with the selector used (`default`, `all-open`, the search query, or the explicit `--prs` list) and exclusion counts by reason. Remove `$SELECTION_FILE` and stop without creating a run directory.
 
 Otherwise create the run:
 
@@ -233,8 +246,11 @@ SELECTION_FILE="$PROJECT_DIR/.cc-review/bulk/.selection-$BULK_COMMAND.json"
 KIND=default
 if [ "${ALL_OPEN_FLAG:-}" = true ]; then KIND=all-open; fi
 if [ "${SEARCH_GIVEN:-}" = true ]; then KIND=search; fi
-SELECTOR=$(jq -nc --arg k "$KIND" --arg q "${SEARCH_QUERY:-}" --argjson l "${LIMIT_FLAG:-10}" \
-  '{kind: $k, query: (if $q == "" then null else $q end), limit: $l}')
+if [ -n "${PRS_FLAG:-}" ]; then KIND=explicit; fi
+SELECTOR=$(jq -nc --arg k "$KIND" --arg q "${SEARCH_QUERY:-}" --arg prs "${PRS_FLAG:-}" --argjson l "${LIMIT_FLAG:-10}" \
+  '{kind: $k, query: (if $q == "" then null else $q end),
+    prs: (if $prs == "" then null else ($prs | split(",") | map(select(length > 0) | tonumber)) end),
+    limit: $l}')
 OPTIONS=$(printf '%s\n' ${RECORDED_OPTIONS[@]+"${RECORDED_OPTIONS[@]}"} | jq -Rnc '[inputs | select(length > 0)]')
 RUN_ID=$("$S/bulk-state.sh" init "$BULK_COMMAND" "$BULK_MODE" "$SELECTOR" "$OPTIONS" "$OWNER" "$REPO" "$GH_USER") || exit 1
 "$S/bulk-state.sh" set-prs "$RUN_ID" "$(jq -c .selected "$SELECTION_FILE")" "$(jq -c .excluded "$SELECTION_FILE")" >/dev/null || exit 1
