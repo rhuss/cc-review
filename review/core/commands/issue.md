@@ -28,33 +28,22 @@ Require Python 3.9+, jq, and authenticated gh. Name missing requirements and sto
 
 Construct ASSESS_ARGS as a shell array from actual user arguments. Safely quote every value; never eval or splice an argument string into shell code. Run help directly with `python3 -B "$CC_REVIEW_CORE_DIR/scripts/assess_issue.py" --help` and stop.
 
-For assessment, set the resolved absolute core path and safely constructed ASSESS_ARGS in this shell block:
+For assessment, run the collector:
 
 ~~~bash
-ASSESS_TMP_BASE=${TMPDIR:-/tmp}
-ASSESS_CHECKOUT=$(git rev-parse --show-toplevel 2>/dev/null || true)
-if [ -n "$ASSESS_CHECKOUT" ]; then
-  ASSESS_CHECKOUT=$(cd "$ASSESS_CHECKOUT" && pwd -P) || exit 1
-fi
-ASSESS_TMP_BASE=$(cd "$ASSESS_TMP_BASE" && pwd -P) || exit 1
-if [ -n "$ASSESS_CHECKOUT" ]; then
-  case "$ASSESS_TMP_BASE/" in
-    "$ASSESS_CHECKOUT/"|"$ASSESS_CHECKOUT/"*)
-      echo "issue: TMPDIR must be outside the invoking checkout." >&2
-      exit 1
-      ;;
-  esac
-fi
-ASSESS_TMP=$(mktemp -d "$ASSESS_TMP_BASE/cc-review-assess.XXXXXX") || exit 1
-if ! python3 -B "$CC_REVIEW_CORE_DIR/scripts/assess_issue.py" "${ASSESS_ARGS[@]}" > "$ASSESS_TMP/snapshot.json"; then
-  rm -f "$ASSESS_TMP/snapshot.json"
-  rmdir "$ASSESS_TMP"
-  exit 1
-fi
-printf '%s\n' "$ASSESS_TMP"
+# Substitute the absolute core path and append each argument single-quoted.
+python3 -B '<core>/scripts/assess_issue.py' '42'
 ~~~
 
-Retain only the generated temp path for later calls and re-establish it explicitly in fresh shells. On collection failure, show the actionable error and stop. A failed collection is never a successful empty assessment.
+Run it as this one simple command: the literal absolute script path, then each user argument as its own single-quoted word. Do not prefix a variable assignment, build an array, or join it with other commands (`;`, `&&`). Harnesses that remember approvals by command prefix (for example Codex "don't ask again") can then match every later run.
+
+The collector creates a private temporary directory outside the invoking checkout (under `$TMPDIR`, else `/tmp`) and writes `snapshot.json` there. Its standard output is a single JSON summary line: `snapshot_dir`, `snapshot`, repository, issue number, collected and total comment counts, `conversation_complete`, and warning count. The snapshot never goes to standard output, so truncated command output cannot lose it.
+
+**Network access.** The collector calls the GitHub API through `gh`. When the harness runs shell commands in a sandbox without network access (for example the Codex default sandbox), request network or escalated permission for this command on the first attempt. If a retry is needed, rerun this exact command unchanged: do not redirect, pipe, or reshape its output, and do not call the collector any other way.
+
+**Lost output.** If the command finished successfully but its summary line did not reach you (some harnesses drop the output of long-running commands), do not collect again. Recover the newest snapshot directory with `ls -dt "${TMPDIR:-/tmp}"/cc-review-assess.*` and use the first entry that contains `snapshot.json`.
+
+Set ASSESS_TMP to the summary's `snapshot_dir`, retain only that path for later calls, and re-establish it explicitly in fresh shells. On collection failure, the collector leaves no directory behind; show the actionable error and stop. A failed collection is never a successful empty assessment.
 
 ## 2. Inspect Evidence and Coverage
 

@@ -1,14 +1,21 @@
 #!/usr/bin/env python3
-"""Collect one bounded, read-only GitHub issue snapshot for maintainer assessment."""
+"""Collect one bounded, read-only GitHub issue snapshot for maintainer assessment.
+
+The snapshot is written to snapshot.json in a new private directory under
+$TMPDIR (else /tmp), outside the invoking checkout. Standard output carries
+only a one-line JSON summary naming that file. Needs network access to GitHub.
+"""
 
 import argparse
 from datetime import datetime, timezone
-import json
 import re
 import subprocess
 import sys
 
-from inbox import GitHub, InboxError, REPO_PATTERN, clean_text
+from inbox import GitHub, InboxError, REPO_PATTERN, clean_text, run_collector
+
+
+SNAPSHOT_PREFIX = "cc-review-assess."
 
 
 MAX_COMMENTS = 50
@@ -180,15 +187,16 @@ def collect(args):
             "warnings": warnings}
 
 
+def summarize(snapshot):
+    return {"repository": snapshot["repository"], "issue": snapshot["issue"]["number"],
+            "comments": len(snapshot["comments"]), "comment_total": snapshot["comment_total"],
+            "conversation_complete": snapshot["conversation_complete"],
+            "warnings": len(snapshot["warnings"])}
+
+
 def main(argv=None):
     args = parse_args(sys.argv[1:] if argv is None else argv)
-    try:
-        snapshot = collect(args)
-    except InboxError as exc:
-        print("issue: " + str(exc), file=sys.stderr)
-        return 1
-    print(json.dumps(snapshot, ensure_ascii=True))
-    return 0
+    return run_collector("issue", SNAPSHOT_PREFIX, lambda: collect(args), summarize)
 
 
 if __name__ == "__main__":

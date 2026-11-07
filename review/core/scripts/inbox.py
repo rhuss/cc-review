@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Collect a read-only, bounded repository inbox snapshot using authenticated gh.
 
+The snapshot is written to snapshot.json in a new private directory under
+$TMPDIR (else /tmp), outside the invoking checkout. Standard output carries
+only a one-line JSON summary naming that file, never the snapshot itself.
+Needs network access to the GitHub API.
+
 Contextual assessment uses commands/inbox.md; PR action eligibility is shared.
 Requires Python 3.9+ and gh; reviewer state is read without creating any paths.
 """
@@ -8,9 +13,13 @@ Requires Python 3.9+ and gh; reviewer state is read without creating any paths.
 import argparse
 from datetime import date, datetime, timedelta, timezone
 import json
+import os
 import re
+import shutil
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 from urllib.parse import urlsplit
@@ -36,6 +45,13 @@ KNOWN_LIMITS = {
                   "GitHub Discussion search does not support mentions.",
 }
 TYPENAMES = {"pr": "PullRequest", "issue": "Issue", "discussion": "Discussion"}
+SNAPSHOT_PREFIX = "cc-review-inbox."
+SNAPSHOT_FILE = "snapshot.json"
+STALE_SNAPSHOT_SECONDS = 12 * 3600
+NETWORK_FAILURE = re.compile(r"error connecting to|could not resolve host|no such host|dial tcp"
+                             r"|connection refused|network is unreachable", re.I)
+NETWORK_HINT = (" GitHub was unreachable. If this runs in a sandbox without network access,"
+                " rerun the same command unchanged with network permission.")
 
 
 class InboxError(Exception):
@@ -46,6 +62,100 @@ def clean_text(value):
     """Keep readable text and line breaks while removing terminal/display controls."""
     value = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", value)
     return "".join(c for c in value if c in "\n\t" or unicodedata.category(c) not in ("Cc", "Cf"))
+
+
+def gh_failure(stderr, fallback):
+    """Shortened gh error text, with a sandbox hint when the network was unreachable."""
+    message = clean_text(stderr or "").strip()[:400] or fallback
+    if NETWORK_FAILURE.search(message):
+        message += NETWORK_HINT
+    return message
+
+
+def checkout_root():
+    try:
+        result = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
+                                text=True, timeout=5, check=False)
+    except (OSError, UnicodeError, subprocess.TimeoutExpired):
+        return None
+    root = result.stdout.strip()
+    return os.path.realpath(root) if not result.returncode and root else None
+
+
+def sweep_stale_snapshots(base, prefix):
+    """Reclaim snapshot dirs orphaned by earlier runs that ended before their clean-up.
+
+    A tour can span several turns, so clean-up is not always reached (an error
+    mid-report, an abandoned tour, a fresh shell that lost the path).
+    """
+    cutoff = time.time() - STALE_SNAPSHOT_SECONDS
+    try:
+        names = os.listdir(base)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith(prefix):
+            continue
+        path = os.path.join(base, name)
+        try:
+            info = os.lstat(path)
+            if stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid() and info.st_mtime < cutoff:
+                shutil.rmtree(path)
+        except OSError:
+            continue
+
+
+def snapshot_directory(prefix):
+    """Create a private (0700) directory under $TMPDIR or /tmp, outside the invoking checkout."""
+    base = os.path.realpath(os.environ.get("TMPDIR") or "/tmp")
+    if not os.path.isdir(base):
+        raise InboxError("Cannot resolve the temporary directory.")
+    root = checkout_root()
+    if root and (base == root or base.startswith(root.rstrip(os.sep) + os.sep)):
+        raise InboxError("TMPDIR must be outside the invoking checkout.")
+    sweep_stale_snapshots(base, prefix)
+    try:
+        return tempfile.mkdtemp(prefix=prefix, dir=base)
+    except OSError as exc:
+        raise InboxError("Cannot create a private snapshot directory: " + clean_text(str(exc))) from exc
+
+
+def save_snapshot(directory, snapshot):
+    path = os.path.join(directory, SNAPSHOT_FILE)
+    try:
+        handle = os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w", encoding="utf-8")
+        with handle:
+            json.dump(snapshot, handle, ensure_ascii=True, indent=2)
+            handle.write("\n")
+    except OSError as exc:
+        raise InboxError("Cannot write the snapshot: " + clean_text(str(exc))) from exc
+    return path
+
+
+def run_collector(label, prefix, collect_snapshot, summarize):
+    """Write the snapshot to a private file and print only a compact summary line.
+
+    Keeping the snapshot off standard output means a harness that truncates
+    command output can never cut it short; the agent reads the file instead.
+    """
+    try:
+        directory = snapshot_directory(prefix)
+    except InboxError as exc:
+        print(label + ": " + str(exc), file=sys.stderr)
+        return 1
+    try:
+        snapshot = collect_snapshot()
+        path = save_snapshot(directory, snapshot)
+    except BaseException as exc:
+        shutil.rmtree(directory, ignore_errors=True)
+        if not isinstance(exc, InboxError):
+            raise
+        print(label + ": " + str(exc), file=sys.stderr)
+        return 1
+    summary = {"snapshot_dir": directory, "snapshot": path}
+    summary.update(summarize(snapshot))
+    print(json.dumps(summary, ensure_ascii=True))
+    return 0
 
 
 def parse_args(argv):
@@ -108,8 +218,8 @@ class GitHub:
         try:
             value = json.loads(result.stdout, strict=False)
         except (ValueError, TypeError) as exc:
-            message = clean_text(result.stderr).strip()[:400]
-            raise InboxError(message or "gh returned invalid JSON; check authentication and try again.") from exc
+            raise InboxError(gh_failure(result.stderr, "gh returned invalid JSON; check authentication"
+                                                       " and try again.")) from exc
         if not isinstance(value, dict):
             raise InboxError("gh returned an unexpected response; expected an object.")
         errors = value.get("errors") or []
@@ -119,7 +229,7 @@ class GitHub:
         usable_data = isinstance(value.get("data"), dict) and any(
             v is not None for v in value["data"].values())
         if result.returncode and not (value.get("errors") and usable_data):
-            raise InboxError(clean_text(result.stderr).strip()[:400] or "GitHub request failed.")
+            raise InboxError(gh_failure(result.stderr, "GitHub request failed."))
         if value.get("errors") and not usable_data:
             errors = "; ".join(clean_text(str(e.get("message", "GraphQL error"))) for e in value["errors"])
             raise InboxError(errors[:400])
@@ -418,16 +528,16 @@ def collect(args, github, now=None):
     return snapshot
 
 
+def summarize(snapshot):
+    return {"repository": snapshot["repository"], "user": snapshot["user"],
+            "sources": {source["type"]: {"status": source["status"], "selected": source["selected"]}
+                        for source in snapshot["sources"]},
+            "items": len(snapshot["items"]), "warnings": len(snapshot["warnings"])}
+
+
 def main(argv=None):
     args = parse_args(argv)
-    try:
-        snapshot = collect(args, GitHub())
-    except InboxError as exc:
-        print("inbox: " + str(exc), file=sys.stderr)
-        return 1
-    json.dump(snapshot, sys.stdout, ensure_ascii=True, indent=2)
-    sys.stdout.write("\n")
-    return 0
+    return run_collector("inbox", SNAPSHOT_PREFIX, lambda: collect(args, GitHub()), summarize)
 
 
 if __name__ == "__main__":

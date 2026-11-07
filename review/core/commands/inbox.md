@@ -42,40 +42,22 @@ Construct INBOX_ARGS as a shell argument array from the actual arguments. Quote 
 
 For --help, execute the collector with --help, display its output, and stop.
 
-For a report, create one private temporary directory outside the project and collect once:
+For a report, collect once:
 
 ~~~bash
-# Set the resolved core path and the safely quoted INBOX_ARGS array in this block.
-INBOX_TMP_ROOT="${TMPDIR:-/tmp}"
-INVOKING_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || true)
-if [ -n "$INVOKING_ROOT" ]; then
-  INVOKING_ROOT=$(cd "$INVOKING_ROOT" && pwd -P) || exit 1
-fi
-INBOX_TMP_ROOT=$(cd "$INBOX_TMP_ROOT" 2>/dev/null && pwd -P) || {
-  echo "inbox: Cannot resolve the temporary directory." >&2
-  exit 1
-}
-case "$INBOX_TMP_ROOT/" in
-  "$INVOKING_ROOT/"|"$INVOKING_ROOT/"*)
-    echo "inbox: TMPDIR must be outside the invoking checkout." >&2
-    exit 1
-    ;;
-esac
-# Reclaim snapshot dirs orphaned by an earlier run that ended before step 7.
-# The tour can span several turns, so Clean Up is not always reached (an error
-# mid-report, an abandoned interactive tour, a fresh shell that lost the path);
-# sweeping stale dirs keeps those abnormal exits from leaking snapshots forever.
-find "$INBOX_TMP_ROOT" -maxdepth 1 -type d -name 'cc-review-inbox.*' -mmin +720 -exec rm -rf {} + 2>/dev/null || true
-INBOX_TMP=$(mktemp -d "$INBOX_TMP_ROOT/cc-review-inbox.XXXXXX") || exit 1
-if ! python3 -B "$CC_REVIEW_CORE_DIR/scripts/inbox.py" "${INBOX_ARGS[@]}" > "$INBOX_TMP/snapshot.json"; then
-  rm -f "$INBOX_TMP/snapshot.json"
-  rmdir "$INBOX_TMP"
-  exit 1
-fi
-printf '%s\n' "$INBOX_TMP"
+# Substitute the absolute core path and append each argument single-quoted.
+python3 -B '<core>/scripts/inbox.py' '--limit' '10'
 ~~~
 
-Keep the generated temporary path for subsequent tool calls; re-establish it explicitly if a shell starts fresh. On failure, show the collector's actionable error and finish. Never replace a failed collection with a successful empty inbox.
+Run it as this one simple command: the literal absolute script path, then each user argument as its own single-quoted word. Do not prefix a variable assignment, build an array, or join it with other commands (`;`, `&&`). Harnesses that remember approvals by command prefix (for example Codex "don't ask again") can then match every later run.
+
+The collector creates a private temporary directory outside the invoking checkout (under `$TMPDIR`, else `/tmp`), writes `snapshot.json` there, and removes snapshot directories that earlier runs left behind for more than 12 hours. Its standard output is a single JSON summary line: `snapshot_dir`, `snapshot`, repository, user, per-type status and selected counts, total items, and warning count. The snapshot never goes to standard output, so truncated command output cannot lose it.
+
+**Network access.** The collector calls the GitHub API through `gh`. When the harness runs shell commands in a sandbox without network access (for example the Codex default sandbox), request network or escalated permission for this command on the first attempt. If a retry is needed, rerun this exact command unchanged: do not redirect, pipe, or reshape its output, and do not call the collector any other way.
+
+**Lost output.** Collection can take up to about three minutes; wait for the command to finish. If it finished successfully but its summary line did not reach you (some harnesses drop the output of long-running commands), do not collect again. Recover the newest snapshot directory with `ls -dt "${TMPDIR:-/tmp}"/cc-review-inbox.*` and use the first entry that contains `snapshot.json`.
+
+Set INBOX_TMP to the summary's `snapshot_dir` and keep it for subsequent tool calls; re-establish it explicitly if a shell starts fresh. On failure, the collector leaves no directory behind; show its actionable error and finish. Never replace a failed collection with a successful empty inbox.
 
 ## 2. Read Scope, Coverage, and Item Context
 

@@ -6,6 +6,6 @@ Resolve core from the installed plugin's core directory, or the path in .opencod
 
 If no core is found, report “cc-review inbox core not found; update or reinstall cc-review.”
 
-Set CC_REVIEW_CORE_DIR to the resolved absolute path in every shell block. Read and execute commands/inbox.md, preserving the invoking working directory. Forward all arguments unchanged: --repo owner/name, repeatable --type pr,issue,discussion, --limit N, --since YYYY-MM-DD, --help.
+Set CC_REVIEW_CORE_DIR to the resolved absolute path in every shell block, except the collector command, which uses the literal absolute script path as the command describes. Read and execute commands/inbox.md, preserving the invoking working directory. Forward all arguments unchanged: --repo owner/name, repeatable --type pr,issue,discussion, --limit N, --since YYYY-MM-DD, --help.
 
 The report is read-only by default. After it, inbox may offer an opt-in guided tour of the attention items and, only on the user's explicit choice inside a local checkout, hand off to the existing review, triage, issue, or bulk command; the report and tour never act on their own.

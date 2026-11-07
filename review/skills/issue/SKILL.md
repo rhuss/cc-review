@@ -14,6 +14,8 @@ Resolve cc-review core in order:
 
 Use the first directory containing commands/issue.md, scripts/assess_issue.py, templates/need-and-fit.md, and templates/maintainer-voice.md. If none exists, report “cc-review issue core not found; update or reinstall cc-review.”
 
-Set CC_REVIEW_CORE_DIR to that absolute directory in every shell block. Read and execute commands/issue.md, preserving the invoking working directory and forwarding all user arguments unchanged: issue number or URL, --repo owner/name, --help.
+Set CC_REVIEW_CORE_DIR to that absolute directory in every shell block, except the collector command, which uses the literal absolute script path as the command describes. Read and execute commands/issue.md, preserving the invoking working directory and forwarding all user arguments unchanged: issue number or URL, --repo owner/name, --help.
+
+The collector needs network access to the GitHub API. In a sandboxed harness, request network permission for its first run, as commands/issue.md describes.
 
 This command assesses issues and drafts replies. Publishing and implementation are separate actions.

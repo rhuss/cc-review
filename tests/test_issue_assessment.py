@@ -78,13 +78,15 @@ class AssessmentTests(unittest.TestCase):
             p.chmod(0o755)
         self.log = self.base / "calls.jsonl"
         self.fixture = self.base / "fixture.json"
+        self.tmpdir = self.base / "tmp"
+        self.tmpdir.mkdir()
 
-    def run_cli(self, *args, value=None, origin=None, bad_git=False):
+    def run_cli(self, *args, value=None, origin=None, bad_git=False, tmpdir=None):
         self.fixture.write_text(json.dumps(value if value is not None else {"issue": issue()}))
         self.log.write_text("")
         env = dict(os.environ, PATH=str(self.bin)+os.pathsep+os.environ["PATH"],
                    ASSESS_TEST_FIXTURE=str(self.fixture), ASSESS_TEST_LOG=str(self.log),
-                   ASSESS_TEST_PROJECT=str(self.project))
+                   ASSESS_TEST_PROJECT=str(self.project), TMPDIR=str(tmpdir or self.tmpdir))
         if origin is not None:
             env["ASSESS_TEST_ORIGIN"] = origin
         if bad_git:
@@ -97,7 +99,43 @@ class AssessmentTests(unittest.TestCase):
     def snapshot(self, *args, **kwargs):
         result, calls = self.run_cli(*(args or ("42",)), **kwargs)
         self.assertEqual(result.returncode, 0, result.stderr)
-        return json.loads(result.stdout), calls
+        summary = json.loads(result.stdout)
+        path = Path(summary["snapshot"])
+        snapshot = json.loads(path.read_text())
+        path.unlink()
+        path.parent.rmdir()
+        return snapshot, calls
+
+    def test_snapshot_is_written_privately_and_stdout_is_a_summary(self):
+        result, _ = self.run_cli("42")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(len(result.stdout.splitlines()), 1)
+        self.assertNotIn("I cannot complete the workflow", result.stdout)
+        summary = json.loads(result.stdout)
+        directory, path = Path(summary["snapshot_dir"]), Path(summary["snapshot"])
+        self.assertEqual(directory.parent, self.tmpdir.resolve())
+        self.assertTrue(directory.name.startswith("cc-review-assess."))
+        self.assertEqual(path, directory / "snapshot.json")
+        self.assertEqual(directory.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual((summary["repository"], summary["issue"], summary["comments"]),
+                         ("acme/widgets", 42, 1))
+        self.assertTrue(summary["conversation_complete"])
+        self.assertEqual(json.loads(path.read_text())["issue"]["body"], "I cannot complete the workflow.")
+
+    def test_refuses_temporary_directory_inside_checkout(self):
+        result, calls = self.run_cli("42", tmpdir=self.project)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("TMPDIR must be outside the invoking checkout", result.stderr)
+        self.assertEqual(calls, [])
+        self.assertEqual(list(self.project.glob("cc-review-assess.*")), [])
+
+    def test_unreachable_github_suggests_network_permission(self):
+        result, _ = self.run_cli("42", value={"issue": issue(), "error": "error connecting to api.github.com"})
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("network permission", result.stderr)
+        self.assertEqual(list(self.tmpdir.iterdir()), [])
 
     def test_help_without_service_access(self):
         result, calls = self.run_cli("--help")

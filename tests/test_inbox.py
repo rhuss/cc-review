@@ -143,14 +143,16 @@ class InboxTests(unittest.TestCase):
         self.log = self.base / "calls.jsonl"
         self.project = self.base / "project"
         self.project.mkdir()
+        self.tmpdir = self.base / "tmp"
+        self.tmpdir.mkdir()
 
-    def run_cli(self, *args, fixture=None, path=None, locale=None):
+    def run_cli(self, *args, fixture=None, path=None, locale=None, tmpdir=None):
         self.fixture.write_text(json.dumps(fixture or {}))
         self.log.write_text("")
         env = dict(os.environ, INBOX_TEST_FIXTURE=str(self.fixture), INBOX_TEST_LOG=str(self.log),
                    CC_REVIEW_REVIEWER_STATE_FILE=str(self.base / "reviewer-state/cache.json"),
                    PATH=path if path is not None else str(self.bin) + os.pathsep + os.environ["PATH"],
-                   PYTHONDONTWRITEBYTECODE="1")
+                   PYTHONDONTWRITEBYTECODE="1", TMPDIR=str(tmpdir or self.tmpdir))
         if locale:
             env.update(LC_ALL=locale, LANG=locale, PYTHONUTF8="0", PYTHONCOERCECLOCALE="0")
         return subprocess.run([sys.executable, "-B", str(SCRIPT), *args], cwd=self.project,
@@ -162,25 +164,81 @@ class InboxTests(unittest.TestCase):
     def snapshot(self, *args, fixture=None, locale=None):
         result = self.run_cli(*args, fixture=fixture, locale=locale)
         self.assertEqual(0, result.returncode, result.stderr)
-        return json.loads(result.stdout)
+        summary = json.loads(result.stdout)
+        path = Path(summary["snapshot"])
+        snap = json.loads(path.read_text())
+        path.unlink()
+        path.parent.rmdir()
+        return snap
 
     def test_help_is_offline(self):
         result = self.run_cli("--help", path="")
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("--type", result.stdout)
         self.assertEqual([], self.calls())
+        self.assertEqual([], list(self.tmpdir.iterdir()))
 
-    def test_command_refuses_temporary_directory_inside_checkout(self):
+    def test_refuses_temporary_directory_inside_checkout(self):
         subprocess.run(["git", "init", "-q", str(self.project)], check=True, capture_output=True)
-        command = (ROOT / "review/core/commands/inbox.md").read_text()
-        section = command.split("For a report, create one private temporary directory", 1)[1]
-        script = section.split("~~~bash\n", 1)[1].split("\n~~~", 1)[0]
-        result = subprocess.run(["bash", "-c", script], cwd=self.project,
-                                env=dict(os.environ, TMPDIR=str(self.project)),
-                                capture_output=True, text=True, timeout=5)
+        result = self.run_cli(tmpdir=self.project)
         self.assertEqual(1, result.returncode, result.stderr)
+        self.assertEqual("", result.stdout)
         self.assertIn("TMPDIR must be outside the invoking checkout", result.stderr)
+        self.assertEqual([], self.calls())
         self.assertEqual([], list(self.project.glob("cc-review-inbox.*")))
+
+    def test_snapshot_is_written_privately_and_stdout_is_a_summary(self):
+        fixture = {"search": {"issue": {"authored": {"nodes": [item("issue", 7)]}}},
+                   "details": {"issue-7": detail("issue", 7)}}
+        result = self.run_cli("--type", "issue", fixture=fixture)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(1, len(result.stdout.splitlines()))
+        self.assertNotIn("Work item 7", result.stdout)
+        summary = json.loads(result.stdout)
+        directory, path = Path(summary["snapshot_dir"]), Path(summary["snapshot"])
+        self.assertEqual(self.tmpdir.resolve(), directory.parent)
+        self.assertTrue(directory.name.startswith("cc-review-inbox."))
+        self.assertEqual(directory / "snapshot.json", path)
+        self.assertEqual(0o700, directory.stat().st_mode & 0o777)
+        self.assertEqual(0o600, path.stat().st_mode & 0o777)
+        self.assertEqual({"status": "ok", "selected": 1}, summary["sources"]["issue"])
+        self.assertEqual(("acme/widgets", "alice", 1), (summary["repository"], summary["user"], summary["items"]))
+        self.assertEqual("Work item 7", json.loads(path.read_text())["items"][0]["title"])
+
+    def test_stale_snapshot_directories_are_reclaimed(self):
+        stale, fresh, other = (self.tmpdir / "cc-review-inbox.old", self.tmpdir / "cc-review-inbox.new",
+                               self.tmpdir / "unrelated.old")
+        for directory in (stale, fresh, other):
+            directory.mkdir()
+            (directory / "snapshot.json").write_text("{}")
+        old = time.time() - 13 * 3600
+        for directory in (stale, other):
+            os.utime(directory, (old, old))
+        self.snapshot()
+        self.assertFalse(stale.exists())
+        self.assertTrue(fresh.exists())
+        self.assertTrue(other.exists())
+
+    def test_unreachable_github_suggests_network_permission(self):
+        result = self.run_cli(fixture={"repo_error": "error connecting to api.github.com"})
+        self.assertEqual(1, result.returncode)
+        self.assertIn("network permission", result.stderr)
+        self.assertEqual([], list(self.tmpdir.iterdir()))
+
+    def test_command_runs_collector_unredirected_and_requests_network(self):
+        for name in ("inbox", "issue"):
+            with self.subTest(command=name):
+                command = (ROOT / "review/core/commands" / (name + ".md")).read_text()
+                block = command.split("~~~bash\n", 1)[1].split("\n~~~", 1)[0]
+                collector = [line for line in block.splitlines() if not line.startswith("#")]
+                self.assertEqual(1, len(collector), block)
+                self.assertTrue(collector[0].startswith("python3 -B '<core>/scripts/"), collector[0])
+                for token in (">", "<", "|", ";", "&&", "$", "="):
+                    self.assertNotIn(token, collector[0].replace("<core>", ""))
+                self.assertIn("one simple command", command)
+                self.assertIn("do not collect again", command)
+                self.assertIn("network or escalated permission", command)
+                self.assertIn("rerun this exact command unchanged", command)
 
     def test_invalid_arguments_are_rejected_before_gh(self):
         for args in [("--type", ""), ("--type", "pr,,issue"), ("--type", "unknown"),
@@ -707,6 +765,7 @@ class InboxTests(unittest.TestCase):
                 self.assertEqual(1, result.returncode)
                 self.assertEqual("", result.stdout)
                 self.assertNotIn("Traceback", result.stderr)
+                self.assertEqual([], list(self.tmpdir.iterdir()))
 
 
 if __name__ == "__main__":
