@@ -214,9 +214,21 @@ class TourAndFanoutContract(unittest.TestCase):
 
     def test_fanout_is_explicit_and_delegates(self):
         # FR-012/FR-014/FR-015: explicit choice; delegate to review/triage.
-        self.assertIn("review --pr N", self.md)
-        self.assertIn("triage --pr N", self.md)
         self.assertRegex(self.md, r"explicit choice")
+        self.assertIn("ask the user to confirm them", self.md)
+
+    def test_pr_fanout_always_uses_bulk_mode(self):
+        # PR actions run in bulk workers with fresh contexts, never inline.
+        self.assertIn("Pull requests always go to bulk mode", self.md)
+        self.assertIn("even when a list holds a single PR", self.md)
+        self.assertIn("Never launch `review --pr N` or `triage --pr N` from the tour", self.md)
+        self.assertIn("triage --bulk --prs <list>", self.md)
+
+    def test_tour_ends_after_a_handoff_and_recommends_fresh_context(self):
+        # After a batch launched commands, no next batch in this context.
+        self.assertIn("the tour ends with this batch", self.md)
+        self.assertIn("recommend continuing from a fresh context", self.md)
+        self.assertIn("run `inbox` again", self.md)
 
     def test_discussion_is_textual_only(self):
         # FR-012: a Discussion gets a textual suggestion only (no launch).
