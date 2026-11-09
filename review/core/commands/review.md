@@ -6,6 +6,14 @@ argument-hint: "[--pr <number>] [--full] [--spec <path>] [--hints <path>] [--out
 
 # Code Review
 
+## Showing Text to the User
+
+Whenever this command says to show, print or present text the user reads before deciding (a review or comment draft, a thread reply, a PR comment, a commit message, a preview file, a report or table), the text goes into **your own reply as Markdown**:
+- Read the file with your file-read tool when needed, then reproduce the text in full in your message. A tool result is not shown to the user: harnesses collapse tool output (Claude Code shows `… +N lines (ctrl+o to expand)`), and `jq` prints strings with escaped newlines. Never present a draft through `cat`, `jq`, `echo` or any other command output.
+- Never shorten, summarize or paraphrase a text that will be posted under the user's name. When it is long, show it across several messages before you ask.
+- A question may refer to text as "shown above" only when that exact text is in full in one of your earlier messages and unchanged since. Otherwise show it first.
+- When your harness's question tool offers a per-option preview (Claude Code: the `preview` field of an `AskUserQuestion` option), also put the full text into the preview of the option that posts or pushes it (Approve, Apply, Post). This adds to the message text and never replaces it: other harnesses have no such field, and the preview is gone once the question is answered.
+
 ## Prerequisites
 
 ### Bulk Mode

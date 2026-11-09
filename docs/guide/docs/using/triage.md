@@ -74,7 +74,7 @@ A few flags adjust what a triage pass does:
 
 When Codecov data is available for the PR, triage cross-references it with the bot findings and reports, per file, whether a coverage gap overlaps with an issue a bot already flagged. That overlap strengthens the case for accepting fixes that add error handling or branch coverage.
 
-To triage several of your PRs in one pass, run `/cc-review:triage --bulk`. On your own PRs it keeps the prepared-fix workflow; for reviewer feedback it prepares exact-thread replies without changing any branch, and leaves answers that still need your judgment pending.
+To triage several of your PRs in one pass, run `/cc-review:triage --bulk`. On your own PRs it keeps the prepared-fix workflow; for reviewer feedback it prepares exact-thread replies without changing any branch, and leaves answers that still need your judgment pending. Before it pushes or posts anything, it shows a preview per PR (the commit and every reply in full) and waits for your approval.
 
 > [!NOTE]
 > This page covers the commands you run. For how triage verifies threads and classifies bots, read [How it works](../how-it-works/index.md). For the full flag list, see the [Reference](../reference/index.md).

@@ -585,7 +585,7 @@ $marker"
 do_triage() {
   check_args "$@"
   RUN="$2" PR="$3"
-  local state plan owner repo root prepared pushed flags wt url branch expected head result rc tip selected_role plan_role author
+  local state plan owner repo root prepared pushed flags wt url branch expected head result rc tip selected_role plan_role author approved_fp
   local err out threads items item key current cid tid recorded id failed=0 posted=0 resolved_n=0 skipped=0
   local notes=() to_resolve=()
   state=$(state_file "$RUN")
@@ -632,6 +632,18 @@ do_triage() {
       ;;
     *) echo "Error: PR #$PR has unsupported triage role '$selected_role'" >&2; exit 1 ;;
   esac
+  # Deferred mode pushes and posts only the plan the user approved after its
+  # preview (triage_preview.py); a plan changed since then is asked again.
+  # Unattended mode follows its fixed policy and records no approval.
+  if [ "$(jq -r '.mode' "$state")" = deferred ]; then
+    approved_fp=$(python3 -B "$SCRIPT_DIR/triage_preview.py" fingerprint --plan "$plan") \
+      || { echo "Error: cannot fingerprint the triage plan of PR #$PR" >&2; exit 1; }
+    if [ "$(pr_field '.approval.answer // ""')" != approved ] \
+      || [ "$(pr_field '.approval.fingerprint // ""')" != "$approved_fp" ]; then
+      echo "REFUSED approval"
+      return
+    fi
+  fi
   # The invoking repository's triage state, as single-PR triage uses it (FR-014a)
   export TRIAGE_STATE_FILE="${TRIAGE_STATE_FILE:-$root/.cc-review/.triage-state.json}"
   err=$(tmpfile); out=$(tmpfile); threads=$(tmpfile)
