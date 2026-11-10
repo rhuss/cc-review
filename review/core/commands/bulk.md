@@ -1174,7 +1174,7 @@ N="{N}"
 python3 -B "$S/triage_preview.py" render --plan "$RUN_DIR/pr-$N/triage-plan.json" \
   --role "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.triage_role // ""')" \
   --flags "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '(.flags // []) | join(" ")')" \
-  --recorded "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.actions.replies // {}')" \
+  --recorded "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" 'if .triage_role == "reviewer" then (.actions.reviewer_replies // {}) else (.actions.replies // {}) end')" \
   --worktree "$RUN_DIR/pr-$N/wt" || exit 1
 ```
 
@@ -1195,7 +1195,7 @@ echo "APPROVAL #$N $ANSWER $FP"
 
 - **Approve**: record `approved`; Apply runs the PR.
 - **Skip**: record `skipped`; the decision becomes `["skip"]` and Apply skips the PR (the threads stay open for the next run). A PR whose push or replies already started in an earlier attempt (status `applying` or `partially-applied`, with `.actions` recorded) keeps what was done; say so.
-- **Edit**: change `$RUN_DIR/pr-<n>/triage-plan.json` with your file-write tool (never through a shell literal: the texts quote untrusted comments). Editable: the `body` text of a `.replies[]` entry or of a `.cc_review_threads[]` entry that already has a non-empty body, `resolve` from true to false on either, and dropping an author `.replies[]` reply by setting its `body` to `""` (its thread stays open and the next run sees it again). A human reply changes through its `.human[]` entry: `body` with `decision` `"edit"`, or `decision` `"skip"`. Not editable: a reply an earlier attempt already posted (its `comment_id` is a key of the run state's `.actions.replies`; the preview lists it under **Already posted in an earlier attempt** because apply neither posts nor updates it, so edit it on GitHub directly), `prepared_commit` (Skip the PR to keep the commit unpushed), ids, paths, lines, `activity`, `outcome`, `stale_resolutions`, and `.resolution_summary` (its `summary_key` binds the body; Skip the PR to withhold it). Then render the preview again, show it in full, and ask again.
+- **Edit**: change `$RUN_DIR/pr-<n>/triage-plan.json` with your file-write tool (never through a shell literal: the texts quote untrusted comments). Editable: the `body` text of a `.replies[]` entry or of a `.cc_review_threads[]` entry that already has a non-empty body, `resolve` from true to false on either, and dropping an author `.replies[]` reply by setting its `body` to `""` (its thread stays open and the next run sees it again). A human reply changes through its `.human[]` entry: `body` with `decision` `"edit"`, or `decision` `"skip"`. Not editable: a reply an earlier attempt already posted (an author reply's `comment_id` is a key of the run state's `.actions.replies`, a reviewer reply's `activity.activity_key` is a key of `.actions.reviewer_replies`; the preview lists it under **Already posted in an earlier attempt** because apply neither posts nor updates it, so edit it on GitHub directly), `prepared_commit` (Skip the PR to keep the commit unpushed), ids, paths, lines, `activity`, `outcome`, `stale_resolutions`, and `.resolution_summary` (its `summary_key` binds the body; Skip the PR to withhold it). Then re-render the preview, show it in full, and ask again.
 - **Stop (resume later)**: the PRs answered so far keep their recorded answers. Leave the run in `deciding`, print the summary and how to continue (`--bulk --resume`), and stop. A resume asks only for the unanswered PRs and for plans that changed since their approval.
 
 ### Apply

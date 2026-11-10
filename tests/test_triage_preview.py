@@ -132,6 +132,17 @@ class ReviewerPreview(unittest.TestCase):
     def test_trusted_role_overrides_the_plan(self):
         self.assertIn("- Role: reviewer", tp.render(dict(author_plan(), triage_role="author"), role="reviewer"))
 
+    def test_replies_posted_in_an_earlier_attempt_are_not_shown_as_new(self):
+        # bulk-apply.sh skips a reply whose activity key is recorded in
+        # .actions.reviewer_replies; an edit to it would never reach GitHub
+        text = tp.render(reviewer_plan(), recorded={"b" * 64: 777})
+        self.assertNotIn("### 1. `x.py:2`", text)
+        self.assertIn("## Already posted in an earlier attempt", text)
+        self.assertIn("`x.py:2` (alice): already posted as "
+                      "[reply](https://github.com/acme/widget/pull/40#discussion_r777); resolve yes", text)
+        self.assertIn("- Already posted in an earlier attempt: 1", text)
+        self.assertIn("- Thread replies: 0 (0 also resolve the thread)", text)
+
 
 class Fingerprint(unittest.TestCase):
     def test_stable_and_sensitive_to_text(self):

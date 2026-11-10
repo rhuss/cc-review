@@ -117,11 +117,15 @@ def author_items(plan, skip_accepted, recorded=None):
     return posted, already, held
 
 
-def reviewer_items(plan):
-    """The reviewer actions of bulk-apply.sh: replies, resolutions, records."""
+def reviewer_items(plan, recorded=None):
+    """The reviewer actions of bulk-apply.sh: replies, resolutions, records.
+
+    `recorded` maps an activity key to the reply id an earlier attempt posted;
+    bulk-apply.sh neither posts nor updates such a reply.
+    """
     summary = plan.get('resolution_summary') or {}
     summarized = set(summary.get('activity_keys') or [])
-    posted, resolve_only, recorded, held = [], [], [], []
+    posted, already, resolve_only, recorded_only, held = [], [], [], [], []
     for item in plan.get('cc_review_threads') or []:
         outcome = item.get('outcome') or {}
         key = (item.get('activity') or {}).get('activity_key')
@@ -132,13 +136,16 @@ def reviewer_items(plan):
             continue
         entry = dict(item, kind='cc-review', resolve=bool(item.get('resolve')),
                      action=outcome.get('status'))
-        if item.get('body'):
+        reply_id = (recorded or {}).get(key)
+        if reply_id is not None and item.get('body'):
+            already.append((entry, reply_id))
+        elif item.get('body'):
             posted.append(entry)
         elif entry['resolve']:
             resolve_only.append(entry)
         else:
-            recorded.append(entry)
-    return posted, resolve_only, recorded, held
+            recorded_only.append(entry)
+    return posted, already, resolve_only, recorded_only, held
 
 
 def _reply_block(index, item, identity):
@@ -156,28 +163,52 @@ def _reply_block(index, item, identity):
     return out
 
 
+def _already_section(already, identity):
+    """The replies an earlier attempt posted: apply neither posts nor updates them."""
+    if not already:
+        return []
+    out = ['## Already posted in an earlier attempt', '',
+           'Apply neither posts nor updates these; GitHub keeps their current text.', '']
+    for item, reply_id in already:
+        where = _where(item) or item.get('thread_id') or '?'
+        who = item.get('author') or 'unknown author'
+        try:
+            link = _link(identity, int(reply_id))
+        except (TypeError, ValueError):
+            link = None
+        line = '- `{}` ({}): already posted{}'.format(
+            where, who, ' as [reply]({})'.format(link) if link else '')
+        if item.get('resolve'):
+            line += '; resolve yes'
+        out.append(line)
+    out.append('')
+    return out
+
+
 def render(plan, flags=(), worktree=None, role=None, recorded=None):
     role = role or plan.get('triage_role') or 'author'
     identity = plan.get('activity_identity')
     pr = plan.get('pr')
     out = ['# Triage preview: PR #{}'.format(pr), '']
     if role == 'reviewer':
-        posted, resolve_only, recorded, held = reviewer_items(plan)
+        posted, already, resolve_only, recorded_only, held = reviewer_items(plan, recorded)
         summary = plan.get('resolution_summary')
         out += ['- Role: reviewer (verifies your own earlier findings; no code is pushed)',
                 '- Thread replies: {} ({} also resolve the thread)'.format(
                     len(posted), sum(1 for i in posted if i['resolve'])),
+                '- Already posted in an earlier attempt: {}'.format(len(already)),
                 '- Threads resolved without a reply: {}'.format(len(resolve_only)),
                 '- PR conversation comment: {}'.format(
                     '1, covering {} threads (the PR author must resolve them)'.format(
                         len(summary.get('activity_keys') or [])) if summary else 'none'),
-                '- Outcomes recorded without posting: {}'.format(len(recorded)),
+                '- Outcomes recorded without posting: {}'.format(len(recorded_only)),
                 '- Not acted on: {}'.format(len(held)), '']
         out += ['## Thread replies', '']
         if not posted:
             out += ['None.', '']
         for n, item in enumerate(posted, 1):
             out += _reply_block(n, item, identity)
+        out += _already_section(already, identity)
         if resolve_only:
             out += ['## Threads resolved without a reply', '']
             for item in resolve_only:
@@ -228,22 +259,7 @@ def render(plan, flags=(), worktree=None, role=None, recorded=None):
             out += ['None.', '']
         for n, item in enumerate(posted, 1):
             out += _reply_block(n, item, identity)
-        if already:
-            out += ['## Already posted in an earlier attempt', '',
-                    'Apply neither posts nor updates these; GitHub keeps their current text.', '']
-            for item, reply_id in already:
-                where = _where(item) or item.get('thread_id') or '?'
-                who = item.get('author') or 'unknown author'
-                try:
-                    link = _link(identity, int(reply_id))
-                except (TypeError, ValueError):
-                    link = None
-                line = '- `{}` ({}): already posted{}'.format(
-                    where, who, ' as [reply]({})'.format(link) if link else '')
-                if item.get('resolve'):
-                    line += '; resolve yes'
-                out.append(line)
-            out.append('')
+        out += _already_section(already, identity)
         if stale:
             out += ['## Earlier handled threads resolved without a new reply', '']
             out += ['- `{}`'.format(t) for t in stale]
