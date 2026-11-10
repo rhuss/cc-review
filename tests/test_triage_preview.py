@@ -78,6 +78,24 @@ class AuthorPreview(unittest.TestCase):
         self.assertIn("`a.go:12` (greptile-apps[bot]): fixes are not pushed", text)
         self.assertNotIn("### 1. `a.go:12`", text)
 
+    def test_local_unpushed_without_a_prepared_commit_posts_accepted_replies(self):
+        # bulk-apply.sh only holds accepted replies when it has a commit to
+        # leave unpushed; the preview must not promise a hold apply will not do
+        text = tp.render(author_plan(), flags=["local-unpushed"])
+        self.assertIn("### 1. `a.go:12`", text)
+        self.assertNotIn("fixes are not pushed", text)
+
+    def test_replies_posted_in_an_earlier_attempt_are_not_shown_as_new(self):
+        # bulk-apply.sh neither posts nor updates a reply recorded by a
+        # partial apply; an edit to it would never reach GitHub
+        text = tp.render(author_plan(), recorded={"4398981895": 1234})
+        self.assertNotIn("### 1. `a.go:12`", text)
+        self.assertIn("## Already posted in an earlier attempt", text)
+        self.assertIn("`a.go:12` (greptile-apps[bot]): already posted as "
+                      "[reply](https://github.com/acme/widget/pull/36#discussion_r1234)", text)
+        self.assertIn("- Already posted in an earlier attempt: 1", text)
+        self.assertIn("`b.go` · greptile-apps[bot] · rejected · resolve no", text)
+
     def test_commit_message_and_stat_from_worktree(self):
         with tempfile.TemporaryDirectory() as d:
             run = lambda *a: subprocess.run(["git", "-C", d] + list(a), check=True, capture_output=True, text=True)

@@ -1165,7 +1165,7 @@ A human comment left undecided (the step was stopped, or unattended mode) keeps 
 
 Go through the PRs decided `["apply"]` with status `analyzed`, `applying` or `partially-applied`, in state order, one at a time. Skip a PR whose `.approval.answer` is `approved` and whose `.approval.fingerprint` equals the plan's current fingerprint: the user already approved exactly this plan (a resumed run). Every other PR is asked, also when an earlier approval belongs to another fingerprint (the plan changed since). For each PR:
 
-1. Render the preview from the plan (deterministic; it reads the plan, the trusted role and flags from the state, and the prepared commit from the worktree):
+1. Render the preview from the plan (deterministic; it reads the plan, the trusted role and flags from the state, the replies an earlier attempt already posted, and the prepared commit from the worktree):
 
 ```bash
 export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
@@ -1174,6 +1174,7 @@ N="{N}"
 python3 -B "$S/triage_preview.py" render --plan "$RUN_DIR/pr-$N/triage-plan.json" \
   --role "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.triage_role // ""')" \
   --flags "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '(.flags // []) | join(" ")')" \
+  --recorded "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.actions.replies // {}')" \
   --worktree "$RUN_DIR/pr-$N/wt" || exit 1
 ```
 
@@ -1194,7 +1195,7 @@ echo "APPROVAL #$N $ANSWER $FP"
 
 - **Approve**: record `approved`; Apply runs the PR.
 - **Skip**: record `skipped`; the decision becomes `["skip"]` and Apply skips the PR (the threads stay open for the next run). A PR whose push or replies already started in an earlier attempt (status `applying` or `partially-applied`, with `.actions` recorded) keeps what was done; say so.
-- **Edit**: change `$RUN_DIR/pr-<n>/triage-plan.json` with your file-write tool (never through a shell literal: the texts quote untrusted comments). Editable: the `body` text of a `.replies[]` entry or of a `.cc_review_threads[]` entry that already has a non-empty body, `resolve` from true to false on either, and dropping an author `.replies[]` reply by setting its `body` to `""` (its thread stays open and the next run sees it again). A human reply changes through its `.human[]` entry: `body` with `decision` `"edit"`, or `decision` `"skip"`. Not editable: `prepared_commit` (Skip the PR to keep the commit unpushed), ids, paths, lines, `activity`, `outcome`, `stale_resolutions`, and `.resolution_summary` (its `summary_key` binds the body; Skip the PR to withhold it). Then render the preview again, show it in full, and ask again.
+- **Edit**: change `$RUN_DIR/pr-<n>/triage-plan.json` with your file-write tool (never through a shell literal: the texts quote untrusted comments). Editable: the `body` text of a `.replies[]` entry or of a `.cc_review_threads[]` entry that already has a non-empty body, `resolve` from true to false on either, and dropping an author `.replies[]` reply by setting its `body` to `""` (its thread stays open and the next run sees it again). A human reply changes through its `.human[]` entry: `body` with `decision` `"edit"`, or `decision` `"skip"`. Not editable: a reply an earlier attempt already posted (its `comment_id` is a key of the run state's `.actions.replies`; the preview lists it under **Already posted in an earlier attempt** because apply neither posts nor updates it, so edit it on GitHub directly), `prepared_commit` (Skip the PR to keep the commit unpushed), ids, paths, lines, `activity`, `outcome`, `stale_resolutions`, and `.resolution_summary` (its `summary_key` binds the body; Skip the PR to withhold it). Then render the preview again, show it in full, and ask again.
 - **Stop (resume later)**: the PRs answered so far keep their recorded answers. Leave the run in `deciding`, print the summary and how to continue (`--bulk --resume`), and stop. A resume asks only for the unanswered PRs and for plans that changed since their approval.
 
 ### Apply

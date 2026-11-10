@@ -5,8 +5,10 @@ render writes triage-preview.md next to the plan: the commit that would be
 pushed, every reply with its full text, the threads that would be resolved,
 the grouped PR comment and the human comment replies. It mirrors what
 bulk-apply.sh triage acts on, so the user sees every text before it is
-posted under their name. fingerprint hashes the whole plan, so an approval
-binds exactly the plan it was given for. Neither operation writes to GitHub.
+posted under their name; replies an earlier attempt already posted are
+listed apart, because apply neither posts nor updates them. fingerprint
+hashes the whole plan, so an approval binds exactly the plan it was given
+for. Neither operation writes to GitHub.
 """
 import argparse
 import hashlib
@@ -82,8 +84,13 @@ def _shown(body):
     return re.sub(r'\s*<!-- cc-review-triage[^>]*-->', '', body or '').rstrip()
 
 
-def author_items(plan, skip_accepted):
-    """The replies bulk-apply.sh posts for an author plan, in its order."""
+def author_items(plan, skip_accepted, recorded=None):
+    """The replies bulk-apply.sh posts for an author plan, in its order.
+
+    `recorded` maps a comment id to the reply id an earlier attempt posted.
+    bulk-apply.sh neither posts nor updates such a reply, so the preview keeps
+    it out of the replies that are about to be posted.
+    """
     items = []
     for item in plan.get('replies') or []:
         items.append(dict(item, kind='bot', action=item.get('action'), resolve=bool(item.get('resolve'))))
@@ -96,15 +103,18 @@ def author_items(plan, skip_accepted):
             body = item.get('body') or item.get('draft') or ''
             items.append(dict(item, kind='human', body=body, resolve=False,
                               action='edited' if item.get('decision') == 'edit' else 'approved'))
-    posted, held = [], []
+    posted, already, held = [], [], []
     for item in items:
+        reply_id = (recorded or {}).get(str(item.get('comment_id')))
         if not item.get('body'):
             held.append((item, 'no reply text'))
+        elif reply_id is not None:
+            already.append((item, reply_id))
         elif skip_accepted and item.get('action') == 'accepted':
             held.append((item, 'fixes are not pushed (local branch has unpushed commits)'))
         else:
             posted.append(item)
-    return posted, held
+    return posted, already, held
 
 
 def reviewer_items(plan):
@@ -146,7 +156,7 @@ def _reply_block(index, item, identity):
     return out
 
 
-def render(plan, flags=(), worktree=None, role=None):
+def render(plan, flags=(), worktree=None, role=None, recorded=None):
     role = role or plan.get('triage_role') or 'author'
     identity = plan.get('activity_identity')
     pr = plan.get('pr')
@@ -180,8 +190,8 @@ def render(plan, flags=(), worktree=None, role=None):
         else:
             out += ['None.', '']
     else:
-        skip_accepted = 'local-unpushed' in flags
-        posted, held = author_items(plan, skip_accepted)
+        skip_accepted = 'local-unpushed' in flags and bool(plan.get('prepared_commit'))
+        posted, already, held = author_items(plan, skip_accepted, recorded)
         prepared = plan.get('prepared_commit')
         stale = plan.get('stale_resolutions') or []
         if not prepared:
@@ -195,6 +205,7 @@ def render(plan, flags=(), worktree=None, role=None):
                 '- Push: ' + push,
                 '- Thread replies: {} ({} also resolve the thread)'.format(
                     len(posted), sum(1 for i in posted if i['resolve'])),
+                '- Already posted in an earlier attempt: {}'.format(len(already)),
                 '- Earlier handled threads resolved without a new reply: {}'.format(len(stale)),
                 '- Human comments: {} approved, {} edited, {} skipped, {} undecided'.format(
                     sum(1 for h in humans if h.get('decision') == 'approve'),
@@ -217,6 +228,22 @@ def render(plan, flags=(), worktree=None, role=None):
             out += ['None.', '']
         for n, item in enumerate(posted, 1):
             out += _reply_block(n, item, identity)
+        if already:
+            out += ['## Already posted in an earlier attempt', '',
+                    'Apply neither posts nor updates these; GitHub keeps their current text.', '']
+            for item, reply_id in already:
+                where = _where(item) or item.get('thread_id') or '?'
+                who = item.get('author') or 'unknown author'
+                try:
+                    link = _link(identity, int(reply_id))
+                except (TypeError, ValueError):
+                    link = None
+                line = '- `{}` ({}): already posted{}'.format(
+                    where, who, ' as [reply]({})'.format(link) if link else '')
+                if item.get('resolve'):
+                    line += '; resolve yes'
+                out.append(line)
+            out.append('')
         if stale:
             out += ['## Earlier handled threads resolved without a new reply', '']
             out += ['- `{}`'.format(t) for t in stale]
@@ -234,7 +261,16 @@ def cmd_render(args):
     plan_path = Path(args.plan)
     plan = _load(plan_path)
     flags = (args.flags or '').split()
-    text = render(plan, flags=flags, worktree=args.worktree, role=args.role or None)
+    recorded = {}
+    if args.recorded:
+        try:
+            recorded = json.loads(args.recorded)
+        except json.JSONDecodeError as exc:
+            raise UsageError('--recorded is not valid JSON: {}'.format(exc))
+        if not isinstance(recorded, dict):
+            raise UsageError('--recorded must be a JSON object of comment id to reply id')
+    text = render(plan, flags=flags, worktree=args.worktree, role=args.role or None,
+                  recorded=recorded)
     out = Path(args.out) if args.out else plan_path.parent / 'triage-preview.md'
     out.write_text(text + '\n', encoding='utf-8')
     print(out)
@@ -253,6 +289,8 @@ def main(argv=None):
     p.add_argument('--plan', required=True)
     p.add_argument('--role', help='trusted role from the bulk state (author or reviewer)')
     p.add_argument('--flags', help='space-separated PR flags from the bulk state')
+    p.add_argument('--recorded', help="JSON object of the run state's .actions.replies "
+                                      '(comment id to the reply id an earlier attempt posted)')
     p.add_argument('--worktree', help='the PR worktree holding the prepared commit')
     p.add_argument('--out', help='output path (default: triage-preview.md next to the plan)')
     p.set_defaults(func=cmd_render)
