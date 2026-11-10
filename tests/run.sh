@@ -2863,8 +2863,16 @@ triage_plan() {
     cc_review_threads: [], stale_resolutions: [], human: $h, ci_note: null}' > "$TEST_TMP/bulk/$1/pr-7/triage-plan.json"
 }
 
-# btriage <run>: bulk-apply.sh triage for PR #7 with a test triage state file
+# btriage <run>: bulk-apply.sh triage for PR #7 with a test triage state file.
+# Records the user's approval of the current plan first (the Approve Pass),
+# unless BTRIAGE_NO_APPROVAL is set; an unreadable plan gets no approval, so
+# the script reports the plan error itself
 btriage() {
+  local fp
+  if [ -z "${BTRIAGE_NO_APPROVAL:-}" ] \
+    && fp="$(python3 -B "$SCRIPTS/triage_preview.py" fingerprint --plan "$TEST_TMP/bulk/$1/pr-7/triage-plan.json" 2>/dev/null)"; then
+    FP="$fp" bstate pr-set "$1" 7 '.approval={answer: "approved", fingerprint: env.FP}' >/dev/null || return 1
+  fi
   TRIAGE_STATE_FILE="$TEST_TMP/triage-state.json" bapply triage "$1" 7
 }
 
@@ -2892,6 +2900,31 @@ test_bulk_apply_triage_full() {
   assert_json "both threads resolved" "$out" '.actions.resolved | sort | join(",")' "PRRT_1,PRRT_2"
   assert_json "status actioned" "$out" '.status' "actioned"
   assert_json "the triage state knows the replies" "$(cat "$TEST_TMP/triage-state.json")" '."7".comments | "\(."101".action) \(."102".action)"' "accepted rejected"
+}
+
+test_bulk_apply_triage_requires_approval() {
+  local sha run commit out fp
+  make_bulk_repo
+  sha="$(make_pr 7)"
+  run="$(triage_run_pr7 "$sha")"
+  commit="$(triage_prepared "$run" "$sha")"
+  triage_plan "$run" "$commit"
+  triage_threads "$TRIAGE_THREADS"
+  out="$(BTRIAGE_NO_APPROVAL=1 btriage "$run")"
+  assert_contains "no approval: refused" "$out" "REFUSED approval"
+  assert_eq "no approval: nothing pushed" "$sha" "$(git -C "$BULK_BARE" rev-parse topic-7)"
+  assert_not_contains "no approval: nothing posted" "$(cat "$TEST_TMP/gh.log" 2>/dev/null)" "replies"
+  fp="$(python3 -B "$SCRIPTS/triage_preview.py" fingerprint --plan "$TEST_TMP/bulk/$run/pr-7/triage-plan.json")"
+  FP="$fp" bstate pr-set "$run" 7 '.approval={answer: "approved", fingerprint: env.FP}' >/dev/null
+  jq '.replies[1].body = "Changed after approval."' "$TEST_TMP/bulk/$run/pr-7/triage-plan.json" > "$TEST_TMP/plan.tmp" \
+    && mv "$TEST_TMP/plan.tmp" "$TEST_TMP/bulk/$run/pr-7/triage-plan.json"
+  out="$(TRIAGE_STATE_FILE="$TEST_TMP/triage-state.json" bapply triage "$run" 7)"
+  assert_contains "plan changed after approval: refused" "$out" "REFUSED approval"
+  assert_eq "changed plan: nothing pushed" "$sha" "$(git -C "$BULK_BARE" rev-parse topic-7)"
+  bstate pr-set "$run" 7 '.approval={answer: "skipped", fingerprint: "x"}' >/dev/null
+  jq '.mode = "unattended"' "$TEST_TMP/bulk/$run/state.json" > "$TEST_TMP/state.tmp" && mv "$TEST_TMP/state.tmp" "$TEST_TMP/bulk/$run/state.json"
+  out="$(TRIAGE_STATE_FILE="$TEST_TMP/triage-state.json" bapply triage "$run" 7)"
+  assert_contains "unattended mode follows its policy without approval" "$out" "ACTIONED"
 }
 
 test_bulk_apply_reviewer_plan_rejected_before_writes() {
@@ -5644,6 +5677,24 @@ test_reviewer_summary() {
   if output="$(python3 -B "$ROOT/tests/test_reviewer_summary.py" 2>&1)"; then _pass; else _fail "reviewer summary tests" "$output"; fi
 }
 
+test_command_files_show_text_rule() {
+  local f body
+  for f in review triage bulk issue inbox; do
+    body="$(cat "$ROOT/review/core/commands/$f.md")"
+    assert_contains "$f.md defines how text is shown" "$body" "## Showing Text to the User"
+    assert_contains "$f.md forbids tool output as presentation" "$body" "A tool result is not shown to the user"
+    assert_contains "$f.md names the question preview field" "$body" "preview\` field of an \`AskUserQuestion\` option"
+  done
+  body="$(cat "$ROOT/review/core/commands/bulk.md")"
+  assert_contains "bulk triage renders a preview before apply" "$body" "triage_preview.py\" render"
+  assert_contains "bulk triage maps a missing approval" "$body" "REFUSED approval"
+}
+
+test_triage_preview() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_triage_preview.py" 2>&1)"; then _pass; else _fail "triage preview tests" "$output"; fi
+}
+
 main() {
   run_test test_discovery_exit_code_and_shape
   run_test test_discovery_valid_file_form
@@ -5749,6 +5800,7 @@ main() {
   run_test test_bulk_apply_marker_head_moved
   run_test test_bulk_apply_review_push_records_sha
   run_test test_bulk_apply_triage_full
+  run_test test_bulk_apply_triage_requires_approval
   run_test test_bulk_apply_reviewer_plan_rejected_before_writes
   run_test test_bulk_apply_reviewer_stale_activity_has_zero_writes
   run_test test_bulk_apply_reviewer_no_post_outcome_is_recorded
@@ -5810,6 +5862,8 @@ main() {
   run_test test_issue_assessment
   run_test test_pr_actions
   run_test test_reviewer_summary
+  run_test test_triage_preview
+  run_test test_command_files_show_text_rule
   run_test test_bulk_apply_reviewer_permission_is_terminal
   run_test test_bulk_apply_reviewer_permission_denied_mutation_is_terminal
   run_test test_bulk_apply_reviewer_summary_posts_once

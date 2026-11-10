@@ -282,7 +282,7 @@ For bulk review you can choose per PR:
 - post a short "no findings" note so later runs skip the PR
 - skip it
 
-For bulk triage you either apply a PR's prepared work (push the fix commit, post the drafted replies, resolve the handled threads) or skip it. Human comments are shown one by one in the same step, and you approve, edit or skip each reply.
+For bulk triage you either apply a PR's prepared work (push the fix commit, post the drafted replies, resolve the handled threads) or skip it. Human comments are shown one by one in the same step, and you approve, edit or skip each reply. Before anything is pushed or posted, every PR you chose to apply gets a preview: the commit with its message and changed files, each thread reply in full with its thread link, the threads that would be resolved, and any grouped PR comment. You approve, edit or skip each PR. A plan that changes after your approval is shown again, and an interactive run never posts a plan you have not approved.
 
 If a PR gets new commits while the other PRs are still being analyzed, it is analyzed once more before the table shows up. Should it move yet again, it is marked stale and gets no action.
 

@@ -19,6 +19,14 @@ This file is executed by the "Bulk Mode" hand-off of `commands/review.md` (`BULK
 
 **The user's checkout is never touched.** Every PR is analyzed in `<run dir>/pr-<n>/wt`, a detached worktree. Nothing in this command checks out, stashes, resets or commits in `PROJECT_DIR` itself, and nothing writes outside `.cc-review/bulk/` in it, apart from the shared triage state `.cc-review/.triage-state.json` that bulk triage updates exactly as single-PR triage does (FR-014a).
 
+## Showing Text to the User
+
+Whenever this command says to show, print or present text the user reads before deciding (a review or comment draft, a thread reply, a PR comment, a commit message, a preview file, a report or table), the text goes into **your own reply as Markdown**:
+- Read the file with your file-read tool when needed, then reproduce the text in full in your message. A tool result is not shown to the user: harnesses collapse tool output (Claude Code shows `… +N lines (ctrl+o to expand)`), and `jq` prints strings with escaped newlines. Never present a draft through `cat`, `jq`, `echo` or any other command output.
+- Never shorten, summarize or paraphrase a text that will be posted under the user's name. When it is long, show it across several messages before you ask.
+- A question may refer to text as "shown above" only when that exact text is in full in one of your earlier messages and unchanged since. Otherwise show it first.
+- When your harness's question tool offers a per-option preview (Claude Code: the `preview` field of an `AskUserQuestion` option), also put the full text into the preview of the option that posts or pushes it (Approve, Apply, Post). This adds to the message text and never replaces it: other harnesses have no such field, and the preview is gone once the question is answered.
+
 ## Follow-up Review Continuity
 
 For review runs, each PR follows review.md's Prior Review Context and Follow-up Continuity sections. Keep `history-input.json`, manual summary attribution, `history.json`, candidate/concern assessments and `continuity.json` under `$PR_DIR/scope/` through analysis, fix, apply and resume. Every reviewer, merge, critic, report and fix worker receives the absolute history path. History remains relevant in full fallback and `--full` and never substitutes for a completed baseline.
@@ -595,6 +603,8 @@ Only PRs with status `analyzed` and no recorded `decision` are decided; `failed`
 
 For review runs, the drafted reviews are not shown here: the Approve pass of apply ([Review Decision and Apply](#review-decision-and-apply)) shows every draft in full after all drafts exist, and has its own **Stop (resume later)**: the PRs answered before the stop keep their recorded approvals or skips, and a resume asks only for the unanswered previews and for drafts that changed since their approval.
 
+For triage runs, the same holds: the decision here chooses Apply or Skip per PR, and the [triage Approve Pass](#triage-approve-pass) then shows every commit and text each applied PR would push or post, in full, before anything happens. A per-PR question in this step therefore never says "shown above" about replies or comments.
+
 Record each decision as soon as it is made, so an interrupted decision step loses nothing (the value is a JSON array, for example `["post"]`, `["fix","post"]`):
 
 ```bash
@@ -1101,7 +1111,7 @@ jq -r --arg dir "$RUN_DIR" '
   (.prs[] | "| #\(.number) | \(.title | cell) | \(.triage_role // "-" | cell) | \(.assessment.triage.reason // "-" | cell) | \(if .counts then "\(.counts.bot_valid)/\(.counts.bot_rejected)/\(.counts.deferred)/\(.counts.human)" else "-" end) | \(.status)\(if .reason then " (\(.reason | cell))" else "" end)\(if (.flags | length) > 0 then " [\(.flags | join(", "))]" else "" end) | \(if .triage_role == "reviewer" then "\(.triage_execution.resolutions // 0) resolutions; \(.triage_execution.summaries // 0) PR summary covering \(.triage_execution.summary_threads // 0) threads (author must resolve)" else "author triage" end) | \(if .report then "\($dir)/\(.report)" else "-" end) | \(if .status == "analyzed" and .decision == null then .proposed else ((.decision // ["-"]) | join(" + ")) end) |")' "$RUN_DIR/state.json"
 ```
 
-Explain the role and shared selection reason separately from execution status. Author counts describe bot suggestions and human comments; reviewer work verifies existing findings and never prepares a fix commit. Questions stay pending in either role. The summary file holds the details and the exact grouped comment draft. Missing resolution permission offers a single PR summary, with no individual replies or resolution calls for its covered threads. Explain author flags when relevant (`local-unpushed`: fixes stay unpushed; `cross-repo`: a fork, where an author push may be refused).
+Explain the role and shared selection reason separately from execution status. Author counts describe bot suggestions and human comments; reviewer work verifies existing findings and never prepares a fix commit. Questions stay pending in either role. The summary file holds the details. The texts that would be posted (thread replies, the grouped PR comment, human replies) and the commit that would be pushed are not shown here: the [Approve Pass](#triage-approve-pass) shows each PR's in full before anything is pushed or posted, so never ask about them as "shown above" at this point. Missing resolution permission offers a single PR summary, with no individual replies or resolution calls for its covered threads. Explain author flags when relevant (`local-unpushed`: fixes stay unpushed; `cross-repo`: a fork, where an author push may be refused).
 
 ### Allowed actions
 
@@ -1149,6 +1159,45 @@ jq --argjson cid "$CID" --arg d "$DECISION" --rawfile edited "$EDITED" \
 
 A human comment left undecided (the step was stopped, or unattended mode) keeps `decision` null: apply does not answer it, and the summary lists it under "Needs attention".
 
+### Triage Approve Pass
+
+**Deferred mode only** (unattended mode applies the [Unattended Policy](#unattended-policy) and records no approval). After the decision step, including its human comment prompts, and before Apply, every PR whose plan will push or post anything is shown and answered on its own. `bulk-apply.sh triage` refuses a deferred-mode PR without a matching approval (`REFUSED approval`), so this pass cannot be skipped.
+
+Go through the PRs decided `["apply"]` with status `analyzed`, `applying` or `partially-applied`, in state order, one at a time. Skip a PR whose `.approval.answer` is `approved` and whose `.approval.fingerprint` equals the plan's current fingerprint: the user already approved exactly this plan (a resumed run). Every other PR is asked, also when an earlier approval belongs to another fingerprint (the plan changed since). For each PR:
+
+1. Render the preview from the plan (deterministic; it reads the plan, the trusted role and flags from the state, the replies an earlier attempt already posted, and the prepared commit from the worktree):
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"
+python3 -B "$S/triage_preview.py" render --plan "$RUN_DIR/pr-$N/triage-plan.json" \
+  --role "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.triage_role // ""')" \
+  --flags "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '(.flags // []) | join(" ")')" \
+  --recorded "$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" 'if .triage_role == "reviewer" then (.actions.reviewer_replies // {}) else (.actions.replies // {}) end')" \
+  --worktree "$RUN_DIR/pr-$N/wt" || exit 1
+```
+
+2. Read the printed `triage-preview.md` with your file-read tool and show it **in full as your own message text**, following [Showing Text to the User](#showing-text-to-the-user). Do not shorten, summarize or paraphrase a reply; the user decides on the exact words posted under their name. This preview is the one place besides the findings drill-down where you read a triage plan's content; drop it from your context before the next PR.
+3. Ask one question about this PR only: **Approve** (push and post exactly what the preview shows), **Edit** (describe a change in plain words), **Skip** (nothing is pushed or posted for this PR), or **Stop (resume later)**. There is no "approve all" choice. When the question tool supports per-option previews, put the full preview text into the **Approve** option's preview as well.
+4. Record the answer the moment it is given:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+S="$CC_REVIEW_CORE_DIR/scripts"; RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+N="{N}"; ANSWER="{approved|skipped}"
+FP=$(python3 -B "$S/triage_preview.py" fingerprint --plan "$RUN_DIR/pr-$N/triage-plan.json") || exit 1
+ANSWER="$ANSWER" FP="$FP" "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" \
+  '.approval={answer: env.ANSWER, fingerprint: env.FP, at: (now | todate)}' >/dev/null
+if [ "$ANSWER" = skipped ]; then "$S/bulk-state.sh" pr-set "$RUN_ID" "$N" '.decision=["skip"]' >/dev/null; fi
+echo "APPROVAL #$N $ANSWER $FP"
+```
+
+- **Approve**: record `approved`; Apply runs the PR.
+- **Skip**: record `skipped`; the decision becomes `["skip"]` and Apply skips the PR (the threads stay open for the next run). A PR whose push or replies already started in an earlier attempt (status `applying` or `partially-applied`, with `.actions` recorded) keeps what was done; say so.
+- **Edit**: change `$RUN_DIR/pr-<n>/triage-plan.json` with your file-write tool (never through a shell literal: the texts quote untrusted comments). Editable: the `body` text of a `.replies[]` entry or of a `.cc_review_threads[]` entry that already has a non-empty body, `resolve` from true to false on either, and dropping an author `.replies[]` reply by setting its `body` to `""` (its thread stays open and the next run sees it again). A human reply changes through its `.human[]` entry: `body` with `decision` `"edit"`, or `decision` `"skip"`. Not editable: a reply an earlier attempt already posted (an author reply's `comment_id` is a key of the run state's `.actions.replies`, a reviewer reply's `activity.activity_key` is a key of `.actions.reviewer_replies`; the preview lists it under **Already posted in an earlier attempt** because apply neither posts nor updates it, so edit it on GitHub directly), `prepared_commit` (Skip the PR to keep the commit unpushed), ids, paths, lines, `activity`, `outcome`, `stale_resolutions`, and `.resolution_summary` (its `summary_key` binds the body; Skip the PR to withhold it). Then re-render the preview, show it in full, and ask again.
+- **Stop (resume later)**: the PRs answered so far keep their recorded answers. Leave the run in `deciding`, print the summary and how to continue (`--bulk --resume`), and stop. A resume asks only for the unanswered PRs and for plans that changed since their approval.
+
 ### Apply
 
 For each PR with `["apply"]`, run the generic head check of [Apply](#apply) immediately before this block (`HEAD ok` only; the script pushes and posts), with the status set to `applying`:
@@ -1175,6 +1224,7 @@ echo "STATUS=$STATUS PUSHED=$("$S/bulk-state.sh" pr-get "$RUN_ID" "$N" '.actions
 ```
 
 The script itself records every sub-action (push, each reply, each resolution) and sets the final status:
+- `REFUSED approval` (deferred mode): the PR has no approval of its current plan; nothing was pushed or posted. Run the [Approve Pass](#triage-approve-pass) for this PR (show the preview, ask, record), then run this block again only after **Approve**.
 - `ACTIONED ...`: done. When it pushed, tell the user that their local branch of this PR (if they have one) is now behind the remote, and that CI was not checked (the summary suggests `/triage --pr <n>` for CI repair).
 - Permission-denied reviewer resolutions are recorded as terminal skips, reported with the threads still open, and do not keep the run unfinished. `ACTIONED` may include these skips; the summary links any posted PR notification. Legacy plans never acquire an unapproved comment during resume.
 - `PARTIAL ...` (some replies, summaries or resolutions failed transiently), or a push or thread-read error: the PR is `partially-applied` and keeps its worktree; a resume retries only what is missing.
@@ -1283,4 +1333,4 @@ Tell the user how many PRs were left for a later run (`OK not-analyzed=<n>`). Wh
 
 **Nothing is done twice (FR-028).** Every completed sub-action has its id in the state and is skipped: `bulk-apply.sh` skips recorded pushes, replies and resolutions, and the posting step is skipped when `review_id` is recorded. Thread actions without a review have no `review_id`: once they are all done, `.actions.thread_actions_done` is recorded and the Prepare, Approve and Post passes skip the PR; a Post pass interrupted during them runs the check again and performs only the replies, resolutions and PR comments not yet recorded. A continuation reply or PR conversation comment (Follow-up Continuity, `review.md` 7.5l2) is recorded the moment it is posted (`reply`, or `pr_comment <source_id> <comment id>`), and its block first looks for its continuation marker (`<!-- cc-review-continuation:v1 <run marker> <source_id> -->`) in the thread or the PR conversation, so a comment that was posted before the record was written is found (`FOUND`) instead of posted again. Before posting a review that is not recorded, `post-review.sh` looks for this run's marker on the PR and reports that review instead (`FOUND`); `bulk-apply.sh marker` does the same for the marker, and `bulk-apply.sh triage` records a reply this run already posted (a reply by the user with `<!-- cc-review-triage`, created since the run started) instead of posting it again. A fix push already recorded (`.actions.pushed_sha`) skips the fix rounds.
 
-**Drafts and approvals survive a resume (FR-019, FR-019a).** The drafting worker reuses `$PR_DIR/post` when its `draft.json` inputs key (expected head, findings to post, run facts) is unchanged, so the fingerprint of an approved draft stays the same; it drafts again only when the draft is missing or its inputs changed. The Approve pass skips a PR whose recorded `.approval.fingerprint` equals `.draft.fingerprint` and asks again when the draft changed since approval, and the Post pass posts only such a matching approval.
+**Drafts and approvals survive a resume (FR-019, FR-019a).** The drafting worker reuses `$PR_DIR/post` when its `draft.json` inputs key (expected head, findings to post, run facts) is unchanged, so the fingerprint of an approved draft stays the same; it drafts again only when the draft is missing or its inputs changed. The Approve pass skips a PR whose recorded `.approval.fingerprint` equals `.draft.fingerprint` and asks again when the draft changed since approval, and the Post pass posts only such a matching approval. Triage approvals work the same way: `.approval.fingerprint` hashes the whole `triage-plan.json` (`triage_preview.py fingerprint`), the triage Approve Pass skips a PR whose plan is unchanged since approval, and `bulk-apply.sh triage` acts only on such a matching approval.

@@ -247,7 +247,7 @@ Pick the PRs with a GitHub search, or take every open PR. Drafts and PRs already
 /triage --bulk
 ```
 
-Triages open PRs with eligible author or reviewer-owned feedback. Author PRs keep the prepared-fix workflow. Reviewer triage prepares exact-thread replies and verified outcomes without branch changes; answers still requiring judgment remain pending. Review and triage selections are independent.
+Triages open PRs with eligible author or reviewer-owned feedback. Author PRs keep the prepared-fix workflow. Reviewer triage prepares exact-thread replies and verified outcomes without branch changes; answers still requiring judgment remain pending. Before anything is pushed or posted, you see each PR's commit and every reply in full and approve, edit or skip it. Review and triage selections are independent.
 
 ```
 /review --bulk --resume --unattended
