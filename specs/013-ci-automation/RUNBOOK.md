@@ -5,8 +5,8 @@ status: drafted
 mode: light
 steps_total: 5
 step_results: pending,pending,pending,pending,pending
-drafted_at: 3665095
-drafted_fingerprint: 4a9ad102c9974640ec782de2dcd501e8876c1607bca259c6c07d7800073eb689
+drafted_at: 80e8555
+drafted_fingerprint: 2e2e9667c972c19829f69fa6fb88c9dd2956c8786c2b684894094fc9a99607ab
 tested_at:
 tested_fingerprint:
 updated: 2026-11-11
@@ -15,8 +15,9 @@ updated: 2026-11-11
 # Try it: Unattended CI setup and routing
 
 <!-- runbook-status -->
-> **Status:** drafted · 0 of 5 steps · Mode: light · Drafted at 3665095 · 2026-11-11
+> **Status:** drafted · 0 of 5 steps · Mode: light · Drafted at 80e8555 · 2026-11-11
 <!-- /runbook-status -->
+
 
 ## What you're testing
 

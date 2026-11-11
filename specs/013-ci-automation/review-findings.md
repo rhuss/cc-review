@@ -45,3 +45,12 @@ External review: CodeRabbit was attempted but returned reauthentication_required
 ## Remaining validation
 
 Live GitHub Actions/provider/App/fork acceptance is tracked separately; see [issue #17](https://github.com/rhuss/cc-review/issues/17). No production installation or secrets were changed by this implementation session.
+
+## Verification evidence
+
+- `make test`: 1922 passed, 0 failed (204 tests).
+- `python3 -B tests/test_ci.py`: 31 tests passed, including regression red/green checks during implementation.
+- `make validate`: both manifests passed; existing missing-icon advisory is nonblocking.
+- `actionlint`: reusable workflow and generated caller passed.
+- `spex-runbook-check.sh`: RUNBOOK_CHECK_PASS; 5 drafted light-mode steps, not executed.
+- Live provider/App acceptance: not run; tracked in issue #17.
