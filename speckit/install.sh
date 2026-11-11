@@ -19,4 +19,4 @@ fi
 specify extension add "$SCRIPT_DIR" $DEV_FLAG
 
 echo "cc-review extension installed via spec-kit."
-echo "Commands available: speckit.cc-review.review, speckit.cc-review.triage"
+echo "Commands available: speckit.cc-review.review, speckit.cc-review.triage, speckit.cc-review.issue, speckit.cc-review.inbox, speckit.cc-review.ci"

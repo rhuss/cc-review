@@ -12,3 +12,5 @@ Resolve core from the installed cc-review plugin, then .cc-review/core, then ~/.
 Set CC_REVIEW_CORE_DIR to the resolved absolute directory in every shell block, except the collector command, which uses the literal absolute script path as the command describes. Read and execute commands/issue.md from that directory, preserving the invoking working directory and all user arguments.
 
 Supported arguments: issue number or URL, --repo owner/name, --help. Do not inject --spec or other review/triage arguments. The output is an assessment and draft reply; publishing and implementation are separate actions.
+
+Forward `--unattended` unchanged for single items and bulk flows; the shared core policy owns all unattended defaults.

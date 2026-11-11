@@ -120,7 +120,7 @@ issue --help
 
 Assessment reads the issue conversation and available matching project guidance, then separates the concrete need, project fit, and whether implementation is justified. Missing use-case evidence leads to a request for one real example before discussing a solution. Material uncertainty about project direction prompts a question to you. A supported offer to contribute usually receives a small, bounded outline; a real need outside project scope can receive a respectful recommendation against implementation.
 
-You receive maintainer reasoning and a separate friendly reply draft. The prose humanizer shapes wording when available; otherwise the bundled maintainer voice supplies the fallback. Assessment never posts comments, edits code, or changes the issue.
+You receive maintainer reasoning and a separate friendly reply draft. The prose humanizer shapes wording when available; otherwise the bundled maintainer voice supplies the fallback. Interactive assessment never posts comments, edits code, or changes the issue. Explicit `--unattended` posts the reply and configured triage labels under the [unattended policy](docs/CI.md).
 
 Requires Python 3.9+, jq, and authenticated gh. GitHub.com only; explicit issue target required; PRs are rejected. The opening body and latest 50 comments are bounded to 20,000 and 4,000 characters respectively, with omissions disclosed. A missing or unrelated checkout is reported as unavailable project context.
 
@@ -258,6 +258,17 @@ Continues an unfinished run, or starts a new one, without asking anything. This 
 Run state and reports live in `.cc-review/bulk/<run-id>/` (git-ignored); `state.md` shows the progress. See the [standalone guide](docs/extras/standalone-guide.md#bulk-review-and-triage) for the details.
 
 Review and triage share exact verification evidence and avoid duplicate thread actions. Triage never advances the code-review baseline. Reports disclose scope, personal baseline, actual tool coverage, fallback reasons and incomplete work. A completed no-findings review can establish a baseline when approved and posted with completion evidence; incomplete or unposted work cannot. Command reviewers without delta support may still examine the full PR, with their findings subject to the same scope policy. See the [standalone guide](docs/extras/standalone-guide.md#follow-up-reviews) for details.
+
+## Unattended CI
+
+Run `cc-review:ci setup` in a target repository to install a pinned GitHub Actions
+caller with your model credentials and bot identity. Automatic PR review, bot
+comment triage, issue assessment, maintainer comment commands and bounded sweeps
+share guarded publication policy and one item status surface. Use `status`,
+`doctor`, `update` and `disable` to manage it. See [CI setup and policy](docs/CI.md).
+
+Single-item `review --pr N --unattended`, `triage --pr N --unattended` and
+`issue N --unattended` also apply the fixed unattended policy without questions.
 
 ## Configuration
 

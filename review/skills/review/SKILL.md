@@ -43,5 +43,5 @@ Pass through all arguments from the user's invocation:
 - `--bulk`: Review several PRs in one run (see `core/commands/bulk.md`)
 - `--all-open` / `--search <query>`: Bulk selectors (all open PRs, or a PR search)
 - `--limit <n>`: Maximum number of PRs in a bulk run
-- `--unattended`: Bulk run without prompts, using the fixed policy
+- `--unattended`: Single-item or bulk run without prompts, using the fixed policy
 - `--resume [<run-id>]`: Continue an unfinished bulk run

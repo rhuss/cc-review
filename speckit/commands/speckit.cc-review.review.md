@@ -42,3 +42,5 @@ Read and execute `core/commands/review.md` from resolved core, passing:
 
 After completion, update `.specify/.spex-state`:
 - Set `review_status: completed`
+
+Forward `--unattended` unchanged for single items and bulk flows; the shared core policy owns all unattended defaults.

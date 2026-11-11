@@ -1,0 +1,51 @@
+# Managed by cc-review:ci (schema 1). Keep the immutable refs in sync on update.
+name: cc-review CI
+on:
+  pull_request_target:
+    types: [opened, synchronize]
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      number:
+        description: 'Item number; empty runs a bounded sweep'
+        type: string
+        required: false
+      operation:
+        description: 'Single-item operation'
+        type: choice
+        options: [help, review, triage, assess]
+        default: help
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+  actions: read
+  id-token: write
+jobs:
+  cc-review:
+    uses: rhuss/cc-review/.github/workflows/cc-review.yml@__CC_REVIEW_REF__
+    with:
+      integration_ref: __CC_REVIEW_REF__
+      app_id: ${{ vars.CC_REVIEW_APP_ID }}
+      anthropic_base_url: ${{ vars.CC_REVIEW_ANTHROPIC_BASE_URL }}
+      federation_rule_id: ${{ vars.CC_REVIEW_FEDERATION_RULE_ID }}
+      anthropic_organization_id: ${{ vars.CC_REVIEW_ANTHROPIC_ORGANIZATION_ID }}
+      anthropic_service_account_id: ${{ vars.CC_REVIEW_ANTHROPIC_SERVICE_ACCOUNT_ID }}
+      anthropic_workspace_id: ${{ vars.CC_REVIEW_ANTHROPIC_WORKSPACE_ID }}
+      aws_region: ${{ vars.CC_REVIEW_AWS_REGION || 'us-east-1' }}
+      google_project: ${{ vars.CC_REVIEW_GOOGLE_PROJECT }}
+      google_region: ${{ vars.CC_REVIEW_GOOGLE_REGION || 'us-east5' }}
+    secrets:
+      anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+      claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      app_private_key: ${{ secrets.CC_REVIEW_APP_PRIVATE_KEY }}
+      aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      aws_session_token: ${{ secrets.AWS_SESSION_TOKEN }}
+      google_credentials: ${{ secrets.GOOGLE_CREDENTIALS }}

@@ -1,0 +1,202 @@
+name: Unattended cc-review
+on:
+  workflow_call:
+    inputs:
+      integration_ref:
+        description: Immutable cc-review commit (same as caller uses ref)
+        required: true
+        type: string
+      app_id:
+        required: false
+        type: string
+        default: ''
+      anthropic_base_url:
+        required: false
+        type: string
+        default: ''
+      aws_region:
+        required: false
+        type: string
+        default: us-east-1
+      google_project:
+        required: false
+        type: string
+        default: ''
+      google_region:
+        required: false
+        type: string
+        default: us-east5
+      federation_rule_id:
+        required: false
+        type: string
+        default: ''
+      anthropic_organization_id:
+        required: false
+        type: string
+        default: ''
+      anthropic_service_account_id:
+        required: false
+        type: string
+        default: ''
+      anthropic_workspace_id:
+        required: false
+        type: string
+        default: ''
+    secrets:
+      anthropic_api_key:
+        required: false
+      claude_code_oauth_token:
+        required: false
+      app_private_key:
+        required: false
+      aws_access_key_id:
+        required: false
+      aws_secret_access_key:
+        required: false
+      aws_session_token:
+        required: false
+      google_credentials:
+        required: false
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  checks: read
+  actions: read
+  id-token: write
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      count: ${{ steps.select.outputs.count }}
+    steps:
+      - name: Validate immutable integration ref
+        shell: bash
+        env:
+          CC_REF: ${{ inputs.integration_ref }}
+        run: '[[ "$CC_REF" =~ ^[a-f0-9]{40}$ ]]'
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: rhuss/cc-review
+          ref: ${{ inputs.integration_ref }}
+          path: _cc_review
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: _target
+          persist-credentials: false
+      - name: Select enabled eligible requests
+        id: select
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 _cc_review/review/core/scripts/ci.py select --config _target/.cc-review/ci.yml
+  item:
+    needs: select
+    if: needs.select.outputs.count != '0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    concurrency:
+      group: cc-review-${{ github.repository }}-${{ matrix.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: rhuss/cc-review
+          ref: ${{ inputs.integration_ref }}
+          path: _cc_review
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: _target
+          persist-credentials: false
+      - name: Mint scoped installation token
+        if: inputs.app_id != ''
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        with:
+          app-id: ${{ inputs.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: ${{ matrix.operation == 'fix' && 'write' || 'read' }}
+          permission-issues: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-actions: read
+      - name: Materialize Vertex credentials privately
+        env:
+          CC_GOOGLE_CREDENTIALS: ${{ secrets.google_credentials }}
+          CC_CREDENTIALS_PATH: ${{ runner.temp }}/cc-review-google-credentials.json
+        run: |
+          umask 077
+          if [ -n "$CC_GOOGLE_CREDENTIALS" ]; then
+            printf '%s' "$CC_GOOGLE_CREDENTIALS" > "$CC_CREDENTIALS_PATH"
+          fi
+      - name: Prepare
+        id: prepare
+        uses: ./_cc_review/ci
+        with:
+          phase: prepare
+          config: _target/.cc-review/ci.yml
+          request: ${{ toJSON(matrix) }}
+          project_dir: _target
+          work_dir: ${{ runner.temp }}/cc-review-ci
+          github_token: ${{ steps.app.outputs.token || github.token }}
+      - name: Analyze bounded evidence without tools
+        if: steps.prepare.outputs.run_model == 'true'
+        id: model
+        timeout-minutes: ${{ fromJSON(steps.prepare.outputs.timeout || '15') }}
+        continue-on-error: true
+        uses: anthropics/claude-code-action/base-action@d5f7970ae232b6039636a16ea7f251e58e814f38
+        env:
+          GH_TOKEN: ''
+          GITHUB_TOKEN: ''
+          CLAUDE_WORKING_DIR: ${{ runner.temp }}/cc-review-ci
+          ANTHROPIC_BASE_URL: ${{ inputs.anthropic_base_url }}
+          AWS_REGION: ${{ inputs.aws_region }}
+          ANTHROPIC_VERTEX_PROJECT_ID: ${{ inputs.google_project }}
+          CLOUD_ML_REGION: ${{ inputs.google_region }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
+          AWS_SESSION_TOKEN: ${{ secrets.aws_session_token }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/cc-review-google-credentials.json
+        with:
+          prompt_file: ${{ runner.temp }}/cc-review-ci/prompt.txt
+          anthropic_api_key: ${{ secrets.anthropic_api_key }}
+          claude_code_oauth_token: ${{ secrets.claude_code_oauth_token }}
+          anthropic_federation_rule_id: ${{ inputs.federation_rule_id }}
+          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
+          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
+          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
+          use_bedrock: ${{ steps.prepare.outputs.provider == 'bedrock' && 'true' || 'false' }}
+          use_vertex: ${{ steps.prepare.outputs.provider == 'vertex' && 'true' || 'false' }}
+          claude_args: >-
+            --model ${{ steps.prepare.outputs.model }}
+            --max-turns ${{ steps.prepare.outputs.turns }}
+            --tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+            --setting-sources "" --disable-slash-commands
+            --plugin-dir ${{ github.workspace }}/_cc_review/review
+            --json-schema '${{ steps.prepare.outputs.schema }}'
+      - name: Finalize even on analysis failure
+        if: always() && steps.prepare.outcome == 'success'
+        uses: ./_cc_review/ci
+        with:
+          phase: finish
+          config: _target/.cc-review/ci.yml
+          work_dir: ${{ runner.temp }}/cc-review-ci
+          github_token: ${{ steps.app.outputs.token || github.token }}
+          result: ${{ steps.model.outcome == 'success' && steps.model.outputs.conclusion == 'success' && steps.model.outputs.structured_output || '' }}
+      - name: Remove temporary provider and item evidence
+        if: always()
+        env:
+          CC_WORK_DIR: ${{ runner.temp }}/cc-review-ci
+          CC_CREDENTIALS: ${{ runner.temp }}/cc-review-google-credentials.json
+        run: rm -rf -- "$CC_WORK_DIR" "$CC_CREDENTIALS"
