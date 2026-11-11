@@ -1,6 +1,6 @@
 # Brainstorm Overview
 
-Last updated: 2026-11-06
+Last updated: 2026-11-11
 
 ## Sessions
 
@@ -21,6 +21,7 @@ Last updated: 2026-11-06
 | 13 | 2026-11-04 | skeptic-false-positives | parked | - | - |
 | 14 | 2026-11-06 | inbox-tour-orchestration | active | - | - |
 | 15 | 2026-11-06 | review-metrics-log | active | - | - |
+| 16 | 2026-11-11 | ci-automation | active | - | [#16](https://github.com/rhuss/cc-review/issues/16) |
 
 ## Open Threads
 
@@ -29,7 +30,7 @@ Last updated: 2026-11-06
 - What happens when the PR diff is too large for the GitHub review API's comment limit? Truncation strategy or split into multiple reviews? (from #01)
 - Should the interactive local review support an "edit" action where the user can rewrite the comment text before posting? (from #01)
 - Should `--profile` and `--config` be mutually exclusive, or should `--config` override `--profile` values? (from #02)
-- Should the init skill support generating a GitHub Actions workflow file that uses cc-review? (from #02)
+- Should the init skill support generating a GitHub Actions workflow file that uses cc-review? Answered by #16: a separate `cc-review:ci` skill with a central reusable workflow. (from #02)
 - Should the config support environment variable interpolation (e.g., `$CC_REVIEW_TOKEN`) for CI secrets? (from #02)
 - How should config errors be reported: fail fast with all errors, or warn and use defaults for invalid keys? (from #02)
 - Should the descriptor support multiple output formats (structured JSON vs delimited text vs free-form)? (from #03)
@@ -98,8 +99,20 @@ Last updated: 2026-11-06
 - Which harnesses get the full interactive experience, and whether the streamlined report ships independently of the tour and fan-out. (from #14)
 - Where the outcome back-fill hook lives (follow-up review, triage, or both) and how outcomes match findings edited before posting. (from #15)
 - What a project may safely commit or share from the metrics log for team-wide tuning. (from #15)
+- Reusable workflow (`workflow_call`) or composite action as the central CI entry point, and how callers pin versions? (from #16)
+- Can claude-code-action run in plain prompt mode without its own tracking comments, or does cc-review need direct `claude -p` inside the action? (from #16)
+- What is the one status surface per item: a check run, a sticky comment, or the review plus a reaction? (from #16)
+- Exact marker evidence for "complete" per item type so the sweep only picks up unfinished items (builds on #06 and #08). (from #16)
+- How does the headless contract reliably detect an attempted question in `-p` mode? (from #16)
+- Which triage labels ship by default, and how does setup handle an existing label scheme? (from #16)
+- Cost and runaway guardrails: max turns per item, sweep limit, very large diffs, and how limits are reported. (from #16)
+- `/cc-review fix`: push to the PR branch or open a follow-up PR, and what if CI on the pushed fix fails? (from #16)
+- End-to-end GitHub App manifest flow in the setup skill (browser step, private key as secret, installation). (from #16)
+- Does `.cc-review/bulk/` state matter on ephemeral runners, or do markers alone carry enough state for resume? (from #16)
 
 ## Parked Ideas
 
 - Remote plugin sources (git URLs in config, community catalog) (#05)
   Reason: Parked for a later brainstorm.
+- Self-hosted GitHub App service running cc-review per webhook, reusing the CI command entry point (#16)
+  Reason: Approach A (reusable workflow) ships first; C follows once the entry point is stable.
