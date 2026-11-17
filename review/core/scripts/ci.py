@@ -603,7 +603,7 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
             'severity_reason': {'type': 'string'},
             'alternatives': {'type': 'array', 'maxItems': assessment.ALTERNATIVES_LIMIT, 'items': {'type': 'string'}},
             'fit': {'type': 'string'}, 'recommendation': {'type': 'string'},
-            'recommendation_reason': {'type': 'string'}, 'limits': {'type': 'string'}}}}}
+            'recommendation_reason': {'type': 'string'}, 'limits': {'type': 'string'}, 'summary': {'type': 'string'}}}}}
 
 
 

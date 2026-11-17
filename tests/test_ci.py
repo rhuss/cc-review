@@ -453,6 +453,7 @@ class PublisherTests(unittest.TestCase):
         schema = self.ci.proposal_schema(self.config)['properties']['assessment']
         self.assertFalse(schema['additionalProperties'])
         self.assertEqual(sorted(ASSESSMENT), sorted(schema['required']))
+        self.assertEqual(sorted(ASSESSMENT), sorted(schema['properties']))
         self.assertEqual(sorted(self.config['labels']), schema['properties']['recommendation']['enum'])
         self.assertNotIn('enum', self.ci.PROPOSAL_SCHEMA['properties']['assessment']['properties']['recommendation'])
 
