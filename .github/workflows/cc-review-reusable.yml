@@ -180,6 +180,7 @@ jobs:
             --model ${{ steps.prepare.outputs.model }}
             --max-turns ${{ steps.prepare.outputs.turns }}
             --tools "${{ steps.prepare.outputs.tools }}" --permission-mode dontAsk
+            --disallowedTools "Read(//proc/**)" "Read(//sys/**)" "Grep(//proc/**)" "Grep(//sys/**)" "Glob(//proc/**)" "Glob(//sys/**)"
             ${{ steps.prepare.outputs.code_dir && format('--add-dir {0}', steps.prepare.outputs.code_dir) || '' }}
             --strict-mcp-config --mcp-config '{"mcpServers":{}}'
             --setting-sources "" --disable-slash-commands

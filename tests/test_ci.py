@@ -145,6 +145,13 @@ class PolicyTests(unittest.TestCase):
         long = self.ci.status_body({'review': {'state': 'needs_attention', 'reason': 'x' * 400, 'updated_at': 1, 'run_url': 'u'}})
         self.assertNotIn('x' * 301, long.split('<!-- cc-review:ci:v1')[0])
 
+    def test_status_marker_cannot_be_closed_by_reason(self):
+        body = self.ci.status_body({'review': {'state': 'needs_attention', 'reason': 'x --> visible <!-- y', 'updated_at': 1, 'run_url': 'u'}})
+        marker = body[body.index(self.ci.STATUS_PREFIX):]
+        self.assertEqual(1, marker.count('-->'))
+        self.assertTrue(marker.endswith(' -->'))
+        self.assertEqual('x --> visible <!-- y', self.ci.read_status([{'id': 1, 'user': {'login': 'github-actions[bot]'}, 'body': body}], 'github-actions[bot]')[1]['review']['reason'])
+
     def test_status_upgrades_v16_comment(self):
         old_entry = {'state': 'completed', 'fingerprint': 'f', 'updated_at': 100, 'run_id': '1', 'run_url': 'u', 'reason': 'Long text.'}
         old_body = ('### cc-review CI\n- **assess**: completed. Long text. [Run](u)\n\n'
@@ -245,6 +252,8 @@ class PolicyTests(unittest.TestCase):
         self.assertIn('--add-dir', text)
         self.assertIn('--permission-mode dontAsk', text)
         self.assertNotIn('--tools ""', text)
+        for rule in ('Read(//proc/**)', 'Read(//sys/**)', 'Grep(//proc/**)', 'Glob(//proc/**)'):
+            self.assertIn(rule, text)
         action = (ROOT / 'ci/action.yml').read_text()
         for name in ('tools', 'code_dir'): self.assertIn(f'steps.prepare.outputs.{name}', action)
 

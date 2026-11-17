@@ -195,7 +195,9 @@ def status_body(entries):
         text.append(f'| {status_cell(op)} | {status_cell(status_result(entry))} | {when} | {log} |')
     if 'help' in entries:
         text += ['', '<details><summary>Commands</summary>', '', HELP, '</details>']
-    return '\n'.join(text) + '\n\n' + STATUS_PREFIX + json.dumps({'schema': 1, 'operations': entries}, separators=(',', ':')) + ' -->'
+    # Escape < and > inside the JSON so no stored reason can close the hidden marker; JSON decoding restores them.
+    data = json.dumps({'schema': 1, 'operations': entries}, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
+    return '\n'.join(text) + '\n\n' + STATUS_PREFIX + data + ' -->'
 
 
 def read_status(comments, bot):

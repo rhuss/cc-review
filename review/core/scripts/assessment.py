@@ -36,10 +36,10 @@ RECOMMENDATIONS = {'pursue': 'Pursue', 'needs_evidence': 'Needs more evidence',
 
 CODE_SPANS = re.compile(r'(```.*?```|`[^`\n]*`)', re.S)
 DASH_RULES = (
-    (re.compile(r'(\d)[ \t]*[–—][ \t]*(\d)'), r'\1-\2'),        # numeric range
-    (re.compile(r'[ \t]*[–—][ \t]*(?=[.,;:!?)])'), ''),          # dash before punctuation
-    (re.compile(r'^([ \t]*)[–—][ \t]+', re.M), r'\1- '),          # dash used as a bullet
-    (re.compile(r'[ \t]*[–—][ \t]*'), ', '),                     # aside or clause break
+    (re.compile(r'(\d)[ \t]*[\u2013\u2014][ \t]*(\d)'), r'\1-\2'),        # numeric range
+    (re.compile(r'[ \t]*[\u2013\u2014][ \t]*(?=[.,;:!?)])'), ''),          # dash before punctuation
+    (re.compile(r'^([ \t]*)[\u2013\u2014][ \t]+', re.M), r'\1- '),          # dash used as a bullet
+    (re.compile(r'[ \t]*[\u2013\u2014][ \t]*'), ', '),                     # aside or clause break
 )
 
 
@@ -138,6 +138,11 @@ def _safe(text):
     return str(text).replace('<!--', '&lt;!--').replace('-->', '--&gt;')
 
 
+def _flat(text):
+    # One line per labeled field: issue text must not be able to forge labels or lists.
+    return _safe(' '.join(str(text).split()))
+
+
 def _with_note(label, note):
     return (label + ' ' + note.strip()).strip() if note.strip() else label
 
@@ -146,26 +151,26 @@ def render(body, assessment, labels):
     """Render the reply plus the Assessment section as Markdown."""
     a = assessment
     lines = ['### Assessment', '', f"**Type:** {KIND_LABELS[a['kind']]}",
-             '**Use case:** ' + (_safe(a['use_case'].strip()) or 'Not clear yet'),
-             '**Why:** ' + (_safe(a['why'].strip()) or 'Not clear yet')]
-    result, note = a['check']['result'], _safe(a['check']['note'])
+             '**Use case:** ' + (_flat(a['use_case']) or 'Not clear yet'),
+             '**Why:** ' + (_flat(a['why']) or 'Not clear yet')]
+    result, note = a['check']['result'], _flat(a['check']['note'])
     if a['kind'] == 'bug':
         lines.append('**Bug check:** ' + _with_note(BUG_CHECK[result], note))
     elif a['kind'] == 'feature':
         lines.append('**Real need:** ' + _with_note(REAL_NEED[result], note))
     if a['severity'] is not None:
-        lines.append(f"**Severity:** {a['severity'].capitalize()}. " + _safe(a['severity_reason'].strip()))
+        lines.append(f"**Severity:** {a['severity'].capitalize()}. " + _flat(a['severity_reason']))
     if a['alternatives']:
         lines.append('**Other ways to solve it:**')
-        lines += ['- ' + _safe(' '.join(item.split())) for item in a['alternatives']]
+        lines += ['- ' + _flat(item) for item in a['alternatives']]
         lines.append('')
     if a['fit'].strip():
-        lines.append('**Fits the project:** ' + _safe(a['fit'].strip()))
+        lines.append('**Fits the project:** ' + _flat(a['fit']))
     key = a['recommendation']
     lines.append(f"**Recommendation:** {RECOMMENDATIONS.get(key, key)} (`{labels[key]}`). "
-                 + _safe(a['recommendation_reason'].strip()))
+                 + _flat(a['recommendation_reason']))
     if a['limits'].strip():
-        lines += ['', '<sub>Assessed by cc-review. Not inspected: ' + _safe(a['limits'].strip().rstrip('.')) + '.</sub>']
+        lines += ['', '<sub>Assessed by cc-review. Not inspected: ' + _flat(a['limits']).rstrip('.') + '.</sub>']
     # Markdown needs a line break between labeled lines; two trailing spaces keep them as one block.
     section = '\n'.join(line + '  ' if line.startswith('**') and not line.endswith(':**') else line for line in lines)
     return _safe(body.strip()) + '\n\n' + section.rstrip() + '\n'
