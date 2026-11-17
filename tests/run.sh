@@ -3951,6 +3951,18 @@ test_issue_command_renamed_from_assess() {
   assert_eq "shared criteria template exists" "yes" "$([ -s "$ROOT/review/core/templates/need-and-fit.md" ] && echo yes || echo no)"
 }
 
+test_issue_command_renders_shared_assessment() {
+  local md
+  md="$(cat "$ROOT/review/core/commands/issue.md")"
+  assert_contains "issue command applies the assessment rules" "$md" 'templates/issue-assessment.md'
+  assert_contains "issue command verifies the renderer" "$md" 'scripts/assessment.py'
+  assert_contains "issue command renders the draft" "$md" 'render --input "$ASSESS_TMP/assessment.json"'
+  # md_section only knows backtick fences; issue.md uses tilde fences, so match the cleanup pair directly.
+  assert_contains "cleanup removes the assessment file" "$md" 'rm -f "$ASSESS_TMP/assessment.json"
+rmdir "$ASSESS_TMP"'
+  assert_eq "assessment rules template exists" "yes" "$([ -s "$ROOT/review/core/templates/issue-assessment.md" ] && echo yes || echo no)"
+}
+
 test_review_md_goals_block_collects_linked_issues() {
   local block="$TEST_TMP/goals.sh" bin="$TEST_TMP/goals-bin" sh out
   md_block "$REVIEW_MD" 'GOALS_AVAILABLE=false' > "$block"
@@ -5871,6 +5883,7 @@ main() {
   run_test test_inbox_report
   run_test test_issue_assessment
   run_test test_assessment_module
+  run_test test_issue_command_renders_shared_assessment
   run_test test_ci
   run_test test_pr_actions
   run_test test_reviewer_summary
