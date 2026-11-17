@@ -66,4 +66,5 @@ Proposal: `status` (completed/skipped/needs_attention), `reason`, optional `body
 `files` ({path,content}). Use only the fields applicable to the operation.
 Failures must include the next maintainer action in reason. Resolutions require
 concrete current-code evidence, not an author's assertion. The runtime denies
-all model tools and validates the final structured result before publication.
+all model tools (issue assessments: read-only Read/Grep/Glob in the default-branch
+checkout only) and validates the final structured result before publication.

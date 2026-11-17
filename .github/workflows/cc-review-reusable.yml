@@ -162,7 +162,7 @@ jobs:
           prose_dir: _cc_prose
           work_dir: ${{ runner.temp }}/cc-review-ci
           github_token: ${{ steps.app.outputs.token || github.token }}
-      - name: Analyze bounded evidence without tools
+      - name: Analyze bounded evidence (read-only code tools for assessments only)
         if: steps.prepare.outputs.run_model == 'true'
         id: model
         timeout-minutes: ${{ fromJSON(steps.prepare.outputs.timeout || '15') }}
@@ -179,7 +179,9 @@ jobs:
           claude_args: >-
             --model ${{ steps.prepare.outputs.model }}
             --max-turns ${{ steps.prepare.outputs.turns }}
-            --tools "" --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+            --tools "${{ steps.prepare.outputs.tools }}" --permission-mode dontAsk
+            ${{ steps.prepare.outputs.code_dir && format('--add-dir {0}', steps.prepare.outputs.code_dir) || '' }}
+            --strict-mcp-config --mcp-config '{"mcpServers":{}}'
             --setting-sources "" --disable-slash-commands
             --plugin-dir ${{ github.workspace }}/_cc_review/review
             --json-schema '${{ steps.prepare.outputs.schema }}'

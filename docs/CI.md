@@ -59,7 +59,11 @@ The CI analysis is proposal-only. It receives bounded diff/conversation evidence
 the bundled review perspectives or need/fit guidance, bounded default-branch
 project guidance, and the unattended policy. Fix evidence additionally contains
 the current contents of up to 20 changed regular files.
-It has no tools, GitHub token, question tool, shell, network or project execution.
+It has no GitHub token, question tool, shell, network or project execution.
+Issue assessments additionally get read-only `Read`, `Grep` and `Glob`, confined
+to the default-branch checkout (`--add-dir` plus `--permission-mode dontAsk`, so
+any read outside it is denied), to check a reported bug against the code. Other
+operations run without tools. The PR head is never checked out.
 The deterministic publisher checks the structured proposal before any mutation.
 When supplied evidence is insufficient to verify a fix or thread, it requests
 maintainer attention. This intentionally limits conclusions to collected evidence.

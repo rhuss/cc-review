@@ -219,6 +219,35 @@ class PolicyTests(unittest.TestCase):
             self.ci.write_prompt({'request': self.request('review'), 'snapshot': snapshot(), 'config': self.config}, tmp)
             self.assertNotIn(rules, (Path(tmp) / 'prompt.txt').read_text())
 
+    def test_assess_tools_confined(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            access = self.ci.model_access('assess', tmp)
+            self.assertEqual('Read,Grep,Glob', access['tools'])
+            self.assertEqual(str(Path(tmp).resolve()), access['code_dir'])
+            for op in ('review', 'triage', 'fix', 'help'):
+                self.assertEqual({'tools': '', 'code_dir': ''}, self.ci.model_access(op, tmp))
+            self.assertEqual({'tools': '', 'code_dir': ''}, self.ci.model_access('assess', ''))
+
+    def test_prompt_names_readonly_checkout(self):
+        context = {'request': self.request('assess'), 'snapshot': snapshot(), 'config': self.config}
+        with tempfile.TemporaryDirectory() as tmp:
+            self.ci.write_prompt(context, tmp, code_dir='/x/_target')
+            text = (Path(tmp) / 'prompt.txt').read_text()
+            self.assertIn('/x/_target', text); self.assertIn('read-only', text)
+            self.assertNotIn('You have NO tools', text)
+            self.ci.write_prompt(context, tmp)
+            self.assertIn('code was not available', (Path(tmp) / 'prompt.txt').read_text())
+
+    def test_workflow_confines_model_tools(self):
+        text = (ROOT / '.github/workflows/cc-review-reusable.yml').read_text()
+        self.assertIn('--tools "${{ steps.prepare.outputs.tools }}"', text)
+        self.assertIn('steps.prepare.outputs.code_dir', text)
+        self.assertIn('--add-dir', text)
+        self.assertIn('--permission-mode dontAsk', text)
+        self.assertNotIn('--tools ""', text)
+        action = (ROOT / 'ci/action.yml').read_text()
+        for name in ('tools', 'code_dir'): self.assertIn(f'steps.prepare.outputs.{name}', action)
+
     def test_dash_repair_keeps_code_and_numeric_ranges(self):
         text, count = self.ci.repair_dashes(
             'Offline tests — however thorough — cannot speak to it. Pages 3–5 apply.\n'

@@ -43,6 +43,12 @@ outputs:
   provider:
     description: Provider selection
     value: ${{ steps.prepare.outputs.provider }}
+  tools:
+    description: Read-only file tools for the model (issue assessments only), empty otherwise
+    value: ${{ steps.prepare.outputs.tools }}
+  code_dir:
+    description: Absolute default-branch checkout the tools are confined to, empty otherwise
+    value: ${{ steps.prepare.outputs.code_dir }}
   schema:
     description: Fixed proposal JSON schema
     value: ${{ steps.prepare.outputs.schema }}
