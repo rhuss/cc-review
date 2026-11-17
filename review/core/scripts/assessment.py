@@ -26,7 +26,9 @@ FIELDS = ('kind', 'use_case', 'why', 'concrete_example', 'check', 'severity', 's
           'alternatives', 'fit', 'recommendation', 'recommendation_reason', 'limits', 'summary')
 TEXT_LIMIT = 2000
 ALTERNATIVES_LIMIT = 5
-ALTERNATIVE_LIMIT = 500
+ALTERNATIVE_LIMIT = 300
+# Short, readable maintainer fields; the schema carries the same limits so the model retries until they fit.
+LIMITS = {'use_case': 300, 'why': 300, 'fit': 300, 'summary': 800, 'recommendation_reason': 400}
 
 KIND_LABELS = {'bug': 'bug report', 'feature': 'feature request', 'question': 'question', 'other': 'other'}
 BUG_CHECK = {'confirmed': 'Confirmed in the code.', 'contradicted': 'The sources show this behavior is intended.',
@@ -87,7 +89,7 @@ def validate(assessment, label_keys):
     if kind not in KINDS:
         raise AssessmentError('assessment.kind must be one of ' + ', '.join(KINDS) + '.')
     for name in TEXT_FIELDS:
-        _text(assessment[name], name)
+        _text(assessment[name], name, LIMITS.get(name, TEXT_LIMIT))
     if type(assessment['concrete_example']) is not bool:
         raise AssessmentError('assessment.concrete_example must be true or false.')
     check = assessment['check']
@@ -183,7 +185,7 @@ def render(body, assessment, labels):
     if a['severity'] is not None and a['severity_reason'].strip():
         evidence.append(f"- **Impact:** {a['severity'].capitalize()}. " + _flat(a['severity_reason']))
     if a['limits'].strip():
-        evidence.append('- **Not inspected:** ' + _flat(a['limits']).rstrip('.'))
+        evidence.append('- **Not inspected:** ' + _flat(a['limits']).rstrip('.') + '.')
     if evidence:
         out += ['<details><summary>Evidence and limits</summary>', ''] + evidence + ['', '</details>']
     out += ['</details>', '']

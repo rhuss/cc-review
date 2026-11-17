@@ -595,15 +595,18 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
             'required': ['path', 'content'], 'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}}}},
         'assessment': {'type': 'object', 'additionalProperties': False, 'required': list(assessment.FIELDS), 'properties': {
             'kind': {'type': 'string', 'enum': list(assessment.KINDS)},
-            'use_case': {'type': 'string'}, 'why': {'type': 'string'}, 'concrete_example': {'type': 'boolean'},
+            'use_case': {'type': 'string', 'maxLength': assessment.LIMITS['use_case']},
+            'why': {'type': 'string', 'maxLength': assessment.LIMITS['why']}, 'concrete_example': {'type': 'boolean'},
             'check': {'type': 'object', 'additionalProperties': False, 'required': ['result', 'note'], 'properties': {
                 'result': {'type': ['string', 'null'], 'enum': list(dict.fromkeys(r for rs in assessment.CHECK_RESULTS.values() for r in rs))},
                 'note': {'type': 'string'}}},
             'severity': {'type': ['string', 'null'], 'enum': list(assessment.SEVERITIES) + [None]},
             'severity_reason': {'type': 'string'},
-            'alternatives': {'type': 'array', 'maxItems': assessment.ALTERNATIVES_LIMIT, 'items': {'type': 'string'}},
-            'fit': {'type': 'string'}, 'recommendation': {'type': 'string'},
-            'recommendation_reason': {'type': 'string'}, 'limits': {'type': 'string'}, 'summary': {'type': 'string'}}}}}
+            'alternatives': {'type': 'array', 'maxItems': assessment.ALTERNATIVES_LIMIT,
+                             'items': {'type': 'string', 'maxLength': assessment.ALTERNATIVE_LIMIT}},
+            'fit': {'type': 'string', 'maxLength': assessment.LIMITS['fit']}, 'recommendation': {'type': 'string'},
+            'recommendation_reason': {'type': 'string', 'maxLength': assessment.LIMITS['recommendation_reason']},
+            'limits': {'type': 'string'}, 'summary': {'type': 'string', 'maxLength': assessment.LIMITS['summary']}}}}}
 
 
 

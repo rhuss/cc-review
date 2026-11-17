@@ -13,7 +13,7 @@ The reporter is often new to the project. The reply must leave them glad they wr
 - Asking for an example is an invitation to help us understand, not a missing requirement: "Could you tell us about one time when..." rather than "No use case was given".
 - When the answer is no, say so kindly and plainly, give the reason in project terms (scope, maintenance), name what would change the answer, and point to an alternative or workaround when one exists.
 - Keep code citations, file and line numbers out of `body` unless the reporter needs them to act; they belong in the evidence fields.
-- Write `summary`, `use_case`, `why`, `fit` and `recommendation_reason` as plain prose a busy maintainer can read in seconds. `use_case`, `why` and `fit` are one sentence each, because they render as table cells. Evidence detail (file:line, specs, searches) goes into `check.note` and `limits`.
+- Write `summary`, `use_case`, `why`, `fit`, `alternatives` and `recommendation_reason` as plain prose a busy maintainer can read in seconds, without file:line references, spec paths or search details. `use_case`, `why` and `fit` are one sentence each (at most 300 characters), because they render as table cells; alternatives at most 300 characters each, `summary` at most 800, `recommendation_reason` at most 400. Longer output is rejected. All evidence detail (file:line, specs, searches) goes into `check.note` and `limits`.
 
 ## Judgments
 
@@ -42,17 +42,17 @@ The reporter is often new to the project. The reply must leave them glad they wr
 | Field | Value |
 |---|---|
 | `kind` | `bug`, `feature`, `question` or `other` |
-| `use_case` | text, empty when it cannot be inferred |
-| `why` | text, empty when unclear |
+| `use_case` | one sentence (at most 300 characters), empty when it cannot be inferred |
+| `why` | one sentence (at most 300 characters), empty when unclear |
 | `concrete_example` | true or false |
 | `check` | `{"result": ..., "note": "..."}` as above |
 | `severity` | `low`, `medium`, `high` or null |
 | `severity_reason` | text, required when severity is set |
-| `alternatives` | list of at most 5 short texts |
-| `fit` | text with its source, empty when not judged |
+| `alternatives` | list of at most 5 texts, at most 300 characters each, no file:line |
+| `fit` | one sentence (at most 300 characters) naming the source in words, empty when not judged |
 | `recommendation` | a configured classification key |
-| `recommendation_reason` | text, never empty |
+| `recommendation_reason` | at most 400 characters, never empty |
 | `limits` | text, empty when none |
-| `summary` | two to four sentences of plain prose for maintainers, never empty |
+| `summary` | two to four sentences (at most 800 characters) of plain prose for maintainers, never empty |
 
 Text fields hold plain sentences: no headings, no labels, no em or en dashes. Keep file paths, identifiers and commands in backticks.

@@ -454,6 +454,10 @@ class PublisherTests(unittest.TestCase):
         self.assertFalse(schema['additionalProperties'])
         self.assertEqual(sorted(ASSESSMENT), sorted(schema['required']))
         self.assertEqual(sorted(ASSESSMENT), sorted(schema['properties']))
+        import assessment as module
+        for field, limit in module.LIMITS.items():
+            self.assertEqual(limit, schema['properties'][field]['maxLength'], field)
+        self.assertEqual(module.ALTERNATIVE_LIMIT, schema['properties']['alternatives']['items']['maxLength'])
         self.assertEqual(sorted(self.config['labels']), schema['properties']['recommendation']['enum'])
         self.assertNotIn('enum', self.ci.PROPOSAL_SCHEMA['properties']['assessment']['properties']['recommendation'])
 

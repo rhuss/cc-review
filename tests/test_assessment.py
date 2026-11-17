@@ -65,7 +65,7 @@ class AssessmentTests(unittest.TestCase):
             '| **Fits the project** | Yes.', '**Other ways to solve it**\n\n- Print',
             '**Recommendation:** Pursue (`cc-review:pursue`). Small,',
             '<details><summary>Evidence and limits</summary>', '- **Need:** Shown with a real example. The reporter hit',
-            '- **Not inspected:** docs/CI.md, issue #16', '</details>\n</details>', '<!-- cc-review:assessment {'])
+            '- **Not inspected:** docs/CI.md, issue #16.\n', '</details>\n</details>', '<!-- cc-review:assessment {'])
         self.assertNotIn('###', text)
 
     def test_hidden_json_round_trips(self):
@@ -143,7 +143,11 @@ class AssessmentTests(unittest.TestCase):
             'recommendation reason': variant(recommendation_reason=''),
             'recommendation key': variant(recommendation='maybe'),
             'empty summary': variant(summary=' '),
-            'long field': variant(why='x' * 2001),
+            'long field': variant(check={'result': 'real_need', 'note': 'x' * 2001}),
+            'long table cell': variant(fit='x' * 301),
+            'long summary': variant(summary='x' * 801),
+            'long reason': variant(recommendation_reason='x' * 401),
+            'long alternative': variant(alternatives=['x' * 301]),
             'too many alternatives': variant(alternatives=['a'] * 6),
         }
         for name, value in bad.items():
