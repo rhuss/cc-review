@@ -6,6 +6,15 @@ argument-hint: "[--pr <number>] [--full] [--spec <path>] [--hints <path>] [--out
 
 # Code Review
 
+## Single-Item Unattended Mode
+
+Before any interactive steps or bulk-only flag validation, if `--unattended`
+is present without `--bulk`/`--resume`, read and execute
+`commands/unattended.md` from the resolved core directory and return.
+Its fixed policy overrides preview, confirmation and no-publishing boundaries
+for this explicit unattended invocation. An explicit item target is required.
+
+
 ## Showing Text to the User
 
 Whenever this command says to show, print or present text the user reads before deciding (a review or comment draft, a thread reply, a PR comment, a commit message, a preview file, a report or table), the text goes into **your own reply as Markdown**:
@@ -24,7 +33,7 @@ Check the arguments before anything else. Each check below stops with its error 
 - `--prs` together with `--pr`: `Error: --prs and --pr cannot be combined`
 - `--prs` together with `--all-open` or `--search`: `Error: --prs cannot be combined with --all-open or --search`
 - `--bulk` (or `--resume`) together with `--spec` or `--output`: `Error: --spec is not supported with --bulk` (or `--output`)
-- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--prs`, `--limit`, `--unattended`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --unattended requires --bulk`)
+- neither `--bulk` nor `--resume`, but one of `--all-open`, `--search`, `--prs`, `--limit`: `Error: --<flag> requires --bulk`, naming the first such flag (for example `Error: --unattended requires --bulk`)
 
 When the arguments contain `--bulk` or `--resume` (`--resume` alone means `--bulk --resume`), this is a bulk review: set `BULK_COMMAND=review`, read `commands/bulk.md` from the core directory (`$CC_REVIEW_CORE_DIR/commands/bulk.md`) and execute it with the same arguments **instead of** the rest of this file (Prerequisites through Step 8). `bulk.md` runs this file's per-PR pipeline itself, in worker mode (see [Worker Mode (bulk)](#worker-mode-bulk)). `--prs <n,...>` is the explicit-list selector: it names exactly the PRs to run (for example when `inbox` hands off a tour selection) and is forwarded to `bulk.md` unchanged, which resolves and filters that list through its own eligibility rules.
 

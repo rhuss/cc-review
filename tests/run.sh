@@ -5521,6 +5521,11 @@ test_inbox_report() {
   fi
 }
 
+test_ci() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_ci.py" 2>&1)"; then _pass; else _fail "CI policy tests" "$output"; fi
+}
+
 test_issue_assessment() {
   local output
   if output="$(python3 -B "$ROOT/tests/test_issue_assessment.py" 2>&1)"; then
@@ -5860,6 +5865,7 @@ main() {
   run_test test_inbox
   run_test test_inbox_report
   run_test test_issue_assessment
+  run_test test_ci
   run_test test_pr_actions
   run_test test_reviewer_summary
   run_test test_triage_preview

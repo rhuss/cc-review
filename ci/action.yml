@@ -1,0 +1,70 @@
+name: cc-review CI policy
+description: Prepare or finalize a policy-guarded unattended item. Use the reusable workflow for model execution.
+inputs:
+  phase:
+    description: prepare or finish
+    required: true
+  request:
+    description: Request JSON from trusted event selection
+    required: false
+  config:
+    description: Trusted default-branch CI configuration path
+    required: true
+  project_dir:
+    description: Trusted matching default-branch checkout for project guidance
+    required: false
+    default: ''
+  work_dir:
+    description: Private runner temporary evidence directory
+    required: true
+  github_token:
+    description: Repository or installation token; never passed to the model
+    required: true
+  result:
+    description: Structured model result JSON, or empty after failure
+    required: false
+outputs:
+  run_model:
+    description: Whether analysis is needed
+    value: ${{ steps.prepare.outputs.run_model }}
+  model:
+    description: Configured model
+    value: ${{ steps.prepare.outputs.model }}
+  turns:
+    description: Maximum model turns
+    value: ${{ steps.prepare.outputs.turns }}
+  timeout:
+    description: Maximum model minutes
+    value: ${{ steps.prepare.outputs.timeout }}
+  provider:
+    description: Provider selection
+    value: ${{ steps.prepare.outputs.provider }}
+  schema:
+    description: Fixed proposal JSON schema
+    value: ${{ steps.prepare.outputs.schema }}
+runs:
+  using: composite
+  steps:
+    - name: Prepare item and record running status
+      if: inputs.phase == 'prepare'
+      id: prepare
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        CC_REQUEST: ${{ inputs.request }}
+        CC_PROJECT_DIR: ${{ inputs.project_dir }}
+        CC_CONFIG: ${{ inputs.config }}
+        CC_WORK_DIR: ${{ inputs.work_dir }}
+      run: python3 "$GITHUB_ACTION_PATH/../review/core/scripts/ci.py" prepare --config "$CC_CONFIG" --request "$CC_REQUEST" --work-dir "$CC_WORK_DIR" --project-dir "$CC_PROJECT_DIR"
+    - name: Validate result, publish and record terminal status
+      if: always() && inputs.phase == 'finish'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        CC_CONFIG: ${{ inputs.config }}
+        CC_WORK_DIR: ${{ inputs.work_dir }}
+        CC_RESULT: ${{ inputs.result }}
+      run: |
+        mkdir -p "$CC_WORK_DIR"
+        printf '%s' "$CC_RESULT" > "$CC_WORK_DIR/result.json"
+        python3 "$GITHUB_ACTION_PATH/../review/core/scripts/ci.py" finish --config "$CC_CONFIG" --work-dir "$CC_WORK_DIR" --result "$CC_WORK_DIR/result.json"

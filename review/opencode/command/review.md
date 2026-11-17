@@ -39,3 +39,5 @@ Pass through all arguments from the user's invocation:
 - `--limit <n>`: Maximum number of PRs in a bulk run
 - `--unattended`: Bulk run without prompts, using the fixed policy
 - `--resume [<run-id>]`: Continue an unfinished bulk run
+
+Forward `--unattended` unchanged for single items and bulk flows; the shared core policy owns all unattended defaults.

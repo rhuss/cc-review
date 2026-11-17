@@ -5,6 +5,15 @@ description: Assess an initial issue's concrete need, project fit, and whether t
 
 # Assess an Issue
 
+## Single-Item Unattended Mode
+
+Before any interactive steps or bulk-only flag validation, if `--unattended`
+is present without `--bulk`/`--resume`, read and execute
+`commands/unattended.md` from the resolved core directory and return.
+Its fixed policy overrides preview, confirmation and no-publishing boundaries
+for this explicit unattended invocation. An explicit item target is required.
+
+
 Help the maintainer decide whether an issue warrants work in this project. Read the evidence before proposing a solution. Produce maintainer reasoning and a separate public reply draft.
 
 ## Showing Text to the User

@@ -21,6 +21,9 @@ provides:
     - name: speckit.cc-review.issue
       file: commands/speckit.cc-review.issue.md
       description: "Assess an issue's concrete need, project fit, and implementation value"
+    - name: speckit.cc-review.ci
+      file: commands/speckit.cc-review.ci.md
+      description: "Manage unattended GitHub Actions integration"
 
 hooks:
   after_implement:

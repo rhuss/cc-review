@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "enabled": true,
+  "model": "sonnet",
+  "provider": "anthropic",
+  "identity": {
+    "bot_login": "github-actions[bot]"
+  },
+  "triggers": {
+    "pr_opened": true,
+    "pr_synchronize": true,
+    "issue_opened": true,
+    "comments": true,
+    "sweep": true,
+    "dispatch": true
+  },
+  "commands": {
+    "review": true,
+    "triage": true,
+    "assess": true,
+    "fix": true,
+    "help": true
+  },
+  "command_permissions": [
+    "write",
+    "maintain",
+    "admin"
+  ],
+  "labels": {
+    "pursue": "cc-review:pursue",
+    "needs_evidence": "cc-review:needs-evidence",
+    "direction": "cc-review:direction",
+    "decline": "cc-review:decline"
+  },
+  "limits": {
+    "sweep": 10,
+    "turns": 30,
+    "timeout_minutes": 15,
+    "diff_bytes": 100000
+  }
+}

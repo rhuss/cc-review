@@ -34,7 +34,7 @@ Pass through all arguments from the user's invocation:
 - `--bulk`: Triage eligible open PRs with author or reviewer-owned feedback in one run
 - `--search <query>`: Restrict the bulk selection with a PR search
 - `--limit <n>`: Maximum number of PRs in a bulk run
-- `--unattended`: Bulk run without prompts, using the fixed policy
+- `--unattended`: Single-item or bulk run without prompts, using the fixed policy
 - `--resume [<run-id>]`: Continue an unfinished bulk run
 
 A PR may need both review and triage. Review assesses a first or substantial code review; triage continues eligible feedback on an existing review. Reviewer triage verifies exact owned threads and never commits or pushes code. Draft PRs remain eligible for triage even though ordinary bulk review skips drafts.

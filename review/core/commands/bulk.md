@@ -1124,10 +1124,20 @@ Only an `analyzed` PR without a decision gets actions (FR-020):
 
 "Apply proposed actions" gives each PR its `proposed` action (`apply`, or `skip` for an empty plan).
 
-**Human comments** (part of the same decision step, deferred mode only). After the per-PR choices, go through the human comments of every PR decided `apply`, one prompt per comment, as in single-PR Step 12. For each `.human[]` entry with `decision` null, show the PR, the file and line, the comment and the drafted reply (read these few fields with `jq`), then offer:
+**Human comments** (part of the same decision step, deferred mode only). After the per-PR choices, handle the human comments of every PR decided `apply`: the `.human[]` entries with `decision` null (read the PR, file, line, author, comment and drafted reply with `jq`).
+
+**Batch shortcut.** When there are two or more such comments across these PRs, first show all of them in one overview, in state order and numbered (`Comment 2/7`), each with the PR, the file and line, the author, the comment and the drafted reply in full per [Showing Text to the User](#showing-text-to-the-user). Then ask one question:
+- **Approve all**: post every drafted reply exactly as shown (its option preview holds all drafts in full, when the harness has previews)
+- **One by one**: go through them with the per-comment prompt below
+- **Skip all**: post none of them; the comments stay open for the next run
+
+**Approve all** and **Skip all** record every listed comment at once with the batch block below; an entry without a drafted reply is never approved in a batch and stays undecided for the per-comment prompt. With a single comment, skip the overview and go straight to the per-comment prompt.
+
+**Per-comment prompt** (one prompt per comment, as in single-PR Step 12): show the PR, the file and line, the comment and the drafted reply, then offer:
 - **Approve**: post the drafted reply as it is
 - **Edit**: ask for the reply text, then post that
 - **Skip**: post nothing; the comment stays open
+- **Approve the rest** (only after the overview above was shown and while every remaining draft is unchanged since): approve this and every later undecided comment of the overview as shown, with the batch block below (`DECISION=approve`)
 
 Record each answer in the plan right away. `DECISION` is `approve`, `edit` or `skip`. The reply text never passes through a shell literal (it quotes an untrusted comment and could contain `$(...)`): for **Approve** the block copies the drafted reply from the plan itself; for **Edit**, first write the user's text with your file-write tool to `$RUN_DIR/pr-<n>/reply-<comment id>.txt` and set `BODY_FILE` to that path; for **Skip** nothing is posted. A body without the `<!-- cc-review-triage -->` signature (an edited reply) gets it appended, so a resumed apply recognizes the posted reply and never posts it twice:
 
@@ -1156,6 +1166,30 @@ jq --argjson cid "$CID" --arg d "$DECISION" --rawfile edited "$EDITED" \
   "$PLAN" > "$PLAN.tmp" && mv "$PLAN.tmp" "$PLAN"
 [ "$DECISION" = edit ] || rm -f "$EDITED"
 ```
+
+The batch block records **Approve all**, **Skip all** and **Approve the rest**. It touches only comments still undecided, so after **Approve the rest** the earlier answers stay as they are. `PRS` lists the PR numbers of the overview. Bodies come from the plan itself, never from a shell literal:
+
+```bash
+export CC_REVIEW_CORE_DIR="{CORE_DIR}"; PROJECT_DIR="{PROJECT_DIR}"; RUN_ID="{RUN_ID}"
+RUN_DIR="$PROJECT_DIR/.cc-review/bulk/$RUN_ID"; cd "$PROJECT_DIR" || exit 1
+DECISION="{approve|skip}"; PRS="{PR numbers}"
+case "$DECISION" in approve|skip) ;; *) echo "Error: DECISION must be approve or skip" >&2; exit 1 ;; esac
+for N in $PRS; do
+  PLAN="$RUN_DIR/pr-$N/triage-plan.json"
+  jq --arg d "$DECISION" \
+    '.human |= map(if .decision == null then
+       if $d == "skip" then .decision = "skip" | .body = null
+       elif ((.draft // "") | length) > 0 then .decision = "approve"
+         | .body = (if (.draft | contains("<!-- cc-review-triage")) then .draft
+             else .draft + "\n\n<!-- cc-review-triage -->" end)
+       else . end
+     else . end)' \
+    "$PLAN" > "$PLAN.tmp" && mv "$PLAN.tmp" "$PLAN"
+  jq -r --arg n "$N" '.human[] | "#\($n) \(.comment_id) \(.decision // "undecided")"' "$PLAN"
+done
+```
+
+It prints each comment's recorded decision; ask about any still `undecided` with the per-comment prompt.
 
 A human comment left undecided (the step was stopped, or unattended mode) keeps `decision` null: apply does not answer it, and the summary lists it under "Needs attention".
 

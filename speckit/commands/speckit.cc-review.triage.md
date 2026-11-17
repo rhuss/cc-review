@@ -37,3 +37,5 @@ Read and execute `core/commands/triage.md` from resolved core, passing:
 - `--spec <resolved-spec-path>` (if found)
 - `--idea-inbox brainstorm/idea-inbox.md`
 - All user-provided arguments
+
+Forward `--unattended` unchanged for single items and bulk flows; the shared core policy owns all unattended defaults.
