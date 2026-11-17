@@ -907,6 +907,8 @@ Include cc-review thread results in the Step 13 summary:
 
 After all bot comments are processed, handle human comment threads.
 
+**Batch shortcut.** With two or more unresolved human threads, first assess and draft a reply for each (items 1 to 3 below), then show all of them in one overview: numbered, each with the comment, its file and line, the verdict and the drafted reply in full (as message text, never through command output). Then ask one question: **Approve all** (post every drafted reply as shown, in order, each with the `<!-- cc-review-triage -->` signature), **One by one** (the per-thread loop below), or **Skip all** (post nothing; every comment stays open). Record each comment's state as in item 5. In the per-thread loop after an overview, also offer **Approve the rest**: post this and every later drafted reply as shown in the overview.
+
 For each unresolved human thread:
 
 1. **Present the comment**: Show the reviewer's comment text, the file/line context, and the current code.
