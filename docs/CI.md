@@ -80,24 +80,39 @@ never changed.
 
 ## Issue assessments
 
-An assessment posts one comment: a friendly reply to the reporter, then an
-`### Assessment` section with fixed labels, rendered by
+An assessment posts one comment in three layers, rendered by
 `review/core/scripts/assessment.py` from the model's structured result:
 
+1. A friendly reply to the reporter, visible to everyone.
+2. A collapsed block for maintainers. Its title carries the verdict ("worth
+   doing", "needs an example", "needs a maintainer decision", "not planned for
+   now"), the kind and the impact. Inside: a short prose summary, a small table
+   (use case, why it matters, fit), other ways to solve it, the recommendation
+   with its label, and a nested "Evidence and limits" block with the bug or need
+   check and file:line citations.
+3. The full assessment as hidden JSON for later agent runs.
+
 ```markdown
-### Assessment
+Thanks for writing this up so clearly! ...
 
-**Type:** Feature request
-**Use case:** Maintainers debugging an odd CI reply want to know which writing guidance shaped it.
-**Why:** Without it they cannot tell a model problem from a missing checkout.
-**Real need:** Yes. The reporter hit this while validating v1.6.1.
-**Severity:** Low. It slows debugging but blocks nothing.
-**Other ways to solve it:**
-- Print the commit in the run's step summary only.
+<details>
+<summary><b>Assessment:</b> worth doing · feature request · medium impact</summary>
 
-**Fits the project:** Yes. `docs/CI.md` documents `status` for inspecting an installation.
+A real gap, and the code confirms it: doctor reads the pinned commit but never
+compares it with the latest release. The change is small.
+
+| | |
+|---|---|
+| **Use case** | A maintainer runs `ci doctor` to check their CI installation. |
+| **Why it matters** | A stale pin silently keeps every bug of its release. |
+
 **Recommendation:** Pursue (`cc-review:pursue`). Small and bounded.
+</details>
 ```
+
+Replies follow the tone rules in the template: thanks first, no judgment of the
+request or the person, examples asked for as an invitation, and a kind, plain
+no with an alternative when declining.
 
 The rules live in `review/core/templates/issue-assessment.md`. Without a
 concrete, real-world example (for bugs: reproduction steps or a bug confirmed

@@ -18,6 +18,7 @@ ASSESSMENT = {
     'severity': 'low', 'severity_reason': 'It slows debugging but blocks nothing.',
     'alternatives': ['Print the commit in the step summary.'], 'fit': 'Yes. `docs/CI.md` documents status.',
     'recommendation': 'pursue', 'recommendation_reason': 'Small and bounded.', 'limits': '',
+    'summary': 'A small, real gap.',
 }
 
 
@@ -404,7 +405,7 @@ class PublisherTests(unittest.TestCase):
         posted = self.posted_comments()
         self.assertEqual(1, len(posted))
         self.assertTrue(posted[0].startswith('Thanks for the example.'))
-        self.assertIn('### Assessment', posted[0])
+        self.assertIn('<b>Assessment:</b>', posted[0])
         self.assertEqual([{'labels': ['cc-review:pursue']}], self.label_posts())
         status = [c['body'] for c in self.api.evidence['comments'] if c['body'].startswith('### cc-review CI')][0]
         self.assertIn('Assessment posted, labeled `cc-review:pursue`', status)

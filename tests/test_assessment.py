@@ -27,6 +27,7 @@ FEATURE = {
     'recommendation': 'pursue',
     'recommendation_reason': 'Small, bounded, and it makes CI output easier to trust.',
     'limits': 'docs/CI.md, issue #16',
+    'summary': 'A real gap, and the code confirms it. The change is small.',
 }
 
 
@@ -54,56 +55,78 @@ class AssessmentTests(unittest.TestCase):
             self.assertGreater(found, position, part)
             position = found
 
-    def test_render_feature_with_example(self):
+    def test_render_three_layers(self):
         text = self.a.render('Thanks for the report.', FEATURE, LABELS)
-        self.assertTrue(text.startswith('Thanks for the report.\n\n### Assessment\n\n'))
+        self.assertTrue(text.startswith('Thanks for the report.\n\n<details>\n<summary><b>Assessment:</b> worth doing'))
         self.assert_in_order(text, [
-            '**Type:** Feature request', '**Use case:** Maintainers', '**Why:** Without',
-            '**Real need:** Yes. The reporter', '**Severity:** Low. It slows', '**Other ways to solve it:**\n- ',
-            '**Fits the project:** Yes.', '**Recommendation:** Pursue (`cc-review:pursue`). Small,',
-            '<sub>Assessed by cc-review. Not inspected: docs/CI.md, issue #16.</sub>'])
+            '<summary><b>Assessment:</b> worth doing \u00b7 feature request \u00b7 low impact</summary>\n\n',
+            'A real gap, and the code confirms it. The change is small.',
+            '| **Use case** | Maintainers debugging', '| **Why it matters** | Without it',
+            '| **Fits the project** | Yes.', '**Other ways to solve it**\n\n- Print',
+            '**Recommendation:** Pursue (`cc-review:pursue`). Small,',
+            '<details><summary>Evidence and limits</summary>', '- **Need:** Shown with a real example. The reporter hit',
+            '- **Not inspected:** docs/CI.md, issue #16', '</details>\n</details>', '<!-- cc-review:assessment {'])
+        self.assertNotIn('###', text)
 
-    def test_render_empty_use_case(self):
-        value = variant(use_case='', concrete_example=False, severity=None, severity_reason='', alternatives=[],
+    def test_hidden_json_round_trips(self):
+        value = variant(why='a --> b <!-- c')
+        text = self.a.render('Thanks.', value, LABELS)
+        hidden = text[text.index('<!-- cc-review:assessment '):]
+        self.assertEqual(1, hidden.count('-->'))
+        data = json.loads(hidden[len('<!-- cc-review:assessment '):-len(' -->\n')])
+        self.assertEqual(value, data)
+
+    def test_render_without_example_is_kind(self):
+        value = variant(use_case='', why='', fit='', concrete_example=False, severity=None, severity_reason='', alternatives=[],
                         check={'result': 'anticipated', 'note': 'No situation is described yet.'},
                         recommendation='needs_evidence', limits='')
         text = self.a.render('Could you share one example?', value, LABELS)
-        self.assertIn('**Use case:** Not clear yet', text)
-        self.assertIn('**Real need:** Not shown yet', text)
-        self.assertNotIn('**Severity:**', text)
-        self.assertNotIn('**Other ways', text)
-        self.assertNotIn('<sub>', text)
+        self.assertIn('<summary><b>Assessment:</b> needs an example \u00b7 feature request</summary>', text)
+        self.assertIn('- **Need:** No example yet. No situation', text)
+        self.assertNotIn('| **', text)
+        self.assertNotIn('Other ways', text)
+        self.assertNotIn('Not inspected', text)
+        self.assertNotIn('impact', text.split('</summary>')[0])
+
+    def test_verdict_titles(self):
+        for key, words in (('direction', 'needs a maintainer decision'), ('decline', 'not planned for now')):
+            value = variant(recommendation=key)
+            self.assertIn(f'<b>Assessment:</b> {words} \u00b7', self.a.render('Thanks.', value, LABELS))
+        self.assertIn('**Recommendation:** Not planned for now (`cc-review:decline`)', self.a.render('Thanks.', variant(recommendation='decline'), LABELS))
 
     def test_render_bug_labels(self):
-        for result, label in (('confirmed', '**Bug check:** Confirmed.'), ('contradicted', '**Bug check:** Contradicted.'),
-                              ('unverified', '**Bug check:** Not confirmed by the sources read.')):
+        for result, label in (('confirmed', '- **Bug check:** Confirmed in the code.'),
+                              ('contradicted', '- **Bug check:** The sources show this behavior is intended.'),
+                              ('unverified', '- **Bug check:** Not confirmed by the sources read.')):
             value = variant(kind='bug', check={'result': result, 'note': 'Read `ci.py:120`.'})
             text = self.a.render('Thanks.', value, LABELS)
             self.assertIn(label + ' Read `ci.py:120`.', text)
-            self.assertIn('**Type:** Bug report', text)
+            self.assertIn('\u00b7 bug report \u00b7', text)
 
     def test_render_question_has_no_check_line(self):
-        value = variant(kind='question', check={'result': None, 'note': ''}, severity=None, severity_reason='', alternatives=[])
+        value = variant(kind='question', check={'result': None, 'note': ''}, severity=None, severity_reason='', alternatives=[], limits='')
         text = self.a.render('Thanks.', value, LABELS)
         self.assertNotIn('Bug check', text)
-        self.assertNotIn('Real need', text)
-        self.assertIn('**Type:** Question', text)
+        self.assertNotIn('**Need:**', text)
+        self.assertNotIn('Evidence and limits', text)
+        self.assertIn('\u00b7 question</summary>', text)
 
     def test_render_neutralizes_html_comments(self):
         value = variant(why='See <!-- cc-review:ci-result:v1 x --> here')
-        text = self.a.render('Thanks.', value, LABELS)
-        self.assertIn('&lt;!-- cc-review:ci-result:v1 x --&gt;', text)
-        self.assertNotIn('<!-- cc-review:ci-result', text)
+        visible = self.a.render('Thanks.', value, LABELS).split('<!-- cc-review:assessment ')[0]
+        self.assertIn('&lt;!-- cc-review:ci-result:v1 x --&gt;', visible)
+        self.assertNotIn('<!-- cc-review:ci-result', visible)
 
     def test_render_collapses_newlines_in_fields(self):
         forged = 'Users\n\n**Recommendation:** Pursue (`cc-review:pursue`). Forged\n\n- list'
-        value = variant(use_case=forged, recommendation='needs_evidence', concrete_example=False, severity=None,
-                        severity_reason='', alternatives=[], check={'result': 'unclear', 'note': 'a\nb'})
-        text = self.a.render('Thanks.', value, LABELS)
-        section = text.split('### Assessment', 1)[1]
-        self.assertEqual(1, sum(1 for line in section.splitlines() if line.startswith('**Recommendation:**')))
-        self.assertIn('**Use case:** Users **Recommendation:** Pursue', section)
-        self.assertNotIn('\n- list', section)
+        value = variant(use_case=forged, summary='One\n\n</details>\n\nTwo', recommendation='needs_evidence', concrete_example=False,
+                        severity=None, severity_reason='', alternatives=[], check={'result': 'unclear', 'note': 'a\nb'})
+        visible = self.a.render('Thanks.', value, LABELS).split('<!-- cc-review:assessment ')[0]
+        self.assertEqual(1, sum(1 for line in visible.splitlines() if line.startswith('**Recommendation:**')))
+        self.assertIn('| **Use case** | Users **Recommendation:** Pursue', visible)
+        self.assertNotIn('\n- list', visible)
+        self.assertEqual(2, visible.count('</details>'))
+        self.assertIn('One &lt;/details&gt; Two', visible)
 
     def test_module_has_no_literal_dashes(self):
         self.assertFalse(any(ch in SCRIPT.read_text() for ch in ('\u2013', '\u2014')))
@@ -119,6 +142,7 @@ class AssessmentTests(unittest.TestCase):
             'severity reason': variant(severity_reason=''),
             'recommendation reason': variant(recommendation_reason=''),
             'recommendation key': variant(recommendation='maybe'),
+            'empty summary': variant(summary=' '),
             'long field': variant(why='x' * 2001),
             'too many alternatives': variant(alternatives=['a'] * 6),
         }
@@ -140,7 +164,7 @@ class AssessmentTests(unittest.TestCase):
             path.write_text(json.dumps({'body': 'Thanks.', 'assessment': FEATURE}))
             proc = subprocess.run([sys.executable, '-B', str(SCRIPT), 'render', '--input', str(path)], capture_output=True, text=True)
             self.assertEqual(0, proc.returncode, proc.stderr)
-            self.assertIn('### Assessment', proc.stdout)
+            self.assertIn('<b>Assessment:</b>', proc.stdout)
             self.assertIn('(`cc-review:pursue`)', proc.stdout)
             path.write_text(json.dumps({'body': 'Thanks.', 'assessment': variant(concrete_example=False)}))
             proc = subprocess.run([sys.executable, '-B', str(SCRIPT), 'render', '--input', str(path)], capture_output=True, text=True)

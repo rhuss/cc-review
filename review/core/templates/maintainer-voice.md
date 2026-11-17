@@ -9,6 +9,8 @@ Use this voice for issue-assessment drafts, with the exposed prose humanizer whe
 - Invite a bounded contribution only when the need and project fit support it. Do not promise acceptance, assign work, or claim the person can or cannot implement it.
 - Do not invent an experience, project principle, motive, or maintainer decision to make the reply sound smoother.
 - Keep commands, identifiers, and evidence links intact. Use backticks for code; avoid unexplained scores and PR review severity labels.
+- Start with thanks and something specific you appreciate. Never describe a request as a wish, a non-problem, or poorly written; ask questions as invitations.
+- When declining, be kind and plain: the reason in project terms, what would change the answer, and an alternative when one exists.
 
 ## Example: Missing Use Case
 

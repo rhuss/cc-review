@@ -2,7 +2,18 @@
 
 Used by the `issue` command (manual and unattended) and by CI issue assessments, together with `need-and-fit.md`. PR review does not read this file.
 
-The result has two parts: `body`, a friendly reply written for the reporter, and `assessment`, the structured judgments below. A shared renderer puts the reply first and the judgments under fixed labels in an "Assessment" section, so never repeat headings or labels in `body`, and never put judgments only in `body`.
+The result has two parts: `body`, a friendly reply written for the reporter, and `assessment`, the structured judgments below. A shared renderer posts three layers: the reply, visible to everyone; a collapsed "Assessment" block for maintainers (a short prose `summary`, a small table, alternatives, the recommendation, and a nested "Evidence and limits" block); and the full assessment as hidden JSON for later agent runs. Never repeat headings, labels or verdict words in `body`, and never put judgments only in `body`.
+
+## Tone
+
+The reporter is often new to the project. The reply must leave them glad they wrote, whatever the outcome.
+
+- Open with thanks and with what is useful or interesting about the issue. Mean it; name something specific.
+- Never characterize the request or the person: no "just a wish", "not a real problem", "as written it's...", and no remarks about test titles or the issue's quality.
+- Asking for an example is an invitation to help us understand, not a missing requirement: "Could you tell us about one time when..." rather than "No use case was given".
+- When the answer is no, say so kindly and plainly, give the reason in project terms (scope, maintenance), name what would change the answer, and point to an alternative or workaround when one exists.
+- Keep code citations, file and line numbers out of `body` unless the reporter needs them to act; they belong in the evidence fields.
+- Write `summary`, `use_case`, `why`, `fit` and `recommendation_reason` as plain prose a busy maintainer can read in seconds. `use_case`, `why` and `fit` are one sentence each, because they render as table cells. Evidence detail (file:line, specs, searches) goes into `check.note` and `limits`.
 
 ## Judgments
 
@@ -24,6 +35,7 @@ The result has two parts: `body`, a friendly reply written for the reporter, and
 8. **Fit.** Whether the need belongs in this project, judged with `need-and-fit.md`, with its source (README, CONTRIBUTING, existing behavior).
 9. **Recommendation.** One of the configured keys (`pursue`, `needs_evidence`, `direction`, `decline`), always with a one or two sentence reason.
 10. **Limits.** Evidence you could not inspect (missing history, files, linked issues). Empty when none.
+11. **Summary.** Two to four sentences for maintainers, like a note from a colleague: what the issue is about, what you found, and the next step. No file:line citations here.
 
 ## Fields
 
@@ -41,5 +53,6 @@ The result has two parts: `body`, a friendly reply written for the reporter, and
 | `recommendation` | a configured classification key |
 | `recommendation_reason` | text, never empty |
 | `limits` | text, empty when none |
+| `summary` | two to four sentences of plain prose for maintainers, never empty |
 
 Text fields hold plain sentences: no headings, no labels, no em or en dashes. Keep file paths, identifiers and commands in backticks.

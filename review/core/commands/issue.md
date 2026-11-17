@@ -100,7 +100,7 @@ Prepare a concise evidence summary with sources, then perform step 6 cleanup **b
 
 ## 5. Compose and Present
 
-Read `templates/maintainer-voice.md`. Detect prose by the invoking harness's exposed humanizer skill, such as `prose:humanizer`; fixed cache paths are not reliable. If available, read and invoke that skill inline to shape the reply and the free-text assessment fields (use case, why, check note, severity reason, alternatives, fit, recommendation reason). Do not dispatch a subagent or external service. Follow applicable execution boundaries even if a writing skill suggests broader actions.
+Read `templates/maintainer-voice.md`. Detect prose by the invoking harness's exposed humanizer skill, such as `prose:humanizer`; fixed cache paths are not reliable. If available, read and invoke that skill inline to shape the reply and the free-text assessment fields (summary, use case, why, check note, severity reason, alternatives, fit, recommendation reason). Follow the Tone rules of `templates/issue-assessment.md`. Do not dispatch a subagent or external service. Follow applicable execution boundaries even if a writing skill suggests broader actions.
 
 The rewrite changes wording only. Preserve the recommendation, evidence, uncertainty, questions, contribution boundaries, identifiers, commands, and links. When prose is absent, use the bundled voice and note the fallback privately.
 

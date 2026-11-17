@@ -21,18 +21,22 @@ CHECK_RESULTS = {'bug': ('confirmed', 'contradicted', 'unverified'),
                  'feature': ('real_need', 'anticipated', 'unclear'),
                  'question': (None,), 'other': (None,)}
 SEVERITIES = ('low', 'medium', 'high')
-TEXT_FIELDS = ('use_case', 'why', 'severity_reason', 'fit', 'recommendation_reason', 'limits')
+TEXT_FIELDS = ('use_case', 'why', 'severity_reason', 'fit', 'recommendation_reason', 'limits', 'summary')
 FIELDS = ('kind', 'use_case', 'why', 'concrete_example', 'check', 'severity', 'severity_reason',
-          'alternatives', 'fit', 'recommendation', 'recommendation_reason', 'limits')
+          'alternatives', 'fit', 'recommendation', 'recommendation_reason', 'limits', 'summary')
 TEXT_LIMIT = 2000
 ALTERNATIVES_LIMIT = 5
 ALTERNATIVE_LIMIT = 500
 
-KIND_LABELS = {'bug': 'Bug report', 'feature': 'Feature request', 'question': 'Question', 'other': 'Other'}
-BUG_CHECK = {'confirmed': 'Confirmed.', 'contradicted': 'Contradicted.', 'unverified': 'Not confirmed by the sources read.'}
-REAL_NEED = {'real_need': 'Yes.', 'anticipated': 'Not shown yet.', 'unclear': 'Unclear.'}
+KIND_LABELS = {'bug': 'bug report', 'feature': 'feature request', 'question': 'question', 'other': 'other'}
+BUG_CHECK = {'confirmed': 'Confirmed in the code.', 'contradicted': 'The sources show this behavior is intended.',
+             'unverified': 'Not confirmed by the sources read.'}
+REAL_NEED = {'real_need': 'Shown with a real example.', 'anticipated': 'No example yet.', 'unclear': 'Unclear.'}
+VERDICTS = {'pursue': 'worth doing', 'needs_evidence': 'needs an example',
+            'direction': 'needs a maintainer decision', 'decline': 'not planned for now'}
 RECOMMENDATIONS = {'pursue': 'Pursue', 'needs_evidence': 'Needs more evidence',
-                   'direction': 'Needs a direction decision', 'decline': 'Decline'}
+                   'direction': 'Needs a maintainer decision', 'decline': 'Not planned for now'}
+HIDDEN_PREFIX = '<!-- cc-review:assessment '
 
 CODE_SPANS = re.compile(r'(```.*?```|`[^`\n]*`)', re.S)
 DASH_RULES = (
@@ -103,6 +107,8 @@ def validate(assessment, label_keys):
         raise AssessmentError('assessment.recommendation must be a configured classification key.')
     if not assessment['recommendation_reason'].strip():
         raise AssessmentError('assessment.recommendation_reason must state why.')
+    if not assessment['summary'].strip():
+        raise AssessmentError('assessment.summary must give maintainers a short prose summary.')
     if assessment['severity'] is not None and not assessment['severity_reason'].strip():
         raise AssessmentError('assessment.severity needs a severity_reason.')
     # The example gate: without a concrete case, no severity, no alternatives, no pursue.
@@ -135,7 +141,9 @@ def repair(body, assessment):
 
 
 def _safe(text):
-    return str(text).replace('<!--', '&lt;!--').replace('-->', '--&gt;')
+    # Outside code, < and > become entities: no HTML (comments, details, tags) can come from model text.
+    pieces = CODE_SPANS.split(str(text))
+    return ''.join(p if i % 2 else p.replace('<', '&lt;').replace('>', '&gt;') for i, p in enumerate(pieces))
 
 
 def _flat(text):
@@ -144,36 +152,44 @@ def _flat(text):
 
 
 def _with_note(label, note):
-    return (label + ' ' + note.strip()).strip() if note.strip() else label
+    return (label + ' ' + note).strip() if note else label
+
+
+def _cell(text):
+    return _flat(text).replace('|', '\\|')
 
 
 def render(body, assessment, labels):
-    """Render the reply plus the Assessment section as Markdown."""
+    """Three layers: the reply for everyone, a collapsed assessment for maintainers, hidden JSON for agents."""
     a = assessment
-    lines = ['### Assessment', '', f"**Type:** {KIND_LABELS[a['kind']]}",
-             '**Use case:** ' + (_flat(a['use_case']) or 'Not clear yet'),
-             '**Why:** ' + (_flat(a['why']) or 'Not clear yet')]
+    key = a['recommendation']
+    title = [VERDICTS.get(key, key), KIND_LABELS[a['kind']]]
+    if a['severity'] is not None: title.append(f"{a['severity']} impact")
+    out = [_safe(body.strip()), '', '<details>', '<summary><b>Assessment:</b> ' + ' \u00b7 '.join(title) + '</summary>', '',
+           _flat(a['summary']), '']
+    rows = [(name, a[field]) for name, field in (('Use case', 'use_case'), ('Why it matters', 'why'), ('Fits the project', 'fit'))
+            if a[field].strip()]
+    if rows:
+        out += ['| | |', '|---|---|'] + [f'| **{name}** | {_cell(value)} |' for name, value in rows] + ['']
+    if a['alternatives']:
+        out += ['**Other ways to solve it**', ''] + ['- ' + _flat(item) for item in a['alternatives']] + ['']
+    out += [f"**Recommendation:** {RECOMMENDATIONS.get(key, key)} (`{labels[key]}`). " + _flat(a['recommendation_reason']), '']
+    evidence = []
     result, note = a['check']['result'], _flat(a['check']['note'])
     if a['kind'] == 'bug':
-        lines.append('**Bug check:** ' + _with_note(BUG_CHECK[result], note))
+        evidence.append('- **Bug check:** ' + _with_note(BUG_CHECK[result], note))
     elif a['kind'] == 'feature':
-        lines.append('**Real need:** ' + _with_note(REAL_NEED[result], note))
-    if a['severity'] is not None:
-        lines.append(f"**Severity:** {a['severity'].capitalize()}. " + _flat(a['severity_reason']))
-    if a['alternatives']:
-        lines.append('**Other ways to solve it:**')
-        lines += ['- ' + _flat(item) for item in a['alternatives']]
-        lines.append('')
-    if a['fit'].strip():
-        lines.append('**Fits the project:** ' + _flat(a['fit']))
-    key = a['recommendation']
-    lines.append(f"**Recommendation:** {RECOMMENDATIONS.get(key, key)} (`{labels[key]}`). "
-                 + _flat(a['recommendation_reason']))
+        evidence.append('- **Need:** ' + _with_note(REAL_NEED[result], note))
+    if a['severity'] is not None and a['severity_reason'].strip():
+        evidence.append(f"- **Impact:** {a['severity'].capitalize()}. " + _flat(a['severity_reason']))
     if a['limits'].strip():
-        lines += ['', '<sub>Assessed by cc-review. Not inspected: ' + _flat(a['limits']).rstrip('.') + '.</sub>']
-    # Markdown needs a line break between labeled lines; two trailing spaces keep them as one block.
-    section = '\n'.join(line + '  ' if line.startswith('**') and not line.endswith(':**') else line for line in lines)
-    return _safe(body.strip()) + '\n\n' + section.rstrip() + '\n'
+        evidence.append('- **Not inspected:** ' + _flat(a['limits']).rstrip('.'))
+    if evidence:
+        out += ['<details><summary>Evidence and limits</summary>', ''] + evidence + ['', '</details>']
+    out += ['</details>', '']
+    # Escape < and > so the JSON cannot close its own comment; JSON decoding restores them.
+    data = json.dumps(a, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
+    return '\n'.join(out) + '\n' + HIDDEN_PREFIX + data + ' -->\n'
 
 
 def load_labels(config_path):
