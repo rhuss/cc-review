@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
@@ -158,12 +159,38 @@ def eligible(marker, request, now, timeout):
     return not (marker.get('state') == 'completed' and marker.get('fingerprint') == request.get('fingerprint'))
 
 
+STATUS_REASON_LIMIT = 300
+
+
+def status_cell(text):
+    text = ' '.join(str(text).split())
+    return text.replace('|', '\\|').replace('<!--', '&lt;!--').replace('-->', '--&gt;')
+
+
+def short_reason(reason):
+    reason = repair_dashes(' '.join(str(reason or '').split()))[0]
+    return reason if len(reason) <= STATUS_REASON_LIMIT else reason[:STATUS_REASON_LIMIT - 3].rstrip() + '...'
+
+
+def status_result(entry):
+    state = entry.get('state', 'needs_attention')
+    reason = short_reason(entry.get('reason', ''))
+    if state == 'completed': return entry.get('outcome') or 'Completed'
+    if state == 'running': return 'Running'
+    if state == 'skipped': return 'Skipped: ' + reason if reason else 'Skipped'
+    return 'Needs attention: ' + reason if reason else 'Needs attention'
+
+
 def status_body(entries):
-    text = ['### cc-review CI']
-    for op, entry in sorted(entries.items()):
-        state = str(entry.get('state', 'needs_attention')).replace('_', ' ')
-        reason = str(entry.get('reason', '')).replace('<!--', '&lt;!--').replace('-->', '--&gt;')
-        text.append(f"- **{op}**: {state}. {reason} [Run]({entry.get('run_url', '')})")
+    text = ['### cc-review CI', '', '| Action | Result | Updated | Log |', '|---|---|---|---|']
+    order = sorted(entries.items(), key=lambda item: item[1].get('updated_at') or 0, reverse=True)
+    for op, entry in order:
+        try: when = datetime.fromtimestamp(float(entry.get('updated_at') or 0), timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
+        except (TypeError, ValueError, OverflowError, OSError): when = ''
+        log = f"[run]({entry.get('run_url', '')})" if entry.get('run_url') else ''
+        text.append(f'| {status_cell(op)} | {status_cell(status_result(entry))} | {when} | {log} |')
+    if 'help' in entries:
+        text += ['', '<details><summary>Commands</summary>', '', HELP, '</details>']
     return '\n'.join(text) + '\n\n' + STATUS_PREFIX + json.dumps({'schema': 1, 'operations': entries}, separators=(',', ':')) + ' -->'
 
 
@@ -350,10 +377,12 @@ class Coordinator:
         self.run_id, self.run_url = str(run_id), run_url
         self.bot = config['identity']['bot_login']
 
-    def status(self, snapshot, request, state, reason=''):
+    def status(self, snapshot, request, state, reason='', outcome=''):
         cid, entries = read_status(snapshot['comments'], self.bot)
+        # Completed rows show the publisher's fixed outcome; the model's reasoning stays in the step summary.
         entries[request['operation']] = {'state': state, 'fingerprint': request['fingerprint'],
-            'updated_at': time.time(), 'run_id': self.run_id, 'run_url': self.run_url, 'reason': reason}
+            'updated_at': time.time(), 'run_id': self.run_id, 'run_url': self.run_url,
+            'reason': '' if state == 'completed' else short_reason(reason), 'outcome': outcome}
         payload = {'body': status_body(entries)}
         if cid:
             self.api.call('PATCH', f'repos/{self.repo}/issues/comments/{cid}', payload)
@@ -403,7 +432,7 @@ class Coordinator:
                 context['terminal'] = self.status(snapshot, request, 'skipped', 'CI disabled; enable configuration to resume.'); return context
             self.authorize(request, snapshot)
             if request['operation'] == 'help':
-                context['terminal'] = self.status(snapshot, request, 'completed', HELP); return context
+                context['terminal'] = self.status(snapshot, request, 'completed', HELP, outcome='Command list shown below'); return context
             _, entries = read_status(snapshot['comments'], self.bot)
             if not eligible(entries.get(request['operation']), request, time.time(), self.config['limits']['timeout_minutes'] * 60):
                 return None
@@ -424,6 +453,7 @@ class Coordinator:
                 raise CIError('Item changed during analysis; rerun on the current head/conversation.')
             proposal = validate_proposal(request, latest, proposal, self.config)
             state, reason = proposal['status'], proposal['reason']
+            outcome = ''
             if state == 'completed':
                 repaired = 0
                 if proposal.get('body'): proposal['body'], repaired = repair_dashes(proposal['body'])
@@ -431,14 +461,15 @@ class Coordinator:
                     reply['body'], n = repair_dashes(reply['body']); repaired += n
                 if repaired:
                     reason = (reason.strip() + ' ' if reason.strip() else '') + f"{repaired} dash{'' if repaired == 1 else 'es'} replaced before posting."
-                self.publish(request, latest, proposal)
+                outcome = self.publish(request, latest, proposal)
                 if request['operation'] == 'triage':
                     humans = [t for t in latest['threads'] if not bot_thread(t) and not t.get('isResolved')]
                     if humans:
                         detail = '; '.join(str(t['id']) + ' ' + str(t.get('path', '')) + ':' + str(t.get('line', '')) for t in humans[:20])
                         reason = ('Human threads left untouched (' + str(len(humans)) + '): ' + detail)[:1850] + '. Review these threads manually.'
                         state = 'needs_attention'
-            return self.status(latest, request, state, reason)
+            entry = self.status(latest, request, state, reason, outcome=outcome if state == 'completed' else '')
+            return dict(entry, reason=reason)
         except (CIError, KeyError, TypeError, ValueError) as error:
             # Do not include model text or API secrets in exception details.
             reason = str(error) if isinstance(error, CIError) else 'Invalid result/evidence; inspect the run and retry.'
@@ -452,13 +483,15 @@ class Coordinator:
         if op == 'review':
             reviews = self.api.pages(f'{root}/pulls/{n}/reviews')
             if any(marker in (r.get('body') or '') and (r.get('user') or {}).get('login', '').lower() == self.bot.lower()
-                   and r.get('commit_id') == request['fingerprint'] for r in reviews): return
+                   and r.get('commit_id') == request['fingerprint'] for r in reviews): return 'Review posted'
             self.api.call('POST', f'{root}/pulls/{n}/reviews', {'event': 'COMMENT', 'commit_id': request['fingerprint'], 'body': body})
+            return 'Review posted'
         elif op == 'assess':
             if not any(marker in (c.get('body') or '') and (c.get('user') or {}).get('login', '').lower() == self.bot.lower() for c in snapshot['comments']):
                 self.api.call('POST', f'{root}/issues/{n}/comments', {'body': body})
             labels = [self.config['labels'][key] for key in proposal.get('labels', [])]
             if labels: self.api.call('POST', f'{root}/issues/{n}/labels', {'labels': labels})
+            return 'Assessment posted' + (', labeled ' + ', '.join(f'`{label}`' for label in labels) if labels else '')
         elif op == 'triage':
             threads = {t['id']: t for t in snapshot['threads']}
             for reply in proposal.get('replies', []):
@@ -470,7 +503,11 @@ class Coordinator:
                         'variables': {'id': tid, 'body': reply['body'] + '\n\n' + thread_marker}})
                 if reply['resolve'] and not threads[tid].get('isResolved'):
                     self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}', 'variables': {'id': tid}})
-        elif op == 'fix': self.push_fix(request, snapshot, proposal)
+            replies = proposal.get('replies', [])
+            return f"{len(replies)} bot thread{'' if len(replies) == 1 else 's'} answered, {sum(1 for r in replies if r['resolve'])} resolved"
+        elif op == 'fix':
+            return f"Fix pushed as `{self.push_fix(request, snapshot, proposal)[:7]}`"
+        return ''
 
     def push_fix(self, request, snapshot, proposal):
         root = f'repos/{self.repo}'; item = snapshot['item']; head = item['head']['sha']
@@ -491,6 +528,7 @@ class Coordinator:
         fresh = self.api.call('GET', f"{root}/pulls/{request['number']}")
         if fresh['head']['sha'] != head: raise CIError('PR head moved; no fix pushed. Retry on its current head.')
         self.api.call('PATCH', f"{root}/git/refs/heads/{item['head']['ref']}", {'sha': created['sha'], 'force': False})
+        return created['sha']
 
 
 def summary(number, operation, state, reason, run_url=''):

@@ -104,6 +104,49 @@ class PolicyTests(unittest.TestCase):
         comments[0]['user']['login'] = 'github-actions[bot]'
         self.assertEqual(entry, self.ci.read_status(comments, 'github-actions[bot]')[1]['review'])
 
+    def test_status_table_renders_outcomes_newest_first(self):
+        import calendar
+        at = lambda h, m: calendar.timegm((2026, 11, 17, h, m, 0))
+        body = self.ci.status_body({
+            'assess': {'state': 'completed', 'outcome': 'Assessment posted, labeled `cc-review:pursue`', 'updated_at': at(10, 0), 'run_url': 'https://x/runs/1', 'reason': ''},
+            'review': {'state': 'needs_attention', 'reason': 'Checks are still pending.', 'updated_at': at(11, 12), 'run_url': 'https://x/runs/2'}})
+        self.assertTrue(body.startswith('### cc-review CI\n'))
+        self.assertIn('| Action | Result | Updated | Log |', body)
+        self.assertLess(body.index('| review |'), body.index('| assess |'))
+        self.assertIn('Needs attention: Checks are still pending.', body)
+        self.assertIn('Assessment posted, labeled `cc-review:pursue`', body)
+        self.assertIn('2026-11-17 11:12 UTC', body)
+        self.assertIn('[run](https://x/runs/2)', body)
+
+    def test_status_help_shows_commands_once(self):
+        body = self.ci.status_body({'help': {'state': 'completed', 'outcome': 'Command list shown below', 'updated_at': 1, 'run_url': 'u'}})
+        self.assertIn('| help | Command list shown below |', body)
+        self.assertEqual(1, body.count('<details><summary>Commands</summary>'))
+        self.assertIn('/cc-review fix', body.split('<details>')[1])
+
+    def test_status_table_escapes_cells(self):
+        body = self.ci.status_body({'review': {'state': 'needs_attention', 'reason': 'a | b\nc <!-- x -->', 'updated_at': 1, 'run_url': 'u'}})
+        row = [line for line in body.splitlines() if line.startswith('| review |')]
+        self.assertEqual(1, len(row))
+        self.assertIn('a \\| b c &lt;!-- x --&gt;', row[0])
+        long = self.ci.status_body({'review': {'state': 'needs_attention', 'reason': 'x' * 400, 'updated_at': 1, 'run_url': 'u'}})
+        self.assertNotIn('x' * 301, long.split('<!-- cc-review:ci:v1')[0])
+
+    def test_status_upgrades_v16_comment(self):
+        old_entry = {'state': 'completed', 'fingerprint': 'f', 'updated_at': 100, 'run_id': '1', 'run_url': 'u', 'reason': 'Long text.'}
+        old_body = ('### cc-review CI\n- **assess**: completed. Long text. [Run](u)\n\n'
+                    + self.ci.STATUS_PREFIX + json.dumps({'schema': 1, 'operations': {'assess': old_entry}}, separators=(',', ':')) + ' -->')
+        api = FakeGitHub(snapshot())
+        worker = self.ci.Coordinator(api, 'acme/widget', self.config, '1', 'https://github.com/acme/widget/actions/runs/1')
+        s = snapshot(); s['comments'] = [{'id': 5, 'user': {'login': 'github-actions[bot]'}, 'body': old_body}]
+        self.assertEqual(old_entry, self.ci.read_status(s['comments'], 'github-actions[bot]')[1]['assess'])
+        worker.status(s, self.request('help', fingerprint='g'), 'completed', outcome='Command list shown below')
+        patched = [p['body'] for m, url, p in api.calls if m == 'PATCH']
+        self.assertEqual(1, len(patched))
+        self.assertIn('| assess | Completed |', patched[0])
+        self.assertIn('| help | Command list shown below |', patched[0])
+        self.assertNotIn('Long text.', patched[0].split('<!-- cc-review:ci:v1')[0])
+
     def test_assessment_fingerprint_ignores_bot_status_updates(self):
         s = snapshot()
         s['item'].pop('head')
@@ -283,7 +326,7 @@ class PublisherTests(unittest.TestCase):
             result = worker.finish(ctx, proposal)
             self.assertEqual('needs_attention', result['state'])
             self.assertFalse(any(m == 'POST' and p.endswith('/reviews') for m, p, _ in api.calls))
-            self.assertIn('needs attention', api.evidence['comments'][0]['body'])
+            self.assertIn('Needs attention:', api.evidence['comments'][0]['body'])
 
     def test_issue_assessment_labels_are_mapped_and_never_closes(self):
         self.api.evidence['item'].pop('head')
@@ -309,6 +352,15 @@ class PublisherTests(unittest.TestCase):
         schema = self.ci.proposal_schema(self.config)
         self.assertEqual(sorted(self.config['labels']), schema['properties']['labels']['items']['enum'])
         self.assertNotIn('enum', self.ci.PROPOSAL_SCHEMA['properties']['labels']['items'])
+
+    def test_completed_status_keeps_model_reason_out(self):
+        self.api.evidence['item'].pop('head')
+        ctx = self.worker.prepare(self.request('assess'))
+        result = self.worker.finish(ctx, {'status': 'completed', 'reason': 'Long internal reasoning', 'body': 'Thanks', 'labels': ['pursue']})
+        status = [c['body'] for c in self.api.evidence['comments'] if c['body'].startswith('### cc-review CI')][0]
+        self.assertNotIn('Long internal reasoning', status.split('<!-- cc-review:ci:v1')[0])
+        self.assertIn('Assessment posted, labeled `cc-review:pursue`', status)
+        self.assertIn('Long internal reasoning', result['reason'])
 
     def test_published_texts_have_dashes_repaired_and_reported(self):
         self.api.evidence['item'].pop('head')
@@ -500,14 +552,14 @@ class CLITests(unittest.TestCase):
             value = json.loads(state.read_text())
             self.assertEqual(['cc-review:pursue'], value['labels'])
             self.assertEqual(2, len(value['comments']))
-            self.assertIn('completed', value['comments'][0]['body'])
+            self.assertIn('Assessment posted', value['comments'][0]['body'])
             # Force a new conversation state, then omit the model result.
             value['comments'].append({'id': 900, 'body': 'More evidence', 'user': {'login': 'human'}})
             state.write_text(json.dumps(value))
             self.assertEqual(0, subprocess.run(cmd, env=env, capture_output=True).returncode)
             proc = subprocess.run([sys.executable, '-B', str(SCRIPT), 'finish', '--config', str(ROOT / 'review/config/ci.yml'), '--work-dir', str(root / 'work')], env=env, text=True, capture_output=True)
             self.assertEqual(1, proc.returncode, proc.stderr)
-            self.assertIn('needs attention', json.loads(state.read_text())['comments'][0]['body'])
+            self.assertIn('Needs attention:', json.loads(state.read_text())['comments'][0]['body'])
             self.assertIn('needs attention', (root / 'summary').read_text())
 
 
