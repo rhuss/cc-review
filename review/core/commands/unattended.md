@@ -13,9 +13,10 @@ context, unavailable tools or a consequential unresolved judgment becomes
 - Triage: no code changes; reply to bot reviewer threads only. Resolve only exact
   threads proven addressed by current code and complete conversation evidence.
   Human comments are untouched and listed under needs attention.
-- Issue: assess need, fit and implementation value using need-and-fit.md and
-  maintainer-voice.md. Post the reply and apply configured triage labels; never
-  close, assign or implement. Uncertain authority becomes needs attention.
+- Issue: assess with need-and-fit.md, issue-assessment.md and
+  maintainer-voice.md. Post the rendered reply and assessment and apply the
+  label of the recommendation; never close, assign or implement. Uncertain
+  authority becomes needs attention.
 - No automatic fixes. CI fixes require the exact maintainer `/cc-review fix`
   comment on a same-repository PR. No fork execution or fixes.
 - Skip idea capture, next-step menus, human-comment decisions and coverage fixes.
@@ -40,8 +41,10 @@ project configuration). Use that private --config for prepare/finish. Use `ci.py
 prepare` with a
 request `{number:N, operation:"assess", source:"event", actor:"", permission:"none",
 repository:"owner/name"}` and a fresh private --work-dir. Read context.json and
-the bundled need/fit and voice templates. Write a proposal JSON containing
-`status`, `reason`, `body` and `labels` (exactly one classification key from CI config).
+the bundled need/fit, issue-assessment and voice templates. Write a proposal JSON
+containing `status`, `reason`, `body` (the reply to the reporter) and
+`assessment` (the fields of `templates/issue-assessment.md`; `recommendation` is
+a classification key from CI config).
 When the invoking checkout is verified to match the target repository, pass its
 path as --project-dir during prepare so project guidance informs fit. Otherwise
 record missing project context in the proposal.
@@ -58,7 +61,8 @@ bulk machinery, shell tools, external reviewers or project code. Inspect all
 supplied perspectives/evidence. Do not invent missing code or claim tests ran.
 
 Proposal: `status` (completed/skipped/needs_attention), `reason`, optional `body`,
-`labels` (classification keys), `replies` ({thread_id,body,resolve,evidence}),
+`assessment` (issue assessments, per `templates/issue-assessment.md`),
+`replies` ({thread_id,body,resolve,evidence}),
 `files` ({path,content}). Use only the fields applicable to the operation.
 Failures must include the next maintainer action in reason. Resolutions require
 concrete current-code evidence, not an author's assertion. The runtime denies

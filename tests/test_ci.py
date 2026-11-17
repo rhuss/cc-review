@@ -11,6 +11,19 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'review/core/scripts/ci.py'
+ASSESSMENT = {
+    'kind': 'feature', 'use_case': 'Maintainers want to see which guidance shaped a CI reply.',
+    'why': 'They cannot tell a model problem from a missing checkout.', 'concrete_example': True,
+    'check': {'result': 'real_need', 'note': 'The reporter hit this while validating v1.6.1.'},
+    'severity': 'low', 'severity_reason': 'It slows debugging but blocks nothing.',
+    'alternatives': ['Print the commit in the step summary.'], 'fit': 'Yes. `docs/CI.md` documents status.',
+    'recommendation': 'pursue', 'recommendation_reason': 'Small and bounded.', 'limits': '',
+}
+
+
+def assess_proposal(body='Thanks for the example.', reason='', **changes):
+    value = copy.deepcopy(ASSESSMENT); value.update(changes)
+    return {'status': 'completed', 'reason': reason, 'body': body, 'assessment': value}
 
 
 def pr_event(action='opened', fork=False):
@@ -196,6 +209,16 @@ class PolicyTests(unittest.TestCase):
             path.write_text('{"prose": "yes"}')
             with self.assertRaises(self.ci.CIError): self.ci.load_config(path)
 
+    def test_prompt_carries_issue_assessment_rules(self):
+        rules = (ROOT / 'review/core/templates/issue-assessment.md').read_text()
+        fit = (ROOT / 'review/core/templates/need-and-fit.md').read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            self.ci.write_prompt({'request': self.request('assess'), 'snapshot': snapshot(), 'config': self.config}, tmp)
+            text = (Path(tmp) / 'prompt.txt').read_text()
+            self.assertIn(rules, text); self.assertIn(fit, text)
+            self.ci.write_prompt({'request': self.request('review'), 'snapshot': snapshot(), 'config': self.config}, tmp)
+            self.assertNotIn(rules, (Path(tmp) / 'prompt.txt').read_text())
+
     def test_dash_repair_keeps_code_and_numeric_ranges(self):
         text, count = self.ci.repair_dashes(
             'Offline tests — however thorough — cannot speak to it. Pages 3–5 apply.\n'
@@ -224,10 +247,11 @@ class PolicyTests(unittest.TestCase):
             with self.assertRaises(self.ci.CIError):
                 self.ci.validate_proposal(self.request(), s, p, self.config)
 
-    def test_assessment_cannot_complete_without_a_classification_label(self):
-        for labels in ([], ['pursue', 'decline'], ['unknown']):
+    def test_assessment_requires_structured_assessment(self):
+        for proposal in ({'status': 'completed', 'reason': '', 'body': 'Thanks', 'labels': ['pursue']},
+                         assess_proposal(recommendation='unknown'), assess_proposal(kind='bug')):
             with self.assertRaises(self.ci.CIError):
-                self.ci.validate_proposal(self.request('assess'), snapshot(), {'status': 'completed', 'reason': '', 'body': 'Thanks', 'labels': labels}, self.config)
+                self.ci.validate_proposal(self.request('assess'), snapshot(), proposal, self.config)
 
     def test_triage_cannot_silently_drop_an_unresolved_bot_thread(self):
         s = snapshot(); s['threads'] = [{'id': 'T1', 'isResolved': False, 'comments': {'nodes': [{'author': {'login': 'reviewer[bot]'}, 'body': 'Concern'}]}}]
@@ -328,51 +352,73 @@ class PublisherTests(unittest.TestCase):
             self.assertFalse(any(m == 'POST' and p.endswith('/reviews') for m, p, _ in api.calls))
             self.assertIn('Needs attention:', api.evidence['comments'][0]['body'])
 
-    def test_issue_assessment_labels_are_mapped_and_never_closes(self):
+    def posted_comments(self):
+        return [p['body'] for m, _, p in self.api.calls if m == 'POST' and 'cc-review:ci-result' in (p or {}).get('body', '')]
+
+    def label_posts(self):
+        return [p for m, url, p in self.api.calls if url.endswith('/labels') and m == 'POST']
+
+    def test_assessment_posts_rendered_comment_and_derived_label(self):
         self.api.evidence['item'].pop('head')
         ctx = self.worker.prepare(self.request('assess'))
-        result = self.worker.finish(ctx, {'status': 'completed', 'reason': '', 'body': 'Thanks for the example', 'labels': ['pursue']})
+        result = self.worker.finish(ctx, assess_proposal())
         self.assertEqual('completed', result['state'])
-        labels = [p for m, url, p in self.api.calls if url.endswith('/labels') and m == 'POST']
-        self.assertEqual([{'labels': ['cc-review:pursue']}], labels)
+        posted = self.posted_comments()
+        self.assertEqual(1, len(posted))
+        self.assertTrue(posted[0].startswith('Thanks for the example.'))
+        self.assertIn('### Assessment', posted[0])
+        self.assertEqual([{'labels': ['cc-review:pursue']}], self.label_posts())
+        status = [c['body'] for c in self.api.evidence['comments'] if c['body'].startswith('### cc-review CI')][0]
+        self.assertIn('Assessment posted, labeled `cc-review:pursue`', status)
         self.assertFalse(any(p and 'state' in p for _, _, p in self.api.calls))
 
-    def test_assessment_accepts_configured_label_name_for_its_key(self):
+    def test_assessment_rule_failure_posts_nothing(self):
         self.api.evidence['item'].pop('head')
         ctx = self.worker.prepare(self.request('assess'))
-        result = self.worker.finish(ctx, {'status': 'completed', 'reason': '', 'body': 'Thanks', 'labels': ['cc-review:pursue']})
-        self.assertEqual('completed', result['state'])
-        labels = [p for m, url, p in self.api.calls if url.endswith('/labels') and m == 'POST']
-        self.assertEqual([{'labels': ['cc-review:pursue']}], labels)
-        for bad in (['cc-review:unknown'], ['pursue', 'cc-review:decline']):
-            with self.assertRaises(self.ci.CIError):
-                self.ci.validate_proposal(self.request('assess'), ctx['snapshot'], {'status': 'completed', 'reason': '', 'body': 'x', 'labels': bad}, self.config)
+        result = self.worker.finish(ctx, assess_proposal(concrete_example=False))
+        self.assertEqual('needs_attention', result['state'])
+        self.assertIn('concrete example', result['reason'])
+        self.assertEqual([], self.posted_comments())
+        self.assertEqual([], self.label_posts())
 
-    def test_schema_limits_labels_to_configured_keys(self):
-        schema = self.ci.proposal_schema(self.config)
-        self.assertEqual(sorted(self.config['labels']), schema['properties']['labels']['items']['enum'])
-        self.assertNotIn('enum', self.ci.PROPOSAL_SCHEMA['properties']['labels']['items'])
+    def test_assess_labels_must_match_recommendation(self):
+        self.api.evidence['item'].pop('head')
+        ctx = self.worker.prepare(self.request('assess'))
+        proposal = assess_proposal(); proposal['labels'] = ['decline']
+        with self.assertRaises(self.ci.CIError):
+            self.ci.validate_proposal(self.request('assess'), ctx['snapshot'], proposal, self.config)
+        proposal = assess_proposal(); proposal['labels'] = ['cc-review:pursue']
+        result = self.worker.finish(ctx, proposal)
+        self.assertEqual('completed', result['state'])
+        self.assertEqual([{'labels': ['cc-review:pursue']}], self.label_posts())
+
+    def test_schema_requires_assessment_keys(self):
+        schema = self.ci.proposal_schema(self.config)['properties']['assessment']
+        self.assertFalse(schema['additionalProperties'])
+        self.assertEqual(sorted(ASSESSMENT), sorted(schema['required']))
+        self.assertEqual(sorted(self.config['labels']), schema['properties']['recommendation']['enum'])
+        self.assertNotIn('enum', self.ci.PROPOSAL_SCHEMA['properties']['assessment']['properties']['recommendation'])
 
     def test_completed_status_keeps_model_reason_out(self):
         self.api.evidence['item'].pop('head')
         ctx = self.worker.prepare(self.request('assess'))
-        result = self.worker.finish(ctx, {'status': 'completed', 'reason': 'Long internal reasoning', 'body': 'Thanks', 'labels': ['pursue']})
+        result = self.worker.finish(ctx, assess_proposal(reason='Long internal reasoning'))
         status = [c['body'] for c in self.api.evidence['comments'] if c['body'].startswith('### cc-review CI')][0]
         self.assertNotIn('Long internal reasoning', status.split('<!-- cc-review:ci:v1')[0])
         self.assertIn('Assessment posted, labeled `cc-review:pursue`', status)
         self.assertIn('Long internal reasoning', result['reason'])
 
-    def test_published_texts_have_dashes_repaired_and_reported(self):
+    def test_assessment_fields_dash_repaired(self):
         self.api.evidence['item'].pop('head')
         ctx = self.worker.prepare(self.request('assess'))
-        result = self.worker.finish(ctx, {'status': 'completed', 'reason': 'Assessed.',
-                                          'body': 'Clear need — and a good fit.', 'labels': ['pursue']})
+        result = self.worker.finish(ctx, assess_proposal(body='Clear need — and a good fit.', reason='Assessed.',
+                                                         why='Slow — and unclear.'))
         self.assertEqual('completed', result['state'])
-        posted = [p['body'] for m, _, p in self.api.calls if m == 'POST' and 'cc-review:ci-result' in (p or {}).get('body', '')]
+        posted = self.posted_comments()
         self.assertEqual(1, len(posted))
         self.assertTrue(posted[0].startswith('Clear need, and a good fit.'))
         self.assertNotIn('—', posted[0])
-        self.assertIn('1 dash replaced', result['reason'])
+        self.assertIn('2 dashes replaced', result['reason'])
 
     def test_fix_preserves_executable_mode_and_updates_ref_without_force(self):
         request = self.request('fix', source='comment', comment_id=90, fingerprint='a'*40)
@@ -546,7 +592,7 @@ class CLITests(unittest.TestCase):
             self.assertEqual(0, proc.returncode, proc.stderr)
             self.assertIn('run_model=true', (root / 'outputs').read_text())
             result = root / 'result.json'
-            result.write_text(json.dumps({'status': 'completed', 'reason': '', 'body': 'Thank you. This need fits.', 'labels': ['pursue']}))
+            result.write_text(json.dumps(assess_proposal(body='Thank you. This need fits.')))
             proc = subprocess.run([sys.executable, '-B', str(SCRIPT), 'finish', '--config', str(ROOT / 'review/config/ci.yml'), '--work-dir', str(root / 'work'), '--result', str(result)], env=env, text=True, capture_output=True)
             self.assertEqual(0, proc.returncode, proc.stderr)
             value = json.loads(state.read_text())
