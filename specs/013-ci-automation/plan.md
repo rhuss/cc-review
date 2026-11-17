@@ -23,7 +23,7 @@ The constitution is an unfilled template and imposes no concrete principles. Fol
 - `review/core/scripts/ci.py`: config validation, pure routing/state/policy functions, gh transport and prepare/finalize/select CLI.
 - `review/config/ci.yml`: defaults and caller template in `review/core/templates/ci-workflow.yml`.
 - `ci/action.yml`: prepare/finalize policy helper used around the pinned base-action in the reusable workflow.
-- `.github/workflows/cc-review.yml`: reusable select + per-item matrix workers, shared item concurrency and always-run finalizer.
+- `.github/workflows/cc-review-reusable.yml`: reusable select + per-item matrix workers, shared item concurrency and always-run finalizer.
 - `review/core/commands/unattended.md`: shared single-item contract and CI proposal mode.
 - `review/core/commands/ci.md`, `review/skills/ci/SKILL.md`, OpenCode and Spec Kit adapters: installation lifecycle.
 - `tests/test_ci.py`: routing, provenance, freshness, authorization, bounded outcomes, publisher restrictions, setup generation, fake transport integration.

@@ -7,7 +7,7 @@ on GitHub. `status`, `doctor`, `update` and `disable` manage the installation.
 
 The integration runs in your repository with your model account. There is no
 hosted cc-review service or shared API key. The reusable entry point is
-`rhuss/cc-review/.github/workflows/cc-review.yml@<commit>`; setup pins both that
+`rhuss/cc-review/.github/workflows/cc-review-reusable.yml@<commit>`; setup pins both that
 reference and its `integration_ref` input to the same immutable commit. Choose a
 commit containing the new CI files. The prepare/finalize helper is `ci/action.yml`.
 

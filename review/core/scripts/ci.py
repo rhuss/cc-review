@@ -574,6 +574,7 @@ def runner_output(values):
 
 
 MANAGED = '# Managed by cc-review:ci (schema 1).'
+REUSABLE = 'cc-review-reusable.yml'  # reusable workflow in rhuss/cc-review that callers pin
 
 
 def install(root, ref, update=False):
@@ -593,7 +594,8 @@ def install(root, ref, update=False):
     if not config.exists(): config.write_text(json.dumps(DEFAULTS, indent=2) + '\n')
     if workflow.exists():
         text = workflow.read_text()
-        text, uses_count = re.subn(r'(cc-review.yml@)[a-f0-9]{40}', lambda m: m[1] + ref, text)
+        # Older callers name the reusable workflow cc-review.yml; the pinned commit only has the new name.
+        text, uses_count = re.subn(r'(\.github/workflows/)cc-review(?:-reusable)?\.yml@[a-f0-9]{40}', lambda m: m[1] + REUSABLE + '@' + ref, text)
         text, ref_count = re.subn(r'(integration_ref: )[a-f0-9]{40}', lambda m: m[1] + ref, text)
         if uses_count != 1 or ref_count != 1: raise CIError('Managed caller has unsupported pins; migrate it manually before update.')
     else:
@@ -629,7 +631,7 @@ def inspect_installation(root, repo, api):
     issues = []
     text = workflow.read_text() if workflow.is_file() else ''
     if not text.startswith(MANAGED): issues.append('Missing managed caller; run setup.')
-    refs = re.findall(r'(?:cc-review.yml@|integration_ref: )([a-f0-9]{40})', text)
+    refs = re.findall(r'(?:cc-review(?:-reusable)?\.yml@|integration_ref: )([a-f0-9]{40})', text)
     if len(refs) != 2 or refs[0] != refs[1]: issues.append('Caller refs missing or inconsistent; run update with an immutable commit.')
     names = {s['name'] for s in api.pages(f'repos/{repo}/actions/secrets', 'secrets')}
     variables = {v['name']: v.get('value', '') for v in api.pages(f'repos/{repo}/actions/variables', 'variables')}

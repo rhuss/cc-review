@@ -29,7 +29,7 @@ permissions:
   id-token: write
 jobs:
   cc-review:
-    uses: rhuss/cc-review/.github/workflows/cc-review.yml@__CC_REVIEW_REF__
+    uses: rhuss/cc-review/.github/workflows/cc-review-reusable.yml@__CC_REVIEW_REF__
     with:
       integration_ref: __CC_REVIEW_REF__
       app_id: ${{ vars.CC_REVIEW_APP_ID }}

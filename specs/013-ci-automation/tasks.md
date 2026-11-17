@@ -22,7 +22,7 @@ Goal: immediate acknowledgement, fork isolation, explicit fixes. Independent tes
 
 Goal: bounded recovery sharing item serialization. Independent test: event/sweep matrix fixtures plus actionlint of generated caller and reusable workflow.
 
-- [x] T006 [US3] Add ci/action.yml and .github/workflows/cc-review.yml with trusted pinned checkout, pure selection, per-item concurrency, fixed empty model tool allowlist, max turns/timeout, provider inputs, always finalizer and summary. Extend ci.py selection for bounded PR+issue sweeps skipping current complete/active states; fixture assertions cover mixed entries and bot loops.
+- [x] T006 [US3] Add ci/action.yml and .github/workflows/cc-review-reusable.yml with trusted pinned checkout, pure selection, per-item concurrency, fixed empty model tool allowlist, max turns/timeout, provider inputs, always finalizer and summary. Extend ci.py selection for bounded PR+issue sweeps skipping current complete/active states; fixture assertions cover mixed entries and bot loops.
 
 ## US4: CI management
 

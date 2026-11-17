@@ -334,6 +334,11 @@ class SetupTests(unittest.TestCase):
             self.assertIn('# custom caller option', caller.read_text())
             self.assertEqual('opus', self.ci.load_config(config)['model'])
             self.assertIn('b'*40, (root / '.github/workflows/cc-review.yml').read_text())
+            # A caller from before the rename moves to the new reusable workflow name on update.
+            caller.write_text(caller.read_text().replace('cc-review-reusable.yml@', 'cc-review.yml@'))
+            self.ci.install(root, 'c'*40, update=True)
+            self.assertIn('/.github/workflows/cc-review-reusable.yml@' + 'c'*40, caller.read_text())
+            self.assertNotIn('workflows/cc-review.yml@', caller.read_text())
             self.ci.disable(root, remove=False)
             self.assertFalse(self.ci.load_config(config)['enabled'])
             self.assertEqual('custom', unrelated.read_text())
