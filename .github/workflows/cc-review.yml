@@ -29,9 +29,9 @@ permissions:
   id-token: write
 jobs:
   cc-review:
-    uses: rhuss/cc-review/.github/workflows/cc-review-reusable.yml@33eacbea58ef410867172bc76e351704999260a0
+    uses: rhuss/cc-review/.github/workflows/cc-review-reusable.yml@e3493978ac4c7a419d13528420efa9f67bd207c6
     with:
-      integration_ref: 33eacbea58ef410867172bc76e351704999260a0
+      integration_ref: e3493978ac4c7a419d13528420efa9f67bd207c6
       app_id: ${{ vars.CC_REVIEW_APP_ID }}
       anthropic_base_url: ${{ vars.CC_REVIEW_ANTHROPIC_BASE_URL }}
       federation_rule_id: ${{ vars.CC_REVIEW_FEDERATION_RULE_ID }}
