@@ -392,6 +392,15 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual('completed', result['state'])
         self.assertEqual([{'labels': ['cc-review:pursue']}], self.label_posts())
 
+    def test_schema_enums_have_unique_items(self):
+        def walk(node):
+            if isinstance(node, dict):
+                if 'enum' in node: self.assertEqual(len(node['enum']), len(set(map(json.dumps, node['enum']))), node['enum'])
+                for value in node.values(): walk(value)
+            elif isinstance(node, list):
+                for value in node: walk(value)
+        walk(self.ci.proposal_schema(self.config))
+
     def test_schema_requires_assessment_keys(self):
         schema = self.ci.proposal_schema(self.config)['properties']['assessment']
         self.assertFalse(schema['additionalProperties'])

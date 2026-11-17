@@ -595,7 +595,7 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
             'kind': {'type': 'string', 'enum': list(assessment.KINDS)},
             'use_case': {'type': 'string'}, 'why': {'type': 'string'}, 'concrete_example': {'type': 'boolean'},
             'check': {'type': 'object', 'additionalProperties': False, 'required': ['result', 'note'], 'properties': {
-                'result': {'type': ['string', 'null'], 'enum': [r for rs in assessment.CHECK_RESULTS.values() for r in rs]},
+                'result': {'type': ['string', 'null'], 'enum': list(dict.fromkeys(r for rs in assessment.CHECK_RESULTS.values() for r in rs))},
                 'note': {'type': 'string'}}},
             'severity': {'type': ['string', 'null'], 'enum': list(assessment.SEVERITIES) + [None]},
             'severity_reason': {'type': 'string'},
