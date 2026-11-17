@@ -202,6 +202,10 @@ def validate_proposal(request, snapshot, proposal, config):
     if not snapshot.get('complete'): raise CIError('Incomplete evidence; reduce item size or inspect manually.')
     for key in ('labels', 'replies', 'files'):
         if key in proposal and not isinstance(proposal[key], list): raise CIError(key + ' must be an array.')
+    if op == 'assess' and proposal.get('labels'):
+        # Models sometimes return the configured label name instead of its key.
+        names = {name: key for key, name in config['labels'].items()}
+        proposal['labels'] = [names.get(label, label) if isinstance(label, str) else label for label in proposal['labels']]
     if proposal.get('body') is not None and (not isinstance(proposal['body'], str) or len(proposal['body']) > 50000):
         raise CIError('Invalid or oversized result body.')
     for key, permitted in (('labels', op == 'assess'), ('replies', op == 'triage'), ('files', op == 'fix')):
@@ -535,6 +539,13 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
 
 
 
+def proposal_schema(config):
+    """The fixed schema, with labels limited to the configured classification keys."""
+    schema = copy.deepcopy(PROPOSAL_SCHEMA)
+    schema['properties']['labels']['items']['enum'] = sorted(config['labels'])
+    return schema
+
+
 def project_evidence(directory):
     root = Path(directory).resolve()
     evidence = {}
@@ -581,7 +592,7 @@ def writing_guidance(config, prose_dir):
 def write_prompt(context, directory, prose_dir=None):
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=True)
     (directory / 'context.json').write_text(json.dumps(context))
-    (directory / 'schema.json').write_text(json.dumps(PROPOSAL_SCHEMA, separators=(',', ':')))
+    (directory / 'schema.json').write_text(json.dumps(proposal_schema(context['config']), separators=(',', ':')))
     command = {'review': 'review', 'triage': 'triage', 'assess': 'issue', 'fix': 'review'}[context['request']['operation']]
     # Trusted bundled instructions are separate from quoted remote evidence.
     voice = (CORE / 'templates/maintainer-voice.md').read_text()
@@ -596,7 +607,7 @@ def write_prompt(context, directory, prose_dir=None):
         'Return the structured terminal proposal only. Insufficient evidence means needs_attention with a remedy. '
         'Do not claim tests were run. For review, analyze the diff from every supplied perspective and compose a COMMENT review. '
         'For triage, reply only to exact bot reviewer threads; resolve only when supplied current code/diff proves the concern addressed. '
-        'For assess, evaluate need, fit and implementation value, compose a welcoming reply and choose configured classification keys. '
+        'For assess, evaluate need, fit and implementation value, compose a welcoming reply and set labels to exactly one classification key of config.labels (for example pursue), never the label name. '
         'For fix, propose complete contents of existing regular files only; no shell commands or new sensitive files. '
         'Use concrete file/line evidence and disclose evidence limits. If current code is insufficient to verify a thread/fix, record needs_attention.\n\n'
         + guidance + '\n\n' + voice + '\n\n' + writing_guidance(context['config'], prose_dir) + '\n\n' + '\n\n'.join(perspectives)
@@ -788,7 +799,7 @@ def main(argv=None):
             write_prompt(context, directory, prose_dir=args.prose_dir or None)
             runner_output({'run_model': 'true', 'model': config['model'], 'turns': config['limits']['turns'],
                 'timeout': config['limits']['timeout_minutes'], 'provider': config['provider'],
-                'schema': json.dumps(PROPOSAL_SCHEMA, separators=(',', ':'))})
+                'schema': json.dumps(proposal_schema(config), separators=(',', ':'))})
     else:
         context = json.loads((directory / 'context.json').read_text())
         if context.get('skipped'): return 0

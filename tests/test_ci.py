@@ -283,6 +283,22 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual([{'labels': ['cc-review:pursue']}], labels)
         self.assertFalse(any(p and 'state' in p for _, _, p in self.api.calls))
 
+    def test_assessment_accepts_configured_label_name_for_its_key(self):
+        self.api.evidence['item'].pop('head')
+        ctx = self.worker.prepare(self.request('assess'))
+        result = self.worker.finish(ctx, {'status': 'completed', 'reason': '', 'body': 'Thanks', 'labels': ['cc-review:pursue']})
+        self.assertEqual('completed', result['state'])
+        labels = [p for m, url, p in self.api.calls if url.endswith('/labels') and m == 'POST']
+        self.assertEqual([{'labels': ['cc-review:pursue']}], labels)
+        for bad in (['cc-review:unknown'], ['pursue', 'cc-review:decline']):
+            with self.assertRaises(self.ci.CIError):
+                self.ci.validate_proposal(self.request('assess'), ctx['snapshot'], {'status': 'completed', 'reason': '', 'body': 'x', 'labels': bad}, self.config)
+
+    def test_schema_limits_labels_to_configured_keys(self):
+        schema = self.ci.proposal_schema(self.config)
+        self.assertEqual(sorted(self.config['labels']), schema['properties']['labels']['items']['enum'])
+        self.assertNotIn('enum', self.ci.PROPOSAL_SCHEMA['properties']['labels']['items'])
+
     def test_published_texts_have_dashes_repaired_and_reported(self):
         self.api.evidence['item'].pop('head')
         ctx = self.worker.prepare(self.request('assess'))
