@@ -10,7 +10,7 @@
   "plugins": [
     {
       "name": "cc-review",
-      "version": "1.6.1",
+      "version": "1.6.2",
       "description": "Multi-agent code review with autonomous fix loop for Claude Code",
       "author": {
         "name": "Roland Huss",
