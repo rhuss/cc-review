@@ -3,6 +3,7 @@
   "enabled": true,
   "model": "sonnet",
   "provider": "anthropic",
+  "prose": true,
   "identity": {
     "bot_login": "github-actions[bot]"
   },

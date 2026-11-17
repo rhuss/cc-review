@@ -128,6 +128,42 @@ class PolicyTests(unittest.TestCase):
             schema = json.loads((Path(tmp) / 'schema.json').read_text())
             self.assertFalse(schema['additionalProperties'])
 
+    def test_prompt_uses_pinned_prose_humanizer_and_falls_back_without_it(self):
+        context = {'request': self.request(), 'snapshot': snapshot(), 'config': self.config}
+        with tempfile.TemporaryDirectory() as tmp:
+            prose = Path(tmp) / 'prose'; skill = prose / 'prose/skills/humanizer/SKILL.md'
+            skill.parent.mkdir(parents=True); skill.write_text('# Humanizer\nHUMANIZER-RULES')
+            work = Path(tmp) / 'work'
+            self.ci.write_prompt(context, work, prose_dir=prose)
+            text = (work / 'prompt.txt').read_text()
+            self.assertIn('HUMANIZER-RULES', text)
+            self.assertLess(text.index('HUMANIZER-RULES'), text.index('untrusted evidence'))
+            self.assertIn('Never use em dashes or en dashes', text)
+            for config, directory in ((dict(self.config, prose=False), prose), (self.config, Path(tmp) / 'missing'), (self.config, None)):
+                self.ci.write_prompt(dict(context, config=config), work, prose_dir=directory)
+                text = (work / 'prompt.txt').read_text()
+                self.assertNotIn('HUMANIZER-RULES', text)
+                self.assertIn('Never use em dashes or en dashes', text)
+
+    def test_prose_setting_defaults_on_and_must_be_boolean(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ci.yml'
+            path.write_text('{}'); self.assertTrue(self.ci.load_config(path)['prose'])
+            path.write_text('{"prose": false}'); self.assertFalse(self.ci.load_config(path)['prose'])
+            path.write_text('{"prose": "yes"}')
+            with self.assertRaises(self.ci.CIError): self.ci.load_config(path)
+
+    def test_dash_repair_keeps_code_and_numeric_ranges(self):
+        text, count = self.ci.repair_dashes(
+            'Offline tests — however thorough — cannot speak to it. Pages 3–5 apply.\n'
+            'Keep `a — b` and\n```\nx – y\n```\nthe record—actual links—matters.')
+        self.assertEqual(
+            'Offline tests, however thorough, cannot speak to it. Pages 3-5 apply.\n'
+            'Keep `a — b` and\n```\nx – y\n```\nthe record, actual links, matters.', text)
+        self.assertEqual(5, count)
+        self.assertEqual(('Plain text.', 0), self.ci.repair_dashes('Plain text.'))
+        self.assertEqual(('It ends here.', 1), self.ci.repair_dashes('It ends here —.'))
+
     def test_project_evidence_is_bounded_and_does_not_follow_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); project = root / 'project'; project.mkdir()
@@ -246,6 +282,18 @@ class PublisherTests(unittest.TestCase):
         labels = [p for m, url, p in self.api.calls if url.endswith('/labels') and m == 'POST']
         self.assertEqual([{'labels': ['cc-review:pursue']}], labels)
         self.assertFalse(any(p and 'state' in p for _, _, p in self.api.calls))
+
+    def test_published_texts_have_dashes_repaired_and_reported(self):
+        self.api.evidence['item'].pop('head')
+        ctx = self.worker.prepare(self.request('assess'))
+        result = self.worker.finish(ctx, {'status': 'completed', 'reason': 'Assessed.',
+                                          'body': 'Clear need — and a good fit.', 'labels': ['pursue']})
+        self.assertEqual('completed', result['state'])
+        posted = [p['body'] for m, _, p in self.api.calls if m == 'POST' and 'cc-review:ci-result' in (p or {}).get('body', '')]
+        self.assertEqual(1, len(posted))
+        self.assertTrue(posted[0].startswith('Clear need, and a good fit.'))
+        self.assertNotIn('—', posted[0])
+        self.assertIn('1 dash replaced', result['reason'])
 
     def test_fix_preserves_executable_mode_and_updates_ref_without_force(self):
         request = self.request('fix', source='comment', comment_id=90, fingerprint='a'*40)

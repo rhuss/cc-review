@@ -64,6 +64,16 @@ The deterministic publisher checks the structured proposal before any mutation.
 When supplied evidence is insufficient to verify a fix or thread, it requests
 maintainer attention. This intentionally limits conclusions to collected evidence.
 
+Published text follows the [cc-prose](https://github.com/rhuss/cc-prose)
+humanizer. The reusable workflow checks out cc-prose at a pinned commit and adds
+its humanizer skill to the prompt as writing guidance (text only, never executed).
+`prose: false` in `.cc-review/ci.yml` turns this off; without cc-prose the bundled
+maintainer voice applies alone. Because guidance is not a guarantee, the publisher
+also replaces any remaining em or en dash outside code with plain punctuation
+(numeric ranges become a hyphen) before posting a review, assessment or thread
+reply, and the status reason reports how many it replaced. Fix file contents are
+never changed.
+
 ## Forks and configuration trust
 
 The workflow checks out only the default branch configuration and the pinned

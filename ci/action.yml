@@ -14,6 +14,10 @@ inputs:
     description: Trusted matching default-branch checkout for project guidance
     required: false
     default: ''
+  prose_dir:
+    description: Pinned cc-prose checkout whose humanizer guides published text; empty uses the bundled voice only
+    required: false
+    default: ''
   work_dir:
     description: Private runner temporary evidence directory
     required: true
@@ -55,7 +59,8 @@ runs:
         CC_PROJECT_DIR: ${{ inputs.project_dir }}
         CC_CONFIG: ${{ inputs.config }}
         CC_WORK_DIR: ${{ inputs.work_dir }}
-      run: python3 "$GITHUB_ACTION_PATH/../review/core/scripts/ci.py" prepare --config "$CC_CONFIG" --request "$CC_REQUEST" --work-dir "$CC_WORK_DIR" --project-dir "$CC_PROJECT_DIR"
+        CC_PROSE_DIR: ${{ inputs.prose_dir }}
+      run: python3 "$GITHUB_ACTION_PATH/../review/core/scripts/ci.py" prepare --config "$CC_CONFIG" --request "$CC_REQUEST" --work-dir "$CC_WORK_DIR" --project-dir "$CC_PROJECT_DIR" --prose-dir "$CC_PROSE_DIR"
     - name: Validate result, publish and record terminal status
       if: always() && inputs.phase == 'finish'
       shell: bash
