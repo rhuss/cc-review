@@ -11,7 +11,7 @@
     "pr_synchronize": true,
     "issue_opened": true,
     "comments": true,
-    "sweep": true,
+    "sweep": false,
     "dispatch": true
   },
   "commands": {
