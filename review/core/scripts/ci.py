@@ -14,6 +14,10 @@ import sys
 import time
 from urllib.parse import quote
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import assessment  # noqa: E402  (shared assessment rendering, stdlib only)
+from assessment import repair_dashes  # noqa: E402
+
 CORE = Path(__file__).resolve().parents[1]
 DEFAULTS = {
     'schema_version': 1, 'enabled': True, 'model': 'sonnet', 'provider': 'anthropic', 'prose': True,
@@ -596,27 +600,6 @@ def project_evidence(directory):
         if path.is_file() and not path.is_symlink():
             evidence[name] = path.read_text(errors='replace')[:20000]
     return evidence
-
-
-CODE_SPANS = re.compile(r'(```.*?```|`[^`\n]*`)', re.S)
-DASH_RULES = (
-    (re.compile(r'(\d)[ \t]*[\u2013\u2014][ \t]*(\d)'), r'\1-\2'),        # numeric range
-    (re.compile(r'[ \t]*[\u2013\u2014][ \t]*(?=[.,;:!?)])'), ''),          # dash before punctuation
-    (re.compile(r'^([ \t]*)[\u2013\u2014][ \t]+', re.M), r'\1- '),          # dash used as a bullet
-    (re.compile(r'[ \t]*[\u2013\u2014][ \t]*'), ', '),                     # aside or clause break
-)
-
-
-def repair_dashes(text):
-    """Replace em and en dashes outside code with plain punctuation; return (text, count)."""
-    count = 0
-    def fix(part):
-        nonlocal count
-        for pattern, replacement in DASH_RULES:
-            part, n = pattern.subn(replacement, part); count += n
-        return part
-    pieces = CODE_SPANS.split(text)
-    return ''.join(p if i % 2 else fix(p) for i, p in enumerate(pieces)), count
 
 
 def writing_guidance(config, prose_dir):
