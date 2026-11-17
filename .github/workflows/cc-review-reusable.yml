@@ -15,30 +15,37 @@ on:
         type: string
         default: ''
       aws_region:
+        description: Deprecated and ignored (removed provider)
         required: false
         type: string
         default: us-east-1
       google_project:
+        description: Deprecated and ignored (removed provider)
         required: false
         type: string
         default: ''
       google_region:
+        description: Deprecated and ignored (removed provider)
         required: false
         type: string
         default: us-east5
       federation_rule_id:
+        description: Deprecated and ignored (removed provider)
         required: false
         type: string
         default: ''
       anthropic_organization_id:
+        description: Deprecated and ignored (removed provider)
         required: false
         type: string
         default: ''
       anthropic_service_account_id:
+        description: Deprecated and ignored (removed provider)
         required: false
         type: string
         default: ''
       anthropic_workspace_id:
+        description: Deprecated and ignored (removed provider)
         required: false
         type: string
         default: ''
@@ -46,16 +53,21 @@ on:
       anthropic_api_key:
         required: false
       claude_code_oauth_token:
+        description: Deprecated and ignored (removed provider)
         required: false
       app_private_key:
         required: false
       aws_access_key_id:
+        description: Deprecated and ignored (removed provider)
         required: false
       aws_secret_access_key:
+        description: Deprecated and ignored (removed provider)
         required: false
       aws_session_token:
+        description: Deprecated and ignored (removed provider)
         required: false
       google_credentials:
+        description: Deprecated and ignored (removed provider)
         required: false
 permissions:
   contents: write
@@ -63,7 +75,6 @@ permissions:
   pull-requests: write
   checks: read
   actions: read
-  id-token: write
 jobs:
   select:
     runs-on: ubuntu-latest
@@ -140,15 +151,6 @@ jobs:
           permission-pull-requests: write
           permission-checks: read
           permission-actions: read
-      - name: Materialize Vertex credentials privately
-        env:
-          CC_GOOGLE_CREDENTIALS: ${{ secrets.google_credentials }}
-          CC_CREDENTIALS_PATH: ${{ runner.temp }}/cc-review-google-credentials.json
-        run: |
-          umask 077
-          if [ -n "$CC_GOOGLE_CREDENTIALS" ]; then
-            printf '%s' "$CC_GOOGLE_CREDENTIALS" > "$CC_CREDENTIALS_PATH"
-          fi
       - name: Prepare
         id: prepare
         uses: ./_cc_review/ci
@@ -171,23 +173,9 @@ jobs:
           GITHUB_TOKEN: ''
           CLAUDE_WORKING_DIR: ${{ runner.temp }}/cc-review-ci
           ANTHROPIC_BASE_URL: ${{ inputs.anthropic_base_url }}
-          AWS_REGION: ${{ inputs.aws_region }}
-          ANTHROPIC_VERTEX_PROJECT_ID: ${{ inputs.google_project }}
-          CLOUD_ML_REGION: ${{ inputs.google_region }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.aws_access_key_id }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.aws_secret_access_key }}
-          AWS_SESSION_TOKEN: ${{ secrets.aws_session_token }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/cc-review-google-credentials.json
         with:
           prompt_file: ${{ runner.temp }}/cc-review-ci/prompt.txt
           anthropic_api_key: ${{ secrets.anthropic_api_key }}
-          claude_code_oauth_token: ${{ secrets.claude_code_oauth_token }}
-          anthropic_federation_rule_id: ${{ inputs.federation_rule_id }}
-          anthropic_organization_id: ${{ inputs.anthropic_organization_id }}
-          anthropic_service_account_id: ${{ inputs.anthropic_service_account_id }}
-          anthropic_workspace_id: ${{ inputs.anthropic_workspace_id }}
-          use_bedrock: ${{ steps.prepare.outputs.provider == 'bedrock' && 'true' || 'false' }}
-          use_vertex: ${{ steps.prepare.outputs.provider == 'vertex' && 'true' || 'false' }}
           claude_args: >-
             --model ${{ steps.prepare.outputs.model }}
             --max-turns ${{ steps.prepare.outputs.turns }}
@@ -204,9 +192,8 @@ jobs:
           work_dir: ${{ runner.temp }}/cc-review-ci
           github_token: ${{ steps.app.outputs.token || github.token }}
           result: ${{ steps.model.outcome == 'success' && steps.model.outputs.conclusion == 'success' && steps.model.outputs.structured_output || '' }}
-      - name: Remove temporary provider and item evidence
+      - name: Remove temporary item evidence
         if: always()
         env:
           CC_WORK_DIR: ${{ runner.temp }}/cc-review-ci
-          CC_CREDENTIALS: ${{ runner.temp }}/cc-review-google-credentials.json
-        run: rm -rf -- "$CC_WORK_DIR" "$CC_CREDENTIALS"
+        run: rm -rf -- "$CC_WORK_DIR"

@@ -25,6 +25,8 @@ DEFAULTS = {
     'limits': {'sweep': 10, 'turns': 30, 'timeout_minutes': 15, 'diff_bytes': 100000},
 }
 WRITERS = {'write', 'maintain', 'admin'}
+PROVIDERS = ('anthropic', 'gateway')
+REMOVED_PROVIDERS = ('oauth', 'federation', 'bedrock', 'vertex')
 OPERATIONS = {'review', 'triage', 'assess', 'fix', 'help'}
 TERMINAL = {'completed', 'skipped', 'needs_attention'}
 STATUS_PREFIX = '<!-- cc-review:ci:v1 '
@@ -73,7 +75,9 @@ def load_config(path):
         raise CIError('Invalid command_permissions.')
     if not isinstance(config['model'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}', config['model']):
         raise CIError('Invalid model name; supply a model identifier, not CLI flags.')
-    if not isinstance(config['provider'], str) or config['provider'] not in {'anthropic', 'oauth', 'federation', 'bedrock', 'vertex', 'gateway'}:
+    if config['provider'] in REMOVED_PROVIDERS:
+        raise CIError(f"Provider '{config['provider']}' is no longer supported; use anthropic (API key) or gateway (API key plus base URL).")
+    if not isinstance(config['provider'], str) or config['provider'] not in PROVIDERS:
         raise CIError('Unsupported provider.')
     bot = config['identity']['bot_login']
     if not isinstance(bot, str) or not re.fullmatch(r'[A-Za-z0-9_-]+(?:\[bot\])?', bot): raise CIError('Invalid bot_login.')
@@ -686,10 +690,8 @@ def inspect_installation(root, repo, api):
     if len(refs) != 2 or refs[0] != refs[1]: issues.append('Caller refs missing or inconsistent; run update with an immutable commit.')
     names = {s['name'] for s in api.pages(f'repos/{repo}/actions/secrets', 'secrets')}
     variables = {v['name']: v.get('value', '') for v in api.pages(f'repos/{repo}/actions/variables', 'variables')}
-    if config['provider'] in {'anthropic', 'gateway'} and 'ANTHROPIC_API_KEY' not in names:
+    if 'ANTHROPIC_API_KEY' not in names:
         issues.append('Missing ANTHROPIC_API_KEY; use gh secret set from stdin.')
-    if config['provider'] == 'oauth' and 'CLAUDE_CODE_OAUTH_TOKEN' not in names:
-        issues.append('Missing CLAUDE_CODE_OAUTH_TOKEN; use gh secret set from stdin.')
     if variables.get('CC_REVIEW_APP_ID') and 'CC_REVIEW_APP_PRIVATE_KEY' not in names:
         issues.append('Missing CC_REVIEW_APP_PRIVATE_KEY for configured App ID.')
     if config['identity']['bot_login'] != 'github-actions[bot]' and not variables.get('CC_REVIEW_APP_ID'):
@@ -697,15 +699,8 @@ def inspect_installation(root, repo, api):
     labels = {label['name'] for label in api.pages(f'repos/{repo}/labels')}
     for label in config['labels'].values():
         if label not in labels: issues.append('Missing triage label ' + label + '; run setup label provisioning.')
-    required_vars = {'federation': ['CC_REVIEW_FEDERATION_RULE_ID', 'CC_REVIEW_ANTHROPIC_ORGANIZATION_ID'],
-        'gateway': ['CC_REVIEW_ANTHROPIC_BASE_URL'], 'bedrock': ['CC_REVIEW_AWS_REGION'],
-        'vertex': ['CC_REVIEW_GOOGLE_PROJECT', 'CC_REVIEW_GOOGLE_REGION']}.get(config['provider'], [])
-    for key in required_vars:
-        if not variables.get(key): issues.append('Missing provider variable ' + key + '; configure it before dispatch.')
-    if config['provider'] == 'bedrock' and not {'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'} <= names:
-        issues.append('Bedrock credentials missing; set AWS secrets or configure cloud OIDC in a custom caller.')
-    if config['provider'] == 'vertex' and 'GOOGLE_CREDENTIALS' not in names:
-        issues.append('Vertex credentials missing; set GOOGLE_CREDENTIALS or configure cloud OIDC in a custom caller.')
+    if config['provider'] == 'gateway' and not variables.get('CC_REVIEW_ANTHROPIC_BASE_URL'):
+        issues.append('Missing provider variable CC_REVIEW_ANTHROPIC_BASE_URL; configure it before dispatch.')
     plugin_version = None
     if refs:
         import base64

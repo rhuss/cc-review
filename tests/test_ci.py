@@ -208,11 +208,22 @@ class PolicyTests(unittest.TestCase):
             p['files'][0]['path'] = path
             with self.assertRaises(self.ci.CIError): self.ci.validate_proposal(self.request('fix', source='comment', comment_id=90), snapshot(), p, self.config)
 
-    def test_vertex_model_identifier_supports_version_suffix(self):
+    def test_model_identifier_supports_version_suffix(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / 'ci.yml'
-            path.write_text(json.dumps({'provider': 'vertex', 'model': 'claude-sonnet-4-5@20250929'}))
+            path.write_text(json.dumps({'provider': 'anthropic', 'model': 'claude-sonnet-4-5@20250929'}))
             self.assertEqual('claude-sonnet-4-5@20250929', self.ci.load_config(path)['model'])
+
+    def test_removed_providers_are_rejected_with_guidance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ci.yml'
+            for provider in ('oauth', 'vertex', 'bedrock', 'federation'):
+                path.write_text(json.dumps({'provider': provider}))
+                with self.assertRaises(self.ci.CIError) as caught: self.ci.load_config(path)
+                for word in (provider, 'anthropic', 'gateway'): self.assertIn(word, str(caught.exception))
+            for provider in ('anthropic', 'gateway'):
+                path.write_text(json.dumps({'provider': provider}))
+                self.assertEqual(provider, self.ci.load_config(path)['provider'])
 
     def test_config_rejects_unknown_or_dangerous_values(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -424,6 +435,7 @@ class SetupTests(unittest.TestCase):
             self.assertEqual('1.5.0', result['plugin_version'])
             self.assertTrue(any('ANTHROPIC_API_KEY' in x for x in result['issues']))
             self.assertEqual(4, sum('triage label' in x for x in result['issues']))
+            self.assertFalse(any(w in x for x in result['issues'] for w in ('OAUTH', 'Vertex', 'Bedrock', 'FEDERATION')))
 
     def test_setup_rejects_mutable_refs_and_unmanaged_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -119,23 +119,17 @@ The generated caller passes the following names through to the pinned
 
 | Provider | Secrets | Repository variables |
 |---|---|---|
-| `anthropic` | ANTHROPIC_API_KEY | — |
-| `oauth` | CLAUDE_CODE_OAUTH_TOKEN | — |
-| `federation` | — | CC_REVIEW_FEDERATION_RULE_ID, CC_REVIEW_ANTHROPIC_ORGANIZATION_ID; optional CC_REVIEW_ANTHROPIC_SERVICE_ACCOUNT_ID, CC_REVIEW_ANTHROPIC_WORKSPACE_ID |
+| `anthropic` | ANTHROPIC_API_KEY | none |
 | `gateway` | ANTHROPIC_API_KEY | CC_REVIEW_ANTHROPIC_BASE_URL |
-| `bedrock` | AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, optional AWS_SESSION_TOKEN | CC_REVIEW_AWS_REGION |
-| `vertex` | GOOGLE_CREDENTIALS (JSON) | CC_REVIEW_GOOGLE_PROJECT, CC_REVIEW_GOOGLE_REGION |
 
-Federation requires id-token write, already declared in the caller. For cloud
-OIDC instead of AWS/Google credential secrets, customize a copy of the reusable
-workflow to establish cloud identity immediately before its model step. The
-`ci/action.yml` prepare and finish phases remain usable around that step. Preserve
-the no-PR-checkout, no-model-tools, no-GitHub-token and always-finalize boundaries.
-Custom caller additions survive `ci update` when it bumps the two version pins.
+`gateway` sends the same API key to an Anthropic-compatible endpoint (for example
+an internal model gateway). Earlier versions also offered `oauth`, `federation`,
+`bedrock` and `vertex`; a configuration that still names one of them fails with a
+message pointing to these two. Their workflow inputs stay declared but are
+ignored, so older callers keep validating after `ci update`.
 
 Supply secrets with `gh secret set` using stdin or a private local file. Doctor
-reads secret names only. Vertex credential files use mode 600 and are removed in
-an always-run cleanup step. Provider values never enter item snapshots or prompts.
+reads secret names only. Provider values never enter item snapshots or prompts.
 
 ## Limits and failures
 

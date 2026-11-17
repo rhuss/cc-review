@@ -28,16 +28,10 @@ preferences and authorization already supplied by the user.
    Adjust generated JSON-compatible YAML with validated chosen settings. The
    source helper default config is `review/config/ci.yml`.
 3. Provision provider credentials without displaying values: `gh secret set
-   ANTHROPIC_API_KEY --repo <repo>` or `CLAUDE_CODE_OAUTH_TOKEN`; use stdin from
-   the user or a private local file. Never put secrets in arguments, config,
-   chat, commits or logs. Federation uses repository variables
-   CC_REVIEW_FEDERATION_RULE_ID and CC_REVIEW_ANTHROPIC_ORGANIZATION_ID; optional
-   service-account/workspace variables are supported. Gateway uses
-   CC_REVIEW_ANTHROPIC_BASE_URL. Bedrock uses AWS_ACCESS_KEY_ID,
-   AWS_SECRET_ACCESS_KEY, optional AWS_SESSION_TOKEN secrets and CC_REVIEW_AWS_REGION.
-   Vertex uses GOOGLE_CREDENTIALS JSON secret, CC_REVIEW_GOOGLE_PROJECT and
-   CC_REVIEW_GOOGLE_REGION. For cloud OIDC, use the documented custom caller
-   pattern and establish credentials before the base-action model step.
+   ANTHROPIC_API_KEY --repo <repo>`; use stdin from the user or a private local
+   file. Never put secrets in arguments, config, chat, commits or logs. Supported
+   providers are `anthropic` and `gateway`; gateway also needs the repository
+   variable CC_REVIEW_ANTHROPIC_BASE_URL.
 4. For GITHUB_TOKEN keep bot_login `github-actions[bot]`. For App identity use
    `.cc-review/github-app-manifest.json`: set a unique App name and owner URL,
    submit its JSON as the `manifest` form field to GitHub's App registration
@@ -76,7 +70,7 @@ Run `ci.py doctor --root <target> --repo <repo>`. It validates config, consisten
 pins, secret names (never values), provider variables, labels, recent runs and
 remote plugin version. Explain every failure and the next action. Inspect caller
 permissions: issues/pull-requests write, checks/actions read, contents write for
-fixes, id-token write for federation; repository/org policy may restrict these.
+fixes; repository/org policy may restrict these.
 For an App, verify installation access with a freshly minted installation token
 (scoped to this repository and required permissions) in CC_REVIEW_APP_TOKEN, then
 run doctor again. Minting must request exactly the permissions the workflow uses;
