@@ -430,6 +430,15 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual('completed', result['state'])
         self.assertEqual([{'labels': ['cc-review:pursue']}], self.label_posts())
 
+    def test_assess_schema_requires_reply_and_assessment(self):
+        assess = self.ci.proposal_schema(self.config, 'assess')
+        self.assertTrue({'status', 'reason', 'body', 'assessment'} <= set(assess['required']))
+        for op in ('review', 'triage', 'fix'):
+            self.assertNotIn('assessment', self.ci.proposal_schema(self.config, op)['required'])
+        with tempfile.TemporaryDirectory() as tmp:
+            self.ci.write_prompt({'request': self.request('assess'), 'snapshot': snapshot(), 'config': self.config}, tmp)
+            self.assertIn('body', json.loads((Path(tmp) / 'schema.json').read_text())['required'])
+
     def test_schema_enums_have_unique_items(self):
         def walk(node):
             if isinstance(node, dict):

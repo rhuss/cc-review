@@ -607,9 +607,14 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
 
 
 
-def proposal_schema(config):
-    """The fixed schema, with labels limited to the configured classification keys."""
+def proposal_schema(config, operation=None):
+    """The fixed schema, with labels limited to the configured classification keys.
+
+    For assessments the reply and the structured assessment are required fields:
+    models otherwise omit optional keys (GLM-5.3 dropped body in 2 of 3 live runs).
+    """
     schema = copy.deepcopy(PROPOSAL_SCHEMA)
+    if operation == 'assess': schema['required'] = schema['required'] + ['body', 'assessment']
     schema['properties']['labels']['items']['enum'] = sorted(config['labels'])
     schema['properties']['assessment']['properties']['recommendation']['enum'] = sorted(config['labels'])
     return schema
@@ -656,7 +661,7 @@ def code_access_note(operation, code_dir):
 def write_prompt(context, directory, prose_dir=None, code_dir=None):
     directory = Path(directory); directory.mkdir(parents=True, exist_ok=True)
     (directory / 'context.json').write_text(json.dumps(context))
-    (directory / 'schema.json').write_text(json.dumps(proposal_schema(context['config']), separators=(',', ':')))
+    (directory / 'schema.json').write_text(json.dumps(proposal_schema(context['config'], context['request']['operation']), separators=(',', ':')))
     command = {'review': 'review', 'triage': 'triage', 'assess': 'issue', 'fix': 'review'}[context['request']['operation']]
     # Trusted bundled instructions are separate from quoted remote evidence.
     voice = (CORE / 'templates/maintainer-voice.md').read_text()
@@ -858,7 +863,7 @@ def main(argv=None):
             write_prompt(context, directory, prose_dir=args.prose_dir or None, code_dir=access['code_dir'] or None)
             runner_output({'run_model': 'true', 'model': config['model'], 'turns': config['limits']['turns'], **access,
                 'timeout': config['limits']['timeout_minutes'], 'provider': config['provider'],
-                'schema': json.dumps(proposal_schema(config), separators=(',', ':'))})
+                'schema': json.dumps(proposal_schema(config, context['request']['operation']), separators=(',', ':'))})
     else:
         context = json.loads((directory / 'context.json').read_text())
         if context.get('skipped'): return 0
