@@ -1,0 +1,15 @@
+{
+  "name": "rhuss-cc-review",
+  "url": "https://github.com/rhuss/cc-review",
+  "public": false,
+  "redirect_url": "http://localhost:8765/cc-review-app",
+  "default_permissions": {
+    "contents": "write",
+    "issues": "write",
+    "pull_requests": "write",
+    "checks": "read",
+    "actions": "read",
+    "metadata": "read"
+  },
+  "default_events": []
+}
