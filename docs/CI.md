@@ -78,6 +78,35 @@ also replaces any remaining em or en dash outside code with plain punctuation
 reply, and the status reason reports how many it replaced. Fix file contents are
 never changed.
 
+## Issue assessments
+
+An assessment posts one comment: a friendly reply to the reporter, then an
+`### Assessment` section with fixed labels, rendered by
+`review/core/scripts/assessment.py` from the model's structured result:
+
+```markdown
+### Assessment
+
+**Type:** Feature request
+**Use case:** Maintainers debugging an odd CI reply want to know which writing guidance shaped it.
+**Why:** Without it they cannot tell a model problem from a missing checkout.
+**Real need:** Yes. The reporter hit this while validating v1.6.1.
+**Severity:** Low. It slows debugging but blocks nothing.
+**Other ways to solve it:**
+- Print the commit in the run's step summary only.
+
+**Fits the project:** Yes. `docs/CI.md` documents `status` for inspecting an installation.
+**Recommendation:** Pursue (`cc-review:pursue`). Small and bounded.
+```
+
+The rules live in `review/core/templates/issue-assessment.md`. Without a
+concrete, real-world example (for bugs: reproduction steps or a bug confirmed
+in the code), the reply asks for one, severity and alternatives are left out,
+and the recommendation cannot be Pursue. A bug counts as confirmed only when
+the code shows it, cited with file and line. The label follows the
+recommendation. The manual `issue` command renders the same format as its
+draft and never posts.
+
 ## Forks and configuration trust
 
 The workflow checks out only the default branch configuration and the pinned
@@ -86,7 +115,13 @@ publish guidance to request review from a writer. An authorized `/cc-review
 review` reads fork diff data through the API; it cannot execute fork code. Fork
 triage and fixes are refused. Events authored by the configured bot are ignored.
 
-A single updated bot status comment records per-operation state and run links.
+A single updated bot status comment (heading `### cc-review CI`) shows a table
+with one row per action: its result, when it was updated, and the run log.
+Completed rows show a fixed outcome ("Assessment posted, labeled ...", "Review
+posted", "2 bot threads answered, 1 resolved", "Fix pushed as ..."); rows that
+need attention show the reason and remedy. The model's reasoning goes to the
+run's step summary only. A hidden marker in the same comment records
+per-operation state.
 Only markers authored by the configured identity are trusted. Completion is
 keyed to the review head, triage head/thread activity, or issue body/conversation.
 Self-authored status/result updates do not invalidate their own evidence.
