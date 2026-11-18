@@ -14,12 +14,12 @@
     "sweep": true,
     "dispatch": true
   },
-  "commands": {
-    "review": true,
-    "triage": true,
-    "assess": true,
-    "fix": true,
-    "help": true
+  "operations": {
+    "review": "on-demand",
+    "triage": "auto",
+    "assess": "on-demand",
+    "fix": "on-demand",
+    "help": "on-demand"
   },
   "command_permissions": [
     "write",
