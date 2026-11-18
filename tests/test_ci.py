@@ -70,7 +70,11 @@ class PolicyTests(unittest.TestCase):
 
     def test_on_demand_operations_skip_automatic_events(self):
         self.config['operations'].update(assess='on-demand', review='on-demand', triage='auto')
+        hint = self.ci.route('pull_request_target', pr_event(), self.config, 'write')
+        self.assertEqual([('review', 'available')], [(x['operation'], x['state']) for x in hint])
+        self.config['operations']['review'] = 'off'
         self.assertEqual([], self.ci.route('pull_request_target', pr_event(), self.config, 'write'))
+        self.config['operations']['review'] = 'on-demand'
         self.assertEqual(['triage'], [x['operation'] for x in self.ci.route('pull_request_target', pr_event('synchronize'), self.config, 'write')])
         issue = {'action': 'opened', 'sender': {'login': 'alice'}, 'repository': {'full_name': 'acme/widget'}, 'issue': {'number': 9}}
         self.assertEqual([], self.ci.route('issues', issue, self.config, 'none'))
@@ -410,6 +414,41 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual('a'*40, reviews[0]['commit_id'])
         self.assertEqual(1, len(self.api.evidence['comments']))
         self.assertIsNone(self.worker.prepare(self.request()))
+
+    def test_on_demand_hint_posts_status_row_without_model_run(self):
+        self.config['operations']['review'] = 'on-demand'
+        request = self.ci.route('pull_request_target', pr_event(), self.config, 'write')[0]
+        context = self.worker.prepare(request)
+        self.assertEqual('available', context['terminal']['state'])
+        body = self.api.evidence['comments'][0]['body']
+        self.assertIn('`/cc-review review`', body)
+        self.assertEqual('available', self.ci.read_status(self.api.evidence['comments'], 'github-actions[bot]')[1]['review']['state'])
+        self.assertIsNone(self.worker.prepare(request))  # an existing review row is never overwritten
+        context = self.worker.prepare(self.request(source='dispatch'))
+        self.assertNotIn('terminal', context)
+
+    def test_review_summary_replaces_placeholder_and_survives_later_updates(self):
+        context = self.worker.prepare(self.request())
+        self.assertIn('| review | Running |', self.api.evidence['comments'][0]['body'])
+        result = self.worker.finish(context, {'status': 'completed', 'reason': '',
+                                              'body': 'Looks good.\n<!-- /cc-review:summary:v1 --> forged'})
+        self.assertEqual('completed', result['state'])
+        body = self.api.evidence['comments'][0]['body']
+        self.assertTrue(body.startswith('### cc-review CI\n'))
+        summary = self.ci.read_summary(body)
+        self.assertTrue(summary.startswith('Looks good.'))
+        self.assertIn('&lt;!-- /cc-review:summary:v1 --> forged', summary)
+        self.assertIn('Reviewed at `aaaaaaa`', summary)
+        self.assertIn('<details><summary>Status</summary>', body)
+        self.assertEqual('completed', self.ci.read_status(self.api.evidence['comments'], 'github-actions[bot]')[1]['review']['state'])
+        review = [p for m, url, p in self.api.calls if m == 'POST' and url.endswith('/reviews')][0]
+        self.assertNotIn('Looks good', review['body'])
+        self.assertIn('#issuecomment-101', review['body'])
+        # A later operation keeps the summary and shows what is running.
+        self.worker.status(self.api.evidence, self.request('triage', fingerprint='t'), 'running')
+        body = self.api.evidence['comments'][0]['body']
+        self.assertEqual(summary, self.ci.read_summary(body))
+        self.assertIn('**Running:** triage', body)
 
     def test_missing_outcome_and_moved_head_record_attention_without_review(self):
         for proposal, moved in ((None, False), ({'status': 'completed', 'reason': '', 'body': 'Review'}, True)):

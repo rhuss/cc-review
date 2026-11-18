@@ -38,6 +38,9 @@ MODES = ('auto', 'on-demand', 'off')
 ON_DEMAND_ONLY = ('fix', 'help')  # never started automatically
 AUTOMATIC_SOURCES = ('event', 'sweep')
 STATUS_PREFIX = '<!-- cc-review:ci:v1 '
+SUMMARY_START = '<!-- cc-review:summary:v1 -->'
+SUMMARY_END = '<!-- /cc-review:summary:v1 -->'
+REVIEW_HINT = 'Available on demand: comment `/cc-review review` to start a review.'
 HELP = 'Commands: `/cc-review review`, `/cc-review triage`, `/cc-review assess`, `/cc-review fix`, `/cc-review help`. Writers may request actions; fixes require a same-repository PR.'
 
 
@@ -130,6 +133,9 @@ def route(event_name, event, config, permission='none'):
         if not key or not config['triggers'][key]: return []
         item = event['pull_request']
         ops = [op for op in (('triage', 'review') if action == 'synchronize' else ('review',)) if automatic(config, op)]
+        if action == 'opened' and config['operations']['review'] == 'on-demand':
+            # Signal presence on new PRs without spending a model run.
+            return [req(item['number'], 'review', state='available', reason=REVIEW_HINT)]
         if head_repository(item) != repo:
             return [req(item['number'], 'review', state='needs_attention',
                         reason='Fork automatic review withheld. A writer can request `/cc-review review`.')] if 'review' in ops else []
@@ -204,12 +210,28 @@ def status_result(entry):
     reason = short_reason(entry.get('reason', ''))
     if state == 'completed': return entry.get('outcome') or 'Completed'
     if state == 'running': return 'Running'
+    if state == 'available': return reason or 'Available on demand'
     if state == 'skipped': return 'Skipped: ' + reason if reason else 'Skipped'
     return 'Needs attention: ' + reason if reason else 'Needs attention'
 
 
-def status_body(entries):
-    text = ['### cc-review CI', '', '| Action | Result | Updated | Log |', '|---|---|---|---|']
+def sanitize_summary(text):
+    # A summary must not forge or close the hidden markers it sits between.
+    return re.sub(r'<!--(?=\s*/?cc-review)', '&lt;!--', text)
+
+
+def read_summary(body):
+    match = re.search(re.escape(SUMMARY_START) + r'\n(.*?)\n' + re.escape(SUMMARY_END), body or '', re.S)
+    return match[1] if match else ''
+
+
+def status_body(entries, summary=''):
+    text = ['### cc-review CI', '']
+    if summary:
+        running = sorted(op for op, entry in entries.items() if entry.get('state') == 'running')
+        if running: text += ['**Running:** ' + ', '.join(running), '']
+        text += [SUMMARY_START, summary, SUMMARY_END, '', '<details><summary>Status</summary>', '']
+    text += ['| Action | Result | Updated | Log |', '|---|---|---|---|']
     order = sorted(entries.items(), key=lambda item: item[1].get('updated_at') or 0, reverse=True)
     for op, entry in order:
         try: when = datetime.fromtimestamp(float(entry.get('updated_at') or 0), timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
@@ -218,6 +240,7 @@ def status_body(entries):
         text.append(f'| {status_cell(op)} | {status_cell(status_result(entry))} | {when} | {log} |')
     if 'help' in entries:
         text += ['', '<details><summary>Commands</summary>', '', HELP, '</details>']
+    if summary: text += ['', '</details>']
     # Escape < and > inside the JSON so no stored reason can close the hidden marker; JSON decoding restores them.
     data = json.dumps({'schema': 1, 'operations': entries}, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
     return '\n'.join(text) + '\n\n' + STATUS_PREFIX + data + ' -->'
@@ -412,13 +435,16 @@ class Coordinator:
         self.run_id, self.run_url = str(run_id), run_url
         self.bot = config['identity']['bot_login']
 
-    def status(self, snapshot, request, state, reason='', outcome=''):
+    def status(self, snapshot, request, state, reason='', outcome='', summary=None):
         cid, entries = read_status(snapshot['comments'], self.bot)
+        if summary is None:
+            # Keep the last review summary across later status updates.
+            summary = next((read_summary(c.get('body')) for c in snapshot['comments'] if c['id'] == cid), '') if cid else ''
         # Completed rows show the publisher's fixed outcome; the model's reasoning stays in the step summary.
         entries[request['operation']] = {'state': state, 'fingerprint': request['fingerprint'],
             'updated_at': time.time(), 'run_id': self.run_id, 'run_url': self.run_url,
             'reason': '' if state == 'completed' else short_reason(reason), 'outcome': outcome}
-        payload = {'body': status_body(entries)}
+        payload = {'body': status_body(entries, summary)}
         if cid:
             self.api.call('PATCH', f'repos/{self.repo}/issues/comments/{cid}', payload)
             for comment in snapshot['comments']:
@@ -468,6 +494,10 @@ class Coordinator:
             if request.get('state') == 'needs_attention': raise CIError(request['reason'])
             if not self.config['enabled']:
                 context['terminal'] = self.status(snapshot, request, 'skipped', 'CI disabled; enable configuration to resume.'); return context
+            if request.get('state') == 'available':
+                # Never overwrite an existing review row with the hint.
+                if request['operation'] in read_status(snapshot['comments'], self.bot)[1]: return None
+                context['terminal'] = self.status(snapshot, request, 'available', REVIEW_HINT); return context
             self.authorize(request, snapshot)
             if request['operation'] == 'help':
                 context['terminal'] = self.status(snapshot, request, 'completed', HELP, outcome='Command list shown below'); return context
@@ -491,7 +521,7 @@ class Coordinator:
                 raise CIError('Item changed during analysis; rerun on the current head/conversation.')
             proposal = validate_proposal(request, latest, proposal, self.config)
             state, reason = proposal['status'], proposal['reason']
-            outcome = ''
+            outcome = ''; review_summary = None
             if state == 'completed':
                 repaired = 0
                 if request['operation'] == 'assess':
@@ -502,13 +532,16 @@ class Coordinator:
                 if repaired:
                     reason = (reason.strip() + ' ' if reason.strip() else '') + f"{repaired} dash{'' if repaired == 1 else 'es'} replaced before posting."
                 outcome = self.publish(request, latest, proposal)
+                if request['operation'] == 'review':
+                    review_summary = (sanitize_summary(proposal['body'].strip()) +
+                               f"\n\n<sub>Reviewed at `{request['fingerprint'][:7]}` · [run]({self.run_url})</sub>")
                 if request['operation'] == 'triage':
                     humans = [t for t in latest['threads'] if not bot_thread(t) and not t.get('isResolved')]
                     if humans:
                         detail = '; '.join(str(t['id']) + ' ' + str(t.get('path', '')) + ':' + str(t.get('line', '')) for t in humans[:20])
                         reason = ('Human threads left untouched (' + str(len(humans)) + '): ' + detail)[:1850] + '. Review these threads manually.'
                         state = 'needs_attention'
-            entry = self.status(latest, request, state, reason, outcome=outcome if state == 'completed' else '')
+            entry = self.status(latest, request, state, reason, outcome=outcome if state == 'completed' else '', summary=review_summary)
             return dict(entry, reason=reason)
         except (CIError, KeyError, TypeError, ValueError) as error:
             # Do not include model text or API secrets in exception details.
@@ -521,6 +554,10 @@ class Coordinator:
         marker = result_marker(request)
         body = proposal.get('body', '') + '\n\n' + marker
         if op == 'review':
+            # The full review lives in the sticky status comment; the PR review only anchors the commit.
+            cid, _ = read_status(snapshot['comments'], self.bot)
+            where = f'[cc-review CI comment](https://github.com/{self.repo}/pull/{n}#issuecomment-{cid})' if cid else 'cc-review CI comment'
+            body = f"Review of `{request['fingerprint'][:7]}` is summarized in the {where}.\n\n" + marker
             reviews = self.api.pages(f'{root}/pulls/{n}/reviews')
             if any(marker in (r.get('body') or '') and (r.get('user') or {}).get('login', '').lower() == self.bot.lower()
                    and r.get('commit_id') == request['fingerprint'] for r in reviews): return 'Review posted'

@@ -34,6 +34,9 @@ operation targets one item. Fix is comment-only.
 `on-demand` suits issue assessments when automatic replies might put off new
 reporters, and any operation whose token cost should be spent deliberately:
 only users allowed by `command_permissions` (writers by default) can request it.
+When `review` is `on-demand`, opening a PR adds a status row saying a review
+is available with `/cc-review review`. This shows the integration is active
+without spending a model run. `off` posts nothing.
 `fix` and `help` are always on-demand. The default is `auto` for review, triage
 and assess. Older configurations with boolean `commands` still load: `true`
 keeps the default mode and `false` means `off`.
@@ -42,7 +45,7 @@ Supported whole-comment commands:
 
 | Command | Target | Effect |
 |---|---|---|
-| `/cc-review review` | PR | COMMENT review at the observed head |
+| `/cc-review review` | PR | Review summary in the sticky status, anchored by a COMMENT review at the observed head |
 | `/cc-review triage` | PR | Reply to bot threads and resolve verified addressed concerns |
 | `/cc-review assess` | Issue | Assessment reply and mapped triage labels |
 | `/cc-review fix` | Same-repository PR | Propose file changes and push a child commit after policy checks |
@@ -156,6 +159,15 @@ posted", "2 bot threads answered, 1 resolved", "Fix pushed as ..."); rows that
 need attention show the reason and remedy. The model's reasoning goes to the
 run's step summary only. A hidden marker in the same comment records
 per-operation state.
+
+The comment is posted as soon as an operation starts (a "Running" row) and is
+edited in place afterwards. A completed review replaces the placeholder: the
+review text sits at the top of the same comment, stamped with the reviewed
+commit, and the status table moves into a collapsed "Status" section. Later
+updates keep that text until the next review completes, with a "Running" line
+above it while an operation is in progress. The COMMENT review on the PR only
+links to this comment, so the Reviews tab still records which commit was
+reviewed.
 Only markers authored by the configured identity are trusted. Completion is
 keyed to the review head, triage head/thread activity, or issue body/conversation.
 Self-authored status/result updates do not invalidate their own evidence.
