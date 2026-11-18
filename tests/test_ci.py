@@ -68,6 +68,37 @@ class PolicyTests(unittest.TestCase):
         self.config['triggers']['pr_opened'] = False
         self.assertEqual([], self.ci.route('pull_request_target', pr_event(), self.config, 'write'))
 
+    def test_on_demand_operations_skip_automatic_events(self):
+        self.config['operations'].update(assess='on-demand', review='on-demand', triage='auto')
+        self.assertEqual([], self.ci.route('pull_request_target', pr_event(), self.config, 'write'))
+        self.assertEqual(['triage'], [x['operation'] for x in self.ci.route('pull_request_target', pr_event('synchronize'), self.config, 'write')])
+        issue = {'action': 'opened', 'sender': {'login': 'alice'}, 'repository': {'full_name': 'acme/widget'}, 'issue': {'number': 9}}
+        self.assertEqual([], self.ci.route('issues', issue, self.config, 'none'))
+        for event_name, event in (('issue_comment', comment('/cc-review assess', pr=False)), ('issue_comment', comment('/cc-review review')),
+                                  ('workflow_dispatch', {'inputs': {'number': '7', 'operation': 'assess'}, 'sender': {'login': 'alice'}, 'repository': {'full_name': 'acme/widget'}})):
+            requests = self.ci.route(event_name, event, self.config, 'write')
+            self.assertEqual(1, len(requests)); self.assertNotIn('state', requests[0])
+
+    def test_off_operations_answer_on_demand_requests_with_a_reason(self):
+        self.config['operations']['assess'] = 'off'
+        r = self.ci.route('issue_comment', comment('/cc-review assess', pr=False), self.config, 'write')[0]
+        self.assertEqual('needs_attention', r['state']); self.assertIn('operations.assess', r['reason'])
+        d = self.ci.route('workflow_dispatch', {'inputs': {'number': '7', 'operation': 'assess'}, 'sender': {'login': 'alice'}, 'repository': {'full_name': 'acme/widget'}}, self.config, 'write')[0]
+        self.assertEqual('needs_attention', d['state']); self.assertIn('operations.assess', d['reason'])
+
+    def test_operation_modes_config(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'ci.yml'
+            path.write_text('{}')
+            self.assertEqual({'review': 'auto', 'triage': 'auto', 'assess': 'auto', 'fix': 'on-demand', 'help': 'on-demand'}, self.ci.load_config(path)['operations'])
+            path.write_text(json.dumps({'commands': {'assess': False, 'review': True}}))
+            ops = self.ci.load_config(path)['operations']
+            self.assertEqual(('off', 'auto', 'on-demand'), (ops['assess'], ops['review'], ops['fix']))
+            for bad in ({'operations': {'assess': 'sometimes'}}, {'operations': {'fix': 'auto'}}, {'operations': {'help': 'auto'}},
+                        {'operations': {'assess': 'auto'}, 'commands': {'assess': True}}, {'operations': {'unknown': 'auto'}}):
+                path.write_text(json.dumps(bad))
+                with self.assertRaises(self.ci.CIError, msg=bad): self.ci.load_config(path)
+
     def test_command_acknowledged_during_selection_before_worker_queue(self):
         api = FakeGitHub(snapshot())
         requests = self.ci.select_requests(api, 'acme/widget', 'issue_comment', comment('/cc-review review'), self.config)
@@ -470,6 +501,14 @@ class PublisherTests(unittest.TestCase):
         self.assertIn('Assessment posted, labeled `cc-review:pursue`', status)
         self.assertIn('Long internal reasoning', result['reason'])
 
+    def test_automatic_request_for_on_demand_operation_is_withheld(self):
+        self.api.evidence['item'].pop('head')
+        self.config['operations']['assess'] = 'on-demand'
+        ctx = self.worker.prepare(self.request('assess'))
+        self.assertIn('terminal', ctx)
+        self.assertEqual('needs_attention', ctx['terminal']['state'])
+        self.assertEqual([], self.posted_comments())
+
     def test_assessment_fields_dash_repaired(self):
         self.api.evidence['item'].pop('head')
         ctx = self.worker.prepare(self.request('assess'))
@@ -552,6 +591,19 @@ class SweepTests(unittest.TestCase):
         self.assertEqual([8, 8], [r['number'] for r in requests])
         self.assertEqual(['triage', 'review'], [r['operation'] for r in requests])
 
+
+    def test_sweep_selects_only_automatic_operations(self):
+        api = FakeGitHub(snapshot())
+        old_call = api.call
+        api.call = lambda method, path, payload=None: [{'number': 8}, {'number': 9}] if path.startswith('repos/acme/widget/issues?') else old_call(method, path, payload)
+        def collect(repo, number, limit):
+            s = snapshot(); s['item']['number'] = number
+            if number == 9: s['item'].pop('head')
+            return s
+        api.snapshot = collect
+        self.config['operations'].update(assess='on-demand', review='on-demand', triage='auto')
+        requests = self.ci.select_requests(api, 'acme/widget', 'schedule', {}, self.config)
+        self.assertEqual([(8, 'triage')], [(r['number'], r['operation']) for r in requests])
 
 class SetupTests(unittest.TestCase):
     def setUp(self): PolicyTests.setUp(self)

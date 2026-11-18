@@ -15,9 +15,28 @@ commit containing the new CI files. The prepare/finalize helper is `ci/action.ym
 
 Default events are PR opened/synchronized, issue opened, new item comments, a
 six-hour sweep and manual dispatch. Follow-up PR pushes select bot triage and
-review. The independent switches in `triggers` and `commands` can disable each
-path; `enabled: false` stops all of them. A manual dispatch with no number runs a
-bounded sweep; a number plus operation targets one item. Fix is comment-only.
+review. `triggers` decides when automatic runs can start; `enabled: false` stops
+everything. A manual dispatch with no number runs a bounded sweep; a number plus
+operation targets one item. Fix is comment-only.
+
+`operations` decides what runs, per operation:
+
+| Mode | Automatic (new issue or PR, push, sweep) | `/cc-review <op>` comment or manual dispatch |
+|---|---|---|
+| `auto` | yes | yes |
+| `on-demand` | no | yes |
+| `off` | no | no; the request gets a "disabled" status |
+
+```json
+"operations": {"assess": "on-demand", "review": "on-demand", "triage": "auto", "fix": "on-demand", "help": "on-demand"}
+```
+
+`on-demand` suits issue assessments when automatic replies might put off new
+reporters, and any operation whose token cost should be spent deliberately:
+only users allowed by `command_permissions` (writers by default) can request it.
+`fix` and `help` are always on-demand. The default is `auto` for review, triage
+and assess. Older configurations with boolean `commands` still load: `true`
+keeps the default mode and `false` means `off`.
 
 Supported whole-comment commands:
 

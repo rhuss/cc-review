@@ -21,7 +21,7 @@ preferences and authorization already supplied by the user.
    preferably the latest released CI version; verify it with GitHub API. Never
    use a moving tag/main as the generated pin. The helper refuses unmanaged
    workflow replacement and preserves existing valid config.
-2. Collect missing choices: provider/model, enabled triggers/commands, identity
+2. Collect missing choices: provider/model, enabled triggers, operation modes (`auto`, `on-demand` or `off` per operation; ask whether new issues and PRs should be assessed and reviewed automatically or only on request), identity
    (named GitHub App recommended, GITHUB_TOKEN fallback), existing label mapping,
    resource limits. Explain the fixed policy in `commands/unattended.md`.
    Run `python3 <core>/scripts/ci.py setup --root <target> --ref <commit>`.

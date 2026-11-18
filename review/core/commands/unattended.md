@@ -39,7 +39,7 @@ repository (URL, --repo or current gh context), then resolve the actual posting 
 identity.bot_login in the private config copy to that login (preserve the
 project configuration). Use that private --config for prepare/finish. Use `ci.py
 prepare` with a
-request `{number:N, operation:"assess", source:"event", actor:"", permission:"none",
+request `{number:N, operation:"assess", source:"dispatch", actor:"", permission:"none",
 repository:"owner/name"}` and a fresh private --work-dir. Read context.json and
 the bundled need/fit, issue-assessment and voice templates. Write a proposal JSON
 containing `status`, `reason`, `body` (the reply to the reporter) and

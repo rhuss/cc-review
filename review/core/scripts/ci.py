@@ -23,7 +23,7 @@ DEFAULTS = {
     'schema_version': 1, 'enabled': True, 'model': 'sonnet', 'provider': 'anthropic', 'prose': True,
     'identity': {'bot_login': 'github-actions[bot]'},
     'triggers': dict.fromkeys(('pr_opened', 'pr_synchronize', 'issue_opened', 'comments', 'sweep', 'dispatch'), True),
-    'commands': dict.fromkeys(('review', 'triage', 'assess', 'fix', 'help'), True),
+    'operations': {'review': 'auto', 'triage': 'auto', 'assess': 'auto', 'fix': 'on-demand', 'help': 'on-demand'},
     'command_permissions': ['write', 'maintain', 'admin'],
     'labels': {'pursue': 'cc-review:pursue', 'needs_evidence': 'cc-review:needs-evidence',
                'direction': 'cc-review:direction', 'decline': 'cc-review:decline'},
@@ -34,6 +34,9 @@ PROVIDERS = ('anthropic', 'gateway')
 REMOVED_PROVIDERS = ('oauth', 'federation', 'bedrock', 'vertex')
 OPERATIONS = {'review', 'triage', 'assess', 'fix', 'help'}
 TERMINAL = {'completed', 'skipped', 'needs_attention'}
+MODES = ('auto', 'on-demand', 'off')
+ON_DEMAND_ONLY = ('fix', 'help')  # never started automatically
+AUTOMATIC_SOURCES = ('event', 'sweep')
 STATUS_PREFIX = '<!-- cc-review:ci:v1 '
 HELP = 'Commands: `/cc-review review`, `/cc-review triage`, `/cc-review assess`, `/cc-review fix`, `/cc-review help`. Writers may request actions; fixes require a same-repository PR.'
 
@@ -57,6 +60,13 @@ def load_config(path):
         except ValueError: raise CIError('CI configuration must be a mapping.')
     if not isinstance(value, dict): raise CIError('CI configuration must be a mapping.')
     config = copy.deepcopy(DEFAULTS)
+    if 'commands' in value:
+        # Legacy boolean switches (v1.6/v1.7): true keeps the default mode, false turns the operation off.
+        if 'operations' in value: raise CIError('Use operations only; commands is the older form of the same setting.')
+        legacy = value.pop('commands')
+        if not isinstance(legacy, dict) or set(legacy) - set(DEFAULTS['operations']) or any(type(v) is not bool for v in legacy.values()):
+            raise CIError('Invalid CI setting: commands')
+        value['operations'] = {op: (DEFAULTS['operations'][op] if on else 'off') for op, on in legacy.items()}
     for key, val in value.items():
         if key not in config: raise CIError('Unknown CI setting: ' + key)
         if isinstance(config[key], dict):
@@ -68,9 +78,11 @@ def load_config(path):
         raise CIError('Unsupported CI schema_version; update the integration/config together.')
     if type(config['enabled']) is not bool: raise CIError('enabled must be boolean.')
     if type(config['prose']) is not bool: raise CIError('prose must be boolean.')
-    for section in ('triggers', 'commands'):
-        if any(type(v) is not bool for v in config[section].values()):
-            raise CIError(section + ' values must be boolean.')
+    if any(type(v) is not bool for v in config['triggers'].values()):
+        raise CIError('triggers values must be boolean.')
+    for op, mode in config['operations'].items():
+        if mode not in MODES: raise CIError(f'operations.{op} must be auto, on-demand or off.')
+        if op in ON_DEMAND_ONLY and mode == 'auto': raise CIError(f'operations.{op} cannot be auto; use on-demand or off.')
     for key, bound in (('sweep', 100), ('turns', 100), ('timeout_minutes', 60), ('diff_bytes', 1000000)):
         v = config['limits'][key]
         if type(v) is not int or not 1 <= v <= bound: raise CIError('Invalid limits.' + key)
@@ -96,6 +108,14 @@ def head_repository(item):
     return ((item.get('head') or {}).get('repo') or {}).get('full_name', '')
 
 
+def automatic(config, op):
+    return config['operations'].get(op) == 'auto'
+
+
+def disabled_reason(op):
+    return f'Operation disabled; set operations.{op} to on-demand or auto in the CI configuration.'
+
+
 def route(event_name, event, config, permission='none'):
     if not config['enabled']: return []
     actor = (event.get('sender') or {}).get('login', '')
@@ -109,12 +129,13 @@ def route(event_name, event, config, permission='none'):
         key = {'opened': 'pr_opened', 'synchronize': 'pr_synchronize'}.get(action)
         if not key or not config['triggers'][key]: return []
         item = event['pull_request']
+        ops = [op for op in (('triage', 'review') if action == 'synchronize' else ('review',)) if automatic(config, op)]
         if head_repository(item) != repo:
             return [req(item['number'], 'review', state='needs_attention',
-                        reason='Fork automatic review withheld. A writer can request `/cc-review review`.')]
-        return [req(item['number'], op) for op in (('triage', 'review') if action == 'synchronize' else ('review',))]
+                        reason='Fork automatic review withheld. A writer can request `/cc-review review`.')] if 'review' in ops else []
+        return [req(item['number'], op) for op in ops]
     if event_name == 'issues' and action == 'opened' and config['triggers']['issue_opened']:
-        return [req(event['issue']['number'], 'assess')]
+        return [req(event['issue']['number'], 'assess')] if automatic(config, 'assess') else []
     if event_name == 'issue_comment' and action == 'created' and config['triggers']['comments']:
         c = event.get('comment', {})
         match = re.fullmatch(r'/cc-review (review|triage|assess|fix|help)', c.get('body', '').strip())
@@ -122,7 +143,7 @@ def route(event_name, event, config, permission='none'):
         op = match[1]; item = event['issue']
         r = req(item['number'], op, 'comment', comment_id=c['id'])
         reason = ''
-        if not config['commands'][op]: reason = 'Command disabled; enable commands.' + op + ' in CI configuration.'
+        if config['operations'][op] == 'off': reason = disabled_reason(op)
         elif permission not in config['command_permissions'] or (op == 'fix' and permission not in WRITERS):
             reason = 'Insufficient repository permission; ask a repository writer to run this command.'
         elif (op in {'review', 'triage', 'fix'} and 'pull_request' not in item) or (op == 'assess' and 'pull_request' in item):
@@ -133,7 +154,9 @@ def route(event_name, event, config, permission='none'):
         inputs = event.get('inputs', {}); number = str(inputs.get('number', ''))
         op = inputs.get('operation', 'help')
         if number.isdigit() and int(number) > 0 and op in OPERATIONS - {'fix'}:
-            return [req(int(number), op, 'dispatch')]
+            r = req(int(number), op, 'dispatch')
+            if config['operations'][op] == 'off': r.update(state='needs_attention', reason=disabled_reason(op))
+            return [r]
     return []
 
 
@@ -424,8 +447,11 @@ class Coordinator:
                 current = self.api.call('GET', f"repos/{self.repo}/issues/comments/{request['comment_id']}")
                 if current.get('body', '').strip() != '/cc-review ' + op or (current.get('user') or {}).get('login') != actor:
                     raise CIError('Command comment changed; post a fresh command.')
-            if not self.config['commands'][op]: raise CIError('Command disabled in CI configuration.')
+            if self.config['operations'][op] == 'off': raise CIError(disabled_reason(op))
         elif op == 'fix': raise CIError('Fix requires an explicit writer comment command.')
+        if self.config['operations'][op] == 'off': raise CIError(disabled_reason(op))
+        if request['source'] in AUTOMATIC_SOURCES and not automatic(self.config, op):
+            raise CIError(f'operations.{op} is on-demand; a writer can request `/cc-review {op}`.')
         if is_pr and head_repository(item) != self.repo:
             if request['source'] != 'comment' or op != 'review':
                 raise CIError('Fork operation withheld; a writer can request `/cc-review review`.')
@@ -572,7 +598,8 @@ def select_requests(api, repo, event_name, event, config):
             if selected >= config['limits']['sweep']: break
             if item.get('draft'): continue
             snap = api.snapshot(repo, item['number'], config['limits']['diff_bytes'])
-            operations = ('triage', 'review') if 'head' in snap['item'] else ('assess',)
+            operations = [op for op in (('triage', 'review') if 'head' in snap['item'] else ('assess',)) if automatic(config, op)]
+            if not operations: continue
             _, entries = read_status(snap['comments'], config['identity']['bot_login'])
             if any(not eligible(e, {'fingerprint': ''}, time.time(), config['limits']['timeout_minutes'] * 60) and e.get('state') == 'running' for e in entries.values()): continue
             pending = []
