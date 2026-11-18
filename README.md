@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/assets/logo/cc-review.svg" width="160" alt="cc-review logo"></p>
+
 # cc-review
 
 Multi-agent code review plugin for AI coding agents. Works with Claude Code, Codex, and OpenCode.
