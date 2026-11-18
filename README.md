@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/assets/logo/cc-review.svg" width="160" alt="cc-review logo"></p>
+<img src="docs/assets/logo/cc-review.svg" align="right" width="140" alt="cc-review logo">
 
 # cc-review
 
