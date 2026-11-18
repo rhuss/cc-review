@@ -1,8 +1,6 @@
 <h1><img src="docs/assets/logo/cc-review.svg" alt="cc-review logo" width="80" align="left">cc-review<br><sub><sup>Multi-agent review and triage for PRs and issues</sup></sub></h1>
 
-Multi-agent code review plugin for AI coding agents. Works with Claude Code, Codex, and OpenCode.
-
-cc-review dispatches a set of specialized reviewers against your code changes, merges and deduplicates findings across reviewers and external tools, then runs an autonomous fix loop to resolve Critical and Important issues before you see the report.
+cc-review is a plugin for Claude Code, Codex, and OpenCode. It dispatches a set of specialized reviewers against your code changes, merges and deduplicates findings across reviewers and external tools, then runs an autonomous fix loop to resolve Critical and Important issues before you see the report. The same reviews can run unattended in GitHub Actions.
 
 ## Documentation
 
@@ -11,6 +9,7 @@ The full guide is at **[docs/GUIDE.md](docs/GUIDE.md)**. The [docs/](docs/) dire
 ## Features
 
 - **6 built-in review agents**: Correctness, Architecture & Idioms, Security, Production Readiness, Test Quality, Goal Alignment
+- **GitHub Actions automation**: reviews PRs, triages bot review comments, and assesses new issues unattended in your repository, either automatically or on request with `/cc-review` comments. Runs on your own model account; set it up with `cc-review:ci setup`. See [docs/CI.md](docs/CI.md)
 - **Pluggable reviewers**: add your own reviewer by dropping one markdown file into `.cc-review/reviewers/`; no core changes needed. See [docs/extras/reviewer-plugins.md](docs/extras/reviewer-plugins.md)
 - **Autonomous fix loop**: automatically applies fixes for Critical/Important findings, re-reviews, and repeats (up to 3 rounds by default)
 - **External tool integration**: CodeRabbit, GitHub Copilot CLI, Codex CLI, and Greptile CLI run as command reviewers; their findings are merged and deduplicated with agent findings
