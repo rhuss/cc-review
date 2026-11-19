@@ -51,10 +51,16 @@ preferences and authorization already supplied by the user.
 6. Check visibility with `gh repo view --json visibility`. For a public
    repository, explain that from 2026-12-02 GitHub blocks `pull_request_target`
    on public repositories without an Actions event policy that allows it, which
-   stops automatic PR events. Ask the user to add an event rule in Settings >
-   Actions > Policies allowing `pull_request_target`, scoped to `cc-review.yml`
-   via workflow file targeting. This is a browser step; never claim it happened.
-   Run-level "Workflow execution policy" annotations confirm a missing rule.
+   stops automatic PR events. Ask the user to create a policy under Settings >
+   Actions > Policies > New actions policy: Enforcement status Active; Target
+   workflows via Add target > path `cc-review.yml`; check Restrict events and add
+   every event key from the generated caller's `on:` block (by default
+   `pull_request_target`, `issues`, `issue_comment`, `pull_request_review`,
+   `pull_request_review_comment`, `schedule`, `workflow_dispatch`). Allowed
+   events is an allowlist, so an omitted trigger stops firing for this workflow.
+   Leave Restrict actors and Require lockfile unchecked. This is a browser step;
+   never claim it happened. A remaining "Workflow execution policy" annotation
+   on the next run means the policy does not match.
 7. Review/commit/push generated files within the user's authorized setup scope.
    Run `gh workflow run cc-review.yml --repo <repo>` after the workflow is on
    the default branch (or use an explicitly selected --ref for a test branch).

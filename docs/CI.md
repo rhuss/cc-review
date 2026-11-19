@@ -215,11 +215,23 @@ Until then, runs show a "Workflow execution policy warning (evaluate mode)"
 annotation. Private and internal repositories are not affected.
 
 To keep automatic PR reviews working, a repository admin (or organization owner)
-adds an event rule under **Settings > Actions > Policies** that allows
-`pull_request_target`. Scope it to `cc-review.yml` with workflow file targeting
-so other workflows stay blocked. The workflow file itself does not change.
-Comment commands, issue events, scheduled sweeps and manual dispatch do not use
-this trigger and keep working without the rule.
+creates a policy under **Settings > Actions > Policies > New actions policy**.
+The workflow file itself does not change.
+
+- **Enforcement status:** Active.
+- **Target workflows:** Add target > path `cc-review.yml`, so other workflows
+  keep the default block.
+- **Restrict events:** checked. Allowed events is an allowlist for the targeted
+  workflow, so add every trigger in the caller's `on:` block, not only
+  `pull_request_target`. For the default caller that is `pull_request_target`,
+  `issues`, `issue_comment`, `pull_request_review`,
+  `pull_request_review_comment`, `schedule` and `workflow_dispatch`. A trigger
+  you leave out stops firing for cc-review.
+- **Restrict actors** and **Require lockfile:** unchecked.
+
+After saving, trigger a run (push to a PR or `gh workflow run cc-review.yml`).
+If the "Workflow execution policy" annotation is gone, the policy matches.
+
 See GitHub's [Securely using pull_request_target](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
 
 ## Identity
