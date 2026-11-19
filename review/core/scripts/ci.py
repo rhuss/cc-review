@@ -27,7 +27,7 @@ DEFAULTS = {
     'command_permissions': ['write', 'maintain', 'admin'],
     'labels': {'pursue': 'cc-review:pursue', 'needs_evidence': 'cc-review:needs-evidence',
                'direction': 'cc-review:direction', 'decline': 'cc-review:decline'},
-    'limits': {'sweep': 10, 'turns': 30, 'timeout_minutes': 15, 'diff_bytes': 100000},
+    'limits': {'sweep': 10, 'turns': 30, 'timeout_minutes': 15, 'diff_bytes': 100000, 'fix_bytes': 200000},
 }
 WRITERS = {'write', 'maintain', 'admin'}
 PROVIDERS = ('anthropic', 'gateway')
@@ -41,6 +41,11 @@ STATUS_PREFIX = '<!-- cc-review:ci:v1 '
 SUMMARY_START = '<!-- cc-review:summary:v1 -->'
 SUMMARY_END = '<!-- /cc-review:summary:v1 -->'
 REVIEW_HINT = 'Available on demand: comment `/cc-review review` to start a review.'
+FIXED_PREFIX = '<!-- cc-review:fixed:v1 '
+REVIEW_COMMENT_TRIGGER = '  pull_request_review_comment:\n    types: [created]\n'
+COMMAND = re.compile(r'/cc-review (review|triage|assess|fix|help)')
+# Reaction on the command comment once a run ends.
+OUTCOME_REACTIONS = {'completed': 'rocket', 'skipped': '+1', 'needs_attention': 'confused'}
 HELP = 'Commands: `/cc-review review`, `/cc-review triage`, `/cc-review assess`, `/cc-review fix`, `/cc-review help`. Writers may request actions; fixes require a same-repository PR.'
 
 
@@ -86,7 +91,7 @@ def load_config(path):
     for op, mode in config['operations'].items():
         if mode not in MODES: raise CIError(f'operations.{op} must be auto, on-demand or off.')
         if op in ON_DEMAND_ONLY and mode == 'auto': raise CIError(f'operations.{op} cannot be auto; use on-demand or off.')
-    for key, bound in (('sweep', 100), ('turns', 100), ('timeout_minutes', 60), ('diff_bytes', 1000000)):
+    for key, bound in (('sweep', 100), ('turns', 100), ('timeout_minutes', 60), ('diff_bytes', 1000000), ('fix_bytes', 2000000)):
         v = config['limits'][key]
         if type(v) is not int or not 1 <= v <= bound: raise CIError('Invalid limits.' + key)
     permissions = config['command_permissions']
@@ -105,6 +110,18 @@ def load_config(path):
         raise CIError('labels must map classifications to nonempty label names, at most 50 characters.')
     return config
 
+
+
+def same_login(login, bot):
+    # GraphQL reports App authors without the REST "[bot]" suffix.
+    strip = lambda value: str(value or '').lower().removesuffix('[bot]')
+    return strip(login) == strip(bot)
+
+
+def thread_fixed(thread, bot):
+    marker = FIXED_PREFIX + digest(thread['id']) + ' -->'
+    return any(marker in (c.get('body') or '') and same_login((c.get('author') or {}).get('login'), bot)
+               for c in thread['comments']['nodes'])
 
 
 def head_repository(item):
@@ -142,17 +159,25 @@ def route(event_name, event, config, permission='none'):
         return [req(item['number'], op) for op in ops]
     if event_name == 'issues' and action == 'opened' and config['triggers']['issue_opened']:
         return [req(event['issue']['number'], 'assess')] if automatic(config, 'assess') else []
-    if event_name == 'issue_comment' and action == 'created' and config['triggers']['comments']:
+    if event_name in ('issue_comment', 'pull_request_review_comment') and action == 'created' and config['triggers']['comments']:
         c = event.get('comment', {})
-        match = re.fullmatch(r'/cc-review (review|triage|assess|fix|help)', c.get('body', '').strip())
+        match = COMMAND.fullmatch(c.get('body', '').strip())
         if not match: return []
-        op = match[1]; item = event['issue']
-        r = req(item['number'], op, 'comment', comment_id=c['id'])
+        op = match[1]
+        if event_name == 'issue_comment':
+            item = event['issue']; is_pr = 'pull_request' in item
+            r = req(item['number'], op, 'comment', comment_id=c['id'], comment_kind='issue')
+        else:
+            # A reply in a review thread. Fork runs of this event get no secrets, so they are ignored.
+            item = event['pull_request']; is_pr = True
+            if head_repository(item) != repo: return []
+            r = req(item['number'], op, 'comment', comment_id=c['id'], comment_kind='review')
+            if op == 'fix': r['target_comment'] = c['id']
         reason = ''
         if config['operations'][op] == 'off': reason = disabled_reason(op)
         elif permission not in config['command_permissions'] or (op == 'fix' and permission not in WRITERS):
             reason = 'Insufficient repository permission; ask a repository writer to run this command.'
-        elif (op in {'review', 'triage', 'fix'} and 'pull_request' not in item) or (op == 'assess' and 'pull_request' in item):
+        elif (op in {'review', 'triage', 'fix'} and not is_pr) or (op == 'assess' and is_pr):
             reason = 'Command does not apply to this item; use assess for issues and review/triage/fix for PRs.'
         if reason: r.update(state='needs_attention', reason=reason)
         return [r]
@@ -177,11 +202,17 @@ def fingerprint(snapshot, operation, bot):
         # Ignore our own replies so successful publication does not invalidate itself.
         threads = []
         for t in snapshot.get('threads', []):
-            comments = [c for c in t['comments']['nodes'] if (c.get('author') or {}).get('login', '').lower() != bot.lower()]
+            comments = [c for c in t['comments']['nodes'] if not same_login((c.get('author') or {}).get('login'), bot)]
             if comments: threads.append({'id': t['id'], 'comments': comments})
         return digest([item.get('head', {}).get('sha'), threads])
     comments = [c for c in snapshot.get('comments', []) if (c.get('user') or {}).get('login', '').lower() != bot.lower()]
     return digest([item.get('title'), item.get('body'), comments])
+
+
+def request_fingerprint(snapshot, request, bot):
+    value = fingerprint(snapshot, request['operation'], bot)
+    # Thread fixes on the same head are distinct requests.
+    return digest([value, request['target_comment']]) if request.get('target_comment') else value
 
 
 def eligible(marker, request, now, timeout):
@@ -275,7 +306,7 @@ def bot_thread(t):
 def validate_proposal(request, snapshot, proposal, config):
     if not isinstance(proposal, dict) or proposal.get('status') not in TERMINAL:
         raise CIError('Missing terminal model outcome (possibly attempted interaction); inspect the run and retry.')
-    allowed = {'status', 'reason', 'body', 'labels', 'replies', 'files', 'assessment'}
+    allowed = {'status', 'reason', 'body', 'labels', 'replies', 'files', 'assessment', 'fixed_threads'}
     if set(proposal) - allowed: raise CIError('Unexpected model fields or attempted interaction; inspect the run and retry.')
     if not isinstance(proposal.get('reason'), str) or len(proposal['reason']) > 2000: raise CIError('Outcome reason must be text of at most 2000 characters.')
     if proposal['status'] != 'completed':
@@ -283,7 +314,7 @@ def validate_proposal(request, snapshot, proposal, config):
         return proposal
     op = request['operation']
     if not snapshot.get('complete'): raise CIError('Incomplete evidence; reduce item size or inspect manually.')
-    for key in ('labels', 'replies', 'files'):
+    for key in ('labels', 'replies', 'files', 'fixed_threads'):
         if key in proposal and not isinstance(proposal[key], list): raise CIError(key + ' must be an array.')
     if op == 'assess' and proposal.get('labels'):
         # Models sometimes return the configured label name instead of its key.
@@ -291,7 +322,8 @@ def validate_proposal(request, snapshot, proposal, config):
         proposal['labels'] = [names.get(label, label) if isinstance(label, str) else label for label in proposal['labels']]
     if proposal.get('body') is not None and (not isinstance(proposal['body'], str) or len(proposal['body']) > 50000):
         raise CIError('Invalid or oversized result body.')
-    for key, permitted in (('labels', op == 'assess'), ('assessment', op == 'assess'), ('replies', op == 'triage'), ('files', op == 'fix')):
+    for key, permitted in (('labels', op == 'assess'), ('assessment', op == 'assess'), ('replies', op == 'triage'),
+                           ('files', op == 'fix'), ('fixed_threads', op == 'fix')):
         if proposal.get(key) and not permitted: raise CIError('Mutation outside operation policy: ' + key)
     if op in {'review', 'fix'} and not checks_ok(snapshot):
         raise CIError('Checks failed or pending; wait for successful checks and retry.')
@@ -338,7 +370,14 @@ def validate_proposal(request, snapshot, proposal, config):
                 raise CIError('Fix target was not collected as current file evidence; inspect and fix it manually.')
             if content == snapshot['file_contents'][path]: raise CIError('Fix proposes no change; inspect the current file and retry.')
             seen.add(path); total += len(content.encode())
-        if total > config['limits']['diff_bytes']: raise CIError('Fix exceeds diff limit; reduce its scope.')
+        if total > config['limits']['fix_bytes']: raise CIError('Fix exceeds limits.fix_bytes; reduce its scope.')
+        if request.get('target_thread'):
+            proposal['fixed_threads'] = [request['target_thread']]
+        else:
+            fixed = proposal.get('fixed_threads', [])
+            scope = {t['id'] for t in snapshot.get('threads', [])}
+            if any(not isinstance(tid, str) or tid not in scope for tid in fixed) or len(set(fixed)) != len(fixed):
+                raise CIError('fixed_threads must name open review threads that no earlier fix addressed.')
     return proposal
 
 
@@ -395,7 +434,7 @@ class GitHub:
             result['diff'] = result['diff'].encode()[:limit].decode(errors='replace'); result['complete'] = False
         owner, name = repo.split('/')
         cursor = None
-        query = '''query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{id isResolved path line comments(first:100){pageInfo{hasNextPage} nodes{id body updatedAt author{login __typename}}}}}}}}'''
+        query = '''query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$cursor){pageInfo{hasNextPage endCursor} nodes{id isResolved path line comments(first:100){pageInfo{hasNextPage} nodes{id databaseId body updatedAt author{login __typename}}}}}}}}'''
         for _ in range(100):
             data = self.call('POST', 'graphql', {'query': query, 'variables': {'owner': owner, 'name': name, 'number': number, 'cursor': cursor}})
             connection = data['data']['repository']['pullRequest']['reviewThreads']
@@ -406,22 +445,23 @@ class GitHub:
         else: result['complete'] = False
         # PR REST listing is capped at 3000 files.
         if len(files) >= 3000: result['complete'] = False
-        if operation == 'fix':
-            result['file_contents'] = {}; total = 0
-            for f in files[:20]:
-                if f.get('status') == 'removed': continue
-                content = self.call('GET', f"{root}/contents/{quote(f['filename'], safe='/')}?ref={sha}")
-                try:
-                    if content.get('encoding') != 'base64': raise ValueError()
-                    text = base64.b64decode(content['content']).decode('utf-8')
-                except (KeyError, ValueError, UnicodeError):
-                    result['complete'] = False; continue
-                total += len(text.encode())
-                if total > limit: result['complete'] = False; break
-                result['file_contents'][f['filename']] = text
-            if len(files) > 20: result['complete'] = False
         if len(json.dumps(result).encode()) > max(limit * 4, 100000): result['complete'] = False
         return result
+
+    def file_contents(self, repo, sha, paths, limit):
+        """Current contents of fix candidates, bounded by limits.fix_bytes; returns (contents, complete)."""
+        contents, total, complete = {}, 0, len(paths) <= 20
+        for path in paths[:20]:
+            content = self.call('GET', f"repos/{repo}/contents/{quote(path, safe='/')}?ref={sha}")
+            try:
+                if not isinstance(content, dict) or content.get('encoding') != 'base64': raise ValueError()
+                text = base64.b64decode(content['content']).decode('utf-8')
+            except (KeyError, ValueError, UnicodeError):
+                complete = False; continue
+            total += len(text.encode())
+            if total > limit: return contents, False
+            contents[path] = text
+        return contents, complete
 
 
 def result_marker(request):
@@ -470,7 +510,8 @@ class Coordinator:
                 raise CIError('Current repository permission is insufficient; ask a writer to retry.')
             # The triggering comment may have been edited/deleted since selection.
             if request.get('comment_id'):
-                current = self.api.call('GET', f"repos/{self.repo}/issues/comments/{request['comment_id']}")
+                kind = 'pulls' if request.get('comment_kind') == 'review' else 'issues'
+                current = self.api.call('GET', f"repos/{self.repo}/{kind}/comments/{request['comment_id']}")
                 if current.get('body', '').strip() != '/cc-review ' + op or (current.get('user') or {}).get('login') != actor:
                     raise CIError('Command comment changed; post a fresh command.')
             if self.config['operations'][op] == 'off': raise CIError(disabled_reason(op))
@@ -482,13 +523,34 @@ class Coordinator:
             if request['source'] != 'comment' or op != 'review':
                 raise CIError('Fork operation withheld; a writer can request `/cc-review review`.')
 
+    def fix_evidence(self, snapshot, request):
+        """Narrow fix evidence to the threads in scope and fetch only their files."""
+        target = request.get('target_comment')
+        if target:
+            # An explicit thread request wins, even over an earlier fix marker.
+            threads = [t for t in snapshot['threads'] if any(c.get('databaseId') == target for c in t['comments']['nodes'])]
+            if not threads: raise CIError('Review thread for this fix command not found; reply `/cc-review fix` in the thread again.')
+            if not threads[0].get('path'): raise CIError('Review thread has no current file; apply the fix manually.')
+            request['target_thread'] = threads[0]['id']
+            paths = [threads[0]['path']]
+        else:
+            # Resolved threads and threads an earlier fix addressed are out of scope.
+            threads = [t for t in snapshot['threads'] if not t.get('isResolved') and not thread_fixed(t, self.bot)]
+            paths = [t['path'] for t in threads if t.get('path')] or [
+                f['filename'] for f in snapshot.get('files', []) if f.get('status') != 'removed']
+        snapshot['threads'] = threads[:1] if target else threads
+        contents, complete = self.api.file_contents(self.repo, snapshot['item']['head']['sha'], list(dict.fromkeys(paths)),
+                                                    self.config['limits']['fix_bytes'])
+        snapshot['file_contents'] = contents
+        if not complete: raise CIError('Fix files exceed limits; reduce the scope (reply `/cc-review fix` in one thread) or raise limits.fix_bytes.')
+
     def prepare(self, request):
         request = copy.deepcopy(request)
         request['repository'] = self.repo
         if type(request.get('number')) is not int or request['number'] <= 0 or request.get('operation') not in OPERATIONS:
             raise CIError('Invalid item request.')
         snapshot = self.api.snapshot(self.repo, request['number'], self.config['limits']['diff_bytes'], operation=request['operation'])
-        request['fingerprint'] = fingerprint(snapshot, request['operation'], self.bot)
+        request['fingerprint'] = request_fingerprint(snapshot, request, self.bot)
         context = {'request': request, 'snapshot': snapshot, 'config': self.config}
         try:
             if request.get('state') == 'needs_attention': raise CIError(request['reason'])
@@ -505,6 +567,7 @@ class Coordinator:
             if not eligible(entries.get(request['operation']), request, time.time(), self.config['limits']['timeout_minutes'] * 60):
                 return None
             if not snapshot['complete']: raise CIError('Evidence or diff exceeds limits; inspect manually or raise limits.diff_bytes.')
+            if request['operation'] == 'fix': self.fix_evidence(snapshot, request)
             self.status(snapshot, request, 'running', 'Processing unattended.')
         except CIError as error:
             context['terminal'] = self.status(snapshot, request, 'needs_attention', str(error))
@@ -517,8 +580,9 @@ class Coordinator:
         try:
             latest = self.api.snapshot(self.repo, request['number'], self.config['limits']['diff_bytes'], operation=request['operation'])
             self.authorize(request, latest)
-            if fingerprint(latest, request['operation'], self.bot) != request['fingerprint']:
+            if request_fingerprint(latest, request, self.bot) != request['fingerprint']:
                 raise CIError('Item changed during analysis; rerun on the current head/conversation.')
+            if request['operation'] == 'fix': self.fix_evidence(latest, request)
             proposal = validate_proposal(request, latest, proposal, self.config)
             state, reason = proposal['status'], proposal['reason']
             outcome = ''; review_summary = None
@@ -531,10 +595,12 @@ class Coordinator:
                     reply['body'], n = repair_dashes(reply['body']); repaired += n
                 if repaired:
                     reason = (reason.strip() + ' ' if reason.strip() else '') + f"{repaired} dash{'' if repaired == 1 else 'es'} replaced before posting."
-                outcome = self.publish(request, latest, proposal)
                 if request['operation'] == 'review':
                     review_summary = (sanitize_summary(proposal['body'].strip()) +
-                               f"\n\n<sub>Reviewed at `{request['fingerprint'][:7]}` · [run]({self.run_url})</sub>")
+                                      f"\n\n<sub>Reviewed at `{request['fingerprint'][:7]}` · [run]({self.run_url})</sub>")
+                    # Save the text before the PR review links to it, so a later failure cannot lose it.
+                    self.status(latest, request, 'running', 'Publishing review.', summary=review_summary)
+                outcome = self.publish(request, latest, proposal)
                 if request['operation'] == 'triage':
                     humans = [t for t in latest['threads'] if not bot_thread(t) and not t.get('isResolved')]
                     if humans:
@@ -574,7 +640,7 @@ class Coordinator:
             threads = {t['id']: t for t in snapshot['threads']}
             for reply in proposal.get('replies', []):
                 tid = reply['thread_id']; thread_marker = marker + '<!-- ' + digest(tid) + ' -->'
-                posted = any(thread_marker in c.get('body', '') and (c.get('author') or {}).get('login', '').lower() == self.bot.lower()
+                posted = any(thread_marker in c.get('body', '') and same_login((c.get('author') or {}).get('login'), self.bot)
                              for c in threads[tid]['comments']['nodes'])
                 if not posted:
                     self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}',
@@ -584,7 +650,21 @@ class Coordinator:
             replies = proposal.get('replies', [])
             return f"{len(replies)} bot thread{'' if len(replies) == 1 else 's'} answered, {sum(1 for r in replies if r['resolve'])} resolved"
         elif op == 'fix':
-            return f"Fix pushed as `{self.push_fix(request, snapshot, proposal)[:7]}`"
+            sha = self.push_fix(request, snapshot, proposal)
+            failed = 0
+            for tid in proposal.get('fixed_threads', []):
+                # The marker keeps later PR-wide fixes away from this thread; resolving stays with triage or a maintainer.
+                text = (f'Fix pushed as `{sha[:7]}`. Triage or a maintainer can resolve this thread once the change is verified.'
+                        f'\n\n{FIXED_PREFIX}{digest(tid)} -->')
+                try:
+                    self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}',
+                        'variables': {'id': tid, 'body': text}})
+                except CIError: failed += 1
+            count = len(proposal.get('fixed_threads', []))
+            outcome = f"Fix pushed as `{sha[:7]}`"
+            if count: outcome += f", {count} thread{'' if count == 1 else 's'} marked fixed"
+            if failed: outcome += f" ({failed} thread repl{'y' if failed == 1 else 'ies'} failed; reply manually)"
+            return outcome
         return ''
 
     def push_fix(self, request, snapshot, proposal):
@@ -601,7 +681,9 @@ class Coordinator:
             if mode not in {'100644', '100755'} or not isinstance(existing, dict) or existing.get('type') != 'file': raise CIError('Fix target is not a regular existing file; apply manually.')
             tree_entries.append({'path': f['path'], 'mode': mode, 'type': 'blob', 'content': f['content']})
         tree = self.api.call('POST', f'{root}/git/trees', {'base_tree': commit['tree']['sha'], 'tree': tree_entries})
-        created = self.api.call('POST', f'{root}/git/commits', {'message': 'fix: apply cc-review maintainer request\n\n' + result_marker(request),
+        target = next((t for t in snapshot['threads'] if t['id'] == request.get('target_thread')), None)
+        subject = f"fix: address review thread on {target.get('path')}:{target.get('line') or ''}".rstrip(':') if target else 'fix: apply cc-review maintainer request'
+        created = self.api.call('POST', f'{root}/git/commits', {'message': subject + '\n\n' + result_marker(request),
             'tree': tree['sha'], 'parents': [head]})
         fresh = self.api.call('GET', f"{root}/pulls/{request['number']}")
         if fresh['head']['sha'] != head: raise CIError('PR head moved; no fix pushed. Retry on its current head.')
@@ -617,13 +699,28 @@ def summary(number, operation, state, reason, run_url=''):
     else: print(line.strip())
 
 
+def react(api, repo, kind, comment_id, content):
+    """Best-effort reaction on a command comment; never fails the run."""
+    if type(comment_id) is not int or comment_id <= 0: return
+    path = 'pulls' if kind == 'review' else 'issues'
+    try: api.call('POST', f'repos/{repo}/{path}/comments/{comment_id}/reactions', {'content': content})
+    except CIError: pass
+
+
+def react_outcome(api, repo, request, state):
+    if request.get('source') == 'comment' and state in OUTCOME_REACTIONS:
+        react(api, repo, request.get('comment_kind', 'issue'), request.get('comment_id'), OUTCOME_REACTIONS[state])
+
+
 def select_requests(api, repo, event_name, event, config):
     actor = (event.get('sender') or {}).get('login', '')
     permission = 'none'
-    if event_name == 'issue_comment' and actor and config['enabled'] and config['triggers']['comments']:
+    if event_name in ('issue_comment', 'pull_request_review_comment') and actor and config['enabled'] and config['triggers']['comments']:
         if actor.lower() == config['identity']['bot_login'].lower(): return []
-        if not re.fullmatch(r'/cc-review (review|triage|assess|fix|help)', event.get('comment', {}).get('body', '').strip()): return []
-        api.call('POST', f"repos/{repo}/issues/comments/{event['comment']['id']}/reactions", {'content': 'eyes'})
+        if not COMMAND.fullmatch(event.get('comment', {}).get('body', '').strip()): return []
+        if event_name == 'pull_request_review_comment' and head_repository(event.get('pull_request') or {}) != repo: return []
+        kind = 'review' if event_name == 'pull_request_review_comment' else 'issue'
+        react(api, repo, kind, event['comment']['id'], 'eyes')
         permission = api.call('GET', f'repos/{repo}/collaborators/{actor}/permission').get('permission', 'none')
     requests = route(event_name, event, config, permission)
     sweep = event_name == 'schedule' or (event_name == 'workflow_dispatch' and not event.get('inputs', {}).get('number'))
@@ -657,6 +754,7 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
                 'thread_id': {'type': 'string'}, 'body': {'type': 'string'}, 'resolve': {'type': 'boolean'}, 'evidence': {'type': 'string'}}}},
         'files': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
             'required': ['path', 'content'], 'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}}}},
+        'fixed_threads': {'type': 'array', 'items': {'type': 'string'}},
         'assessment': {'type': 'object', 'additionalProperties': False, 'required': list(assessment.FIELDS), 'properties': {
             'kind': {'type': 'string', 'enum': list(assessment.KINDS)},
             'use_case': {'type': 'string', 'maxLength': assessment.LIMITS['use_case']},
@@ -747,6 +845,10 @@ def write_prompt(context, directory, prose_dir=None, code_dir=None):
         'For triage, reply only to exact bot reviewer threads; resolve only when supplied current code/diff proves the concern addressed. '
         'For assess, follow the issue assessment rules: write `body` for the reporter and the judgments in `assessment`; the recommendation is a key of config.labels (for example pursue), never the label name. '
         'For fix, propose complete contents of existing regular files only; no shell commands or new sensitive files. '
+        + (f"This fix is scoped to review thread {context['request']['target_thread']}: fix only its concern and change nothing else; "
+           'if it cannot be fixed safely, record needs_attention. ' if context['request'].get('target_thread') else
+           ('List in fixed_threads the ids of the supplied review threads your change addresses. '
+            if context['request']['operation'] == 'fix' else '')) +
         'Use concrete file/line evidence and disclose evidence limits. If current code is insufficient to verify a thread/fix, record needs_attention.\n\n'
         + code_access_note(context['request']['operation'], code_dir) + '\n\n'
         + guidance + '\n\n' + voice + '\n\n' + writing_guidance(context['config'], prose_dir) + '\n\n' + '\n\n'.join(perspectives)
@@ -788,6 +890,9 @@ def install(root, ref, update=False):
         text, uses_count = re.subn(r'(\.github/workflows/)cc-review(?:-reusable)?\.yml@[a-f0-9]{40}', lambda m: m[1] + REUSABLE + '@' + ref, text)
         text, ref_count = re.subn(r'(integration_ref: )[a-f0-9]{40}', lambda m: m[1] + ref, text)
         if uses_count != 1 or ref_count != 1: raise CIError('Managed caller has unsupported pins; migrate it manually before update.')
+        if 'pull_request_review_comment:' not in text:
+            # Commands replied inside review threads arrive as this event (added in v1.9).
+            text = re.sub(r'(?m)^(  issue_comment:\n    types: \[created\]\n)', r'\1' + REVIEW_COMMENT_TRIGGER, text, count=1)
     else:
         text = (CORE / 'templates/ci-workflow.yml').read_text().replace('__CC_REVIEW_REF__', ref)
     workflow.write_text(text)
@@ -918,7 +1023,7 @@ def main(argv=None):
         context = coordinator.prepare(json.loads(args.request))
         directory.mkdir(parents=True, exist_ok=True)
         if context is None:
-            (directory / 'context.json').write_text(json.dumps({'skipped': True}))
+            (directory / 'context.json').write_text(json.dumps({'skipped': True, 'request': json.loads(args.request)}))
             runner_output({'run_model': 'false'}); summary('-', 'selection', 'skipped', 'Item already complete or active.'); return 0
         if args.project_dir:
             context['snapshot']['project_context'] = project_evidence(args.project_dir)
@@ -933,12 +1038,14 @@ def main(argv=None):
                 'schema': json.dumps(proposal_schema(config, context['request']['operation']), separators=(',', ':'))})
     else:
         context = json.loads((directory / 'context.json').read_text())
-        if context.get('skipped'): return 0
+        if context.get('skipped'):
+            react_outcome(api, args.repo, context.get('request') or {}, 'skipped'); return 0
         proposal = None
         if args.result:
             try: proposal = json.loads(Path(args.result).read_text())
             except (OSError, ValueError): pass
         result = coordinator.finish(context, proposal)
+        react_outcome(api, args.repo, context['request'], result['state'])
         r = context['request']
         summary(r['number'], r['operation'], result['state'], result['reason'], run_url)
         return 1 if result['state'] == 'needs_attention' else 0

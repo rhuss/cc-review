@@ -48,14 +48,29 @@ Supported whole-comment commands:
 | `/cc-review review` | PR | Review summary in the sticky status, anchored by a COMMENT review at the observed head |
 | `/cc-review triage` | PR | Reply to bot threads and resolve verified addressed concerns |
 | `/cc-review assess` | Issue | Assessment reply and mapped triage labels |
-| `/cc-review fix` | Same-repository PR | Propose file changes and push a child commit after policy checks |
+| `/cc-review fix` | Same-repository PR | Propose file changes and push a child commit after policy checks. Replied inside a review thread, it fixes only that thread's concern |
 | `/cc-review help` | Either | Show command help in the sticky status |
 
 Current repository write, maintain or admin permission is required by default.
 `command_permissions` may additionally allow read or triage permission for other
 commands; fix always requires a writer. The runtime rechecks permission and the
-original comment before publication. Commands are acknowledged with an eyes
-reaction. Shell suffixes, quoted examples and multi-command comments do not run.
+original comment before publication. Shell suffixes, quoted examples and
+multi-command comments do not run.
+
+Commands work as top-level PR comments and as replies inside a review thread.
+A thread reply needs the `pull_request_review_comment` trigger in the caller;
+`cc-review:ci update` adds it to older callers. Thread replies on fork PRs are
+ignored, because GitHub gives those runs no secrets. Only `fix` is scoped to
+its thread; the other commands act on the whole PR wherever they are posted.
+
+The bot reacts on the command comment:
+
+| Reaction | Meaning |
+|---|---|
+| 👀 | Command picked up |
+| 🚀 | Completed |
+| 👍 | Already current or skipped; nothing to do |
+| 😕 | Needs attention; the status comment has the reason |
 
 ## Unattended policy
 
@@ -70,6 +85,15 @@ content. Code tests are **not** executed by this entry point: reviewers must not
 claim otherwise. A pushed fix runs the repository's ordinary CI; inspect those
 checks before merging and request another fix or apply a manual change if they
 fail. There is no automatic rollback or repeated fix loop.
+
+A thread fix sees only its thread and that thread's file. After pushing, the bot
+replies in each fixed thread ("Fix pushed as ...") with a hidden marker and
+leaves it open: triage runs on the new head and resolves bot threads it can
+verify, while human threads stay with the maintainer. A PR-wide `/cc-review fix`
+skips resolved threads and threads that carry such a marker, works on the files
+those remaining threads point to (all changed files when there are none), and
+marks the threads its change addresses. File contents are bounded by
+`limits.fix_bytes` (default 200000), separately from `limits.diff_bytes`.
 
 Single-item core commands also accept `--unattended`: `review --pr 7
 --unattended`, `triage --pr 7 --unattended`, and `issue 42 --unattended`. Review
@@ -190,8 +214,9 @@ Setup generates a manifest with scoped permissions. GitHub's browser registratio
 and installation approvals remain user steps. The one-time manifest code is
 exchanged privately; only the App ID (repository variable CC_REVIEW_APP_ID) and
 private key (CC_REVIEW_APP_PRIVATE_KEY secret) are retained. Set bot_login to the
-App slug plus `[bot]`. The worker requests a repository-scoped installation token,
-with contents read except during an authorized fix. Doctor can verify installation
+App slug plus `[bot]`. The selection and worker jobs request repository-scoped
+installation tokens, with contents read except during an authorized fix, so
+reactions, status and replies all come from the App. Doctor can verify installation
 access with a freshly minted token in CC_REVIEW_APP_TOKEN; request the workflow's
 permissions during minting to verify the App grant. Never put keys/tokens in chat,
 source or command arguments.

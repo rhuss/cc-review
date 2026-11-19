@@ -42,6 +42,24 @@ def comment(command, pr=True):
                         'author_association': 'OWNER'}}
 
 
+def thread_comment(command, fork=False, cid=500):
+    return {'action': 'created', 'sender': {'login': 'alice'},
+            'repository': {'full_name': 'acme/widget'},
+            'pull_request': {'number': 7, 'head': {'sha': 'a'*40,
+                'repo': {'full_name': 'other/widget' if fork else 'acme/widget'}}},
+            'comment': {'id': cid, 'body': command, 'user': {'login': 'alice'}, 'in_reply_to_id': 400}}
+
+
+def review_threads():
+    return [{'id': 'T1', 'isResolved': False, 'path': 'src/app.py', 'line': 3, 'comments': {'nodes': [
+                {'databaseId': 400, 'author': {'login': 'greptile-apps', '__typename': 'Bot'}, 'body': 'P1: summary lost'},
+                {'databaseId': 500, 'author': {'login': 'alice', '__typename': 'User'}, 'body': '/cc-review fix'}]}},
+            {'id': 'T2', 'isResolved': False, 'path': 'bin/tool', 'line': 1, 'comments': {'nodes': [
+                {'databaseId': 401, 'author': {'login': 'coderabbitai', '__typename': 'Bot'}, 'body': 'nit'}]}},
+            {'id': 'T3', 'isResolved': True, 'path': 'src/app.py', 'line': 9, 'comments': {'nodes': [
+                {'databaseId': 402, 'author': {'login': 'coderabbitai', '__typename': 'Bot'}, 'body': 'old'}]}}]
+
+
 def snapshot():
     return {'item': {'number': 7, 'title': 'Change', 'body': 'Body',
                      'head': {'sha': 'a'*40, 'ref': 'feature', 'repo': {'full_name': 'acme/widget'}},
@@ -89,6 +107,58 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual('needs_attention', r['state']); self.assertIn('operations.assess', r['reason'])
         d = self.ci.route('workflow_dispatch', {'inputs': {'number': '7', 'operation': 'assess'}, 'sender': {'login': 'alice'}, 'repository': {'full_name': 'acme/widget'}}, self.config, 'write')[0]
         self.assertEqual('needs_attention', d['state']); self.assertIn('operations.assess', d['reason'])
+
+    def test_thread_reply_commands_route_scoped_fix_and_ignore_forks(self):
+        fix = self.ci.route('pull_request_review_comment', thread_comment('/cc-review fix'), self.config, 'write')
+        self.assertEqual(1, len(fix))
+        self.assertEqual(('fix', 'comment', 'review', 500, 500), tuple(fix[0][k] for k in ('operation', 'source', 'comment_kind', 'comment_id', 'target_comment')))
+        review = self.ci.route('pull_request_review_comment', thread_comment('/cc-review review'), self.config, 'write')[0]
+        self.assertNotIn('target_comment', review); self.assertEqual('review', review['comment_kind'])
+        self.assertEqual('needs_attention', self.ci.route('pull_request_review_comment', thread_comment('/cc-review assess'), self.config, 'write')[0]['state'])
+        self.assertEqual([], self.ci.route('pull_request_review_comment', thread_comment('/cc-review fix', fork=True), self.config, 'write'))
+        self.assertEqual([], self.ci.route('pull_request_review_comment', thread_comment('please /cc-review fix'), self.config, 'write'))
+        self.assertEqual('issue', self.ci.route('issue_comment', comment('/cc-review fix'), self.config, 'write')[0]['comment_kind'])
+
+    def test_thread_command_acknowledged_on_review_comment(self):
+        calls = []
+        class API:
+            def call(self, method, path, payload=None):
+                calls.append((method, path, payload))
+                return {'permission': 'write'} if '/collaborators/' in path else {}
+        requests = self.ci.select_requests(API(), 'acme/widget', 'pull_request_review_comment', thread_comment('/cc-review fix'), self.config)
+        self.assertEqual(('POST', 'repos/acme/widget/pulls/comments/500/reactions', {'content': 'eyes'}), calls[0])
+        self.assertEqual('fix', requests[0]['operation'])
+        calls.clear()
+        self.assertEqual([], self.ci.select_requests(API(), 'acme/widget', 'pull_request_review_comment', thread_comment('/cc-review fix', fork=True), self.config))
+        self.assertEqual([], calls)
+
+    def test_outcome_reactions_are_best_effort(self):
+        calls = []
+        class API:
+            def call(inner, method, path, payload=None):
+                calls.append((path, payload)); raise self.ci.CIError('forbidden')
+        self.ci.react_outcome(API(), 'acme/widget', self.request('fix', source='comment', comment_id=500, comment_kind='review'), 'needs_attention')
+        self.ci.react_outcome(API(), 'acme/widget', self.request(source='comment', comment_id=90), 'completed')
+        self.ci.react_outcome(API(), 'acme/widget', self.request(source='comment', comment_id=90), 'skipped')
+        self.ci.react_outcome(API(), 'acme/widget', self.request(), 'completed')  # no command comment, no reaction
+        self.assertEqual([('repos/acme/widget/pulls/comments/500/reactions', {'content': 'confused'}),
+                          ('repos/acme/widget/issues/comments/90/reactions', {'content': 'rocket'}),
+                          ('repos/acme/widget/issues/comments/90/reactions', {'content': '+1'})], calls)
+
+    def test_thread_fix_fingerprints_differ_per_thread_and_bot_logins_normalize(self):
+        s = snapshot()
+        plain = self.ci.request_fingerprint(s, self.request('fix'), 'x[bot]')
+        self.assertEqual('a'*40, plain)
+        one = self.ci.request_fingerprint(s, self.request('fix', target_comment=500), 'x[bot]')
+        two = self.ci.request_fingerprint(s, self.request('fix', target_comment=501), 'x[bot]')
+        self.assertNotIn(plain, (one, two)); self.assertNotEqual(one, two)
+        self.assertTrue(self.ci.same_login('rhuss-cc-review', 'rhuss-cc-review[bot]'))
+        self.assertFalse(self.ci.same_login('rhuss-cc-review-x', 'rhuss-cc-review[bot]'))
+        # Triage ignores its own GraphQL-reported replies, so they do not invalidate its fingerprint.
+        s['threads'] = review_threads()
+        before = self.ci.fingerprint(s, 'triage', 'bot[bot]')
+        s['threads'][1]['comments']['nodes'].append({'author': {'login': 'bot'}, 'body': 'answered'})
+        self.assertEqual(before, self.ci.fingerprint(s, 'triage', 'bot[bot]'))
 
     def test_operation_modes_config(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -379,11 +449,20 @@ class FakeGitHub:
         self.evidence = copy.deepcopy(evidence)
         self.calls = []
         self.next_id = 100
-    def snapshot(self, repo, number, limit, operation=None): return copy.deepcopy(self.evidence)
+        self.command_comments = {}  # id -> {'body', 'user'} returned when a command comment is re-read
+        self.fetched = []
+    def snapshot(self, repo, number, limit, operation=None):
+        value = copy.deepcopy(self.evidence); value.pop('file_contents', None); return value
+    def file_contents(self, repo, sha, paths, limit):
+        self.fetched.append(list(paths))
+        contents = {p: self.evidence['file_contents'][p] for p in paths if p in self.evidence['file_contents']}
+        return contents, sum(len(v) for v in contents.values()) <= limit
     def pages(self, path, key=None): return self.call('GET', path)
     def call(self, method, path, payload=None):
         self.calls.append((method, path, payload))
         if '/collaborators/' in path: return {'permission': 'write'}
+        if method == 'GET' and '/comments/' in path and path.split('/')[-1].isdigit():
+            return self.command_comments.get(int(path.split('/')[-1]), {})
         if path.endswith('/reviews') and method == 'GET': return []
         if path.endswith('/comments') and method == 'POST':
             self.next_id += 1
@@ -449,6 +528,71 @@ class PublisherTests(unittest.TestCase):
         body = self.api.evidence['comments'][0]['body']
         self.assertEqual(summary, self.ci.read_summary(body))
         self.assertIn('**Running:** triage', body)
+
+    def test_review_summary_saved_before_pr_review_is_posted(self):
+        context = self.worker.prepare(self.request())
+        def broken(*args): raise self.ci.CIError('GitHub API request failed for reviews.')
+        self.worker.publish = broken
+        result = self.worker.finish(context, {'status': 'completed', 'reason': '', 'body': 'Keep this finding.'})
+        self.assertEqual('needs_attention', result['state'])
+        self.assertTrue(self.ci.read_summary(self.api.evidence['comments'][0]['body']).startswith('Keep this finding.'))
+
+    def fix_api(self):
+        old_call = self.api.call
+        def call(method, path, payload=None):
+            if '/git/commits/' in path: self.api.calls.append((method, path, payload)); return {'tree': {'sha': 'tree0'}}
+            if path.endswith('/git/trees/tree0?recursive=1'):
+                return {'tree': [{'path': 'src/app.py', 'mode': '100644'}, {'path': 'bin/tool', 'mode': '100755'}], 'truncated': False}
+            if '/contents/' in path: return {'type': 'file'}
+            if method == 'POST' and path.endswith('/git/trees'): return {'sha': 'tree1'}
+            if method == 'POST' and path.endswith('/git/commits'): self.api.calls.append((method, path, payload)); return {'sha': 'c0ffee1234'}
+            if method == 'GET' and path.endswith('/pulls/7'): return self.api.evidence['item']
+            return old_call(method, path, payload)
+        self.api.call = call
+
+    def test_thread_fix_is_scoped_marks_thread_and_later_pr_wide_fix_skips_it(self):
+        self.config['identity']['bot_login'] = 'rhuss-cc-review[bot]'
+        self.worker = self.ci.Coordinator(self.api, 'acme/widget', self.config, '1', 'https://github.com/acme/widget/actions/runs/1')
+        self.api.evidence['threads'] = review_threads()
+        self.api.command_comments[500] = {'body': '/cc-review fix', 'user': {'login': 'alice'}}
+        self.fix_api()
+        request = self.ci.route('pull_request_review_comment', thread_comment('/cc-review fix'), self.config, 'write')[0]
+        context = self.worker.prepare(request)
+        self.assertNotIn('terminal', context)
+        self.assertEqual('T1', context['request']['target_thread'])
+        self.assertEqual(['T1'], [t['id'] for t in context['snapshot']['threads']])
+        self.assertEqual(['src/app.py'], list(context['snapshot']['file_contents']))
+        self.assertEqual([['src/app.py']], self.api.fetched)
+        result = self.worker.finish(context, {'status': 'completed', 'reason': '', 'fixed_threads': ['T2'],
+                                              'files': [{'path': 'src/app.py', 'content': 'fixed'}]})
+        self.assertEqual('completed', result['state'], result['reason'])
+        self.assertIn('1 thread marked fixed', result['outcome'])
+        commits = [p for m, u, p in self.api.calls if m == 'POST' and u.endswith('/git/commits')]
+        self.assertTrue(commits[0]['message'].startswith('fix: address review thread on src/app.py:3'))
+        replies = [p['variables'] for m, u, p in self.api.calls if u == 'graphql' and 'addPullRequestReviewThreadReply' in p['query']]
+        self.assertEqual(['T1'], [r['id'] for r in replies])  # the model's T2 is ignored for a scoped fix
+        self.assertIn(self.ci.FIXED_PREFIX + self.ci.digest('T1'), replies[0]['body'])
+        # The pushed fix moves the head; GraphQL reports the App without "[bot]".
+        self.api.evidence['threads'][0]['comments']['nodes'].append({'author': {'login': 'rhuss-cc-review'}, 'body': replies[0]['body']})
+        self.api.evidence['item']['head']['sha'] = 'b'*40
+        self.api.command_comments[91] = {'body': '/cc-review fix', 'user': {'login': 'alice'}}
+        context = self.worker.prepare(self.request('fix', source='comment', comment_id=91, comment_kind='issue'))
+        self.assertNotIn('terminal', context)
+        self.assertEqual(['T2'], [t['id'] for t in context['snapshot']['threads']])
+        self.assertEqual(['bin/tool'], self.api.fetched[-1])
+        with self.assertRaises(self.ci.CIError):
+            self.ci.validate_proposal(context['request'], dict(context['snapshot'], file_contents={'bin/tool': 'old'}),
+                {'status': 'completed', 'reason': '', 'fixed_threads': ['T1'], 'files': [{'path': 'bin/tool', 'content': 'new'}]}, self.config)
+
+    def test_thread_fix_needs_attention_when_thread_missing_or_files_too_large(self):
+        self.api.evidence['threads'] = review_threads()
+        self.api.command_comments[777] = {'body': '/cc-review fix', 'user': {'login': 'alice'}}
+        request = self.ci.route('pull_request_review_comment', thread_comment('/cc-review fix', cid=777), self.config, 'write')[0]
+        self.assertIn('not found', self.worker.prepare(request)['terminal']['reason'])
+        self.api.command_comments[500] = {'body': '/cc-review fix', 'user': {'login': 'alice'}}
+        self.config['limits']['fix_bytes'] = 1
+        request = self.ci.route('pull_request_review_comment', thread_comment('/cc-review fix'), self.config, 'write')[0]
+        self.assertIn('limits.fix_bytes', self.worker.prepare(request)['terminal']['reason'])
 
     def test_missing_outcome_and_moved_head_record_attention_without_review(self):
         for proposal, moved in ((None, False), ({'status': 'completed', 'reason': '', 'body': 'Review'}, True)):
@@ -660,6 +804,12 @@ class SetupTests(unittest.TestCase):
             self.assertIn('# custom caller option', caller.read_text())
             self.assertEqual('opus', self.ci.load_config(config)['model'])
             self.assertIn('b'*40, (root / '.github/workflows/cc-review.yml').read_text())
+            self.assertEqual(1, caller.read_text().count('pull_request_review_comment:'))
+            # Callers from before thread commands gain the trigger once on update.
+            caller.write_text(caller.read_text().replace('  pull_request_review_comment:\n    types: [created]\n', ''))
+            self.ci.install(root, 'b'*40, update=True)
+            self.ci.install(root, 'b'*40, update=True)
+            self.assertEqual(1, caller.read_text().count('  issue_comment:\n    types: [created]\n  pull_request_review_comment:\n    types: [created]\n'))
             # A caller from before the rename moves to the new reusable workflow name on update.
             caller.write_text(caller.read_text().replace('cc-review-reusable.yml@', 'cc-review.yml@'))
             self.ci.install(root, 'c'*40, update=True)
@@ -723,7 +873,9 @@ class SnapshotTests(unittest.TestCase):
             if before is None: os.environ.pop('GITHUB_RUN_ID', None)
             else: os.environ['GITHUB_RUN_ID'] = before
         self.assertEqual(['https://github.com/acme/widget/actions/runs/1234/job/2'], [c['details_url'] for c in result['checks']])
-        self.assertEqual({'src/app.py': 'old'}, result['file_contents'])
+        self.assertNotIn('file_contents', result)  # fix files are fetched only once the scope is known
+        self.assertEqual(({'src/app.py': 'old'}, True), API().file_contents('acme/widget', 'a'*40, ['src/app.py'], 100000))
+        self.assertEqual(({}, False), API().file_contents('acme/widget', 'a'*40, ['src/app.py'], 2))
         self.assertFalse(ci.checks_ok(result))
 
 
