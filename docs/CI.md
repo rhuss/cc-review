@@ -206,6 +206,22 @@ operations are skipped by sweeps; abandoned running markers expire after the
 configured timeout plus five minutes. GitHub Actions may coalesce pending jobs
 in a concurrency group; later sweeps recover unfinished operations.
 
+## Public repositories: allow `pull_request_target`
+
+PR events reach the workflow through `pull_request_target`, which runs the
+default-branch workflow with access to secrets. From 2026-12-02 GitHub blocks
+this trigger on public repositories unless an Actions event policy allows it.
+Until then, runs show a "Workflow execution policy warning (evaluate mode)"
+annotation. Private and internal repositories are not affected.
+
+To keep automatic PR reviews working, a repository admin (or organization owner)
+adds an event rule under **Settings > Actions > Policies** that allows
+`pull_request_target`. Scope it to `cc-review.yml` with workflow file targeting
+so other workflows stay blocked. The workflow file itself does not change.
+Comment commands, issue events, scheduled sweeps and manual dispatch do not use
+this trigger and keep working without the rule.
+See GitHub's [Securely using pull_request_target](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
+
 ## Identity
 
 `GITHUB_TOKEN` is the simplest setup. Keep `identity.bot_login:

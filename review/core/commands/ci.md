@@ -48,7 +48,14 @@ preferences and authorization already supplied by the user.
 5. Inspect existing labels. Preserve the repository's scheme using config label
    mappings. Create only missing configured labels via `gh label create` with
    neutral descriptions; never rename/delete unrelated labels.
-6. Review/commit/push generated files within the user's authorized setup scope.
+6. Check visibility with `gh repo view --json visibility`. For a public
+   repository, explain that from 2026-12-02 GitHub blocks `pull_request_target`
+   on public repositories without an Actions event policy that allows it, which
+   stops automatic PR events. Ask the user to add an event rule in Settings >
+   Actions > Policies allowing `pull_request_target`, scoped to `cc-review.yml`
+   via workflow file targeting. This is a browser step; never claim it happened.
+   Run-level "Workflow execution policy" annotations confirm a missing rule.
+7. Review/commit/push generated files within the user's authorized setup scope.
    Run `gh workflow run cc-review.yml --repo <repo>` after the workflow is on
    the default branch (or use an explicitly selected --ref for a test branch).
    Find the exact dispatched run, watch it with `gh run watch --exit-status`,
@@ -71,6 +78,8 @@ pins, secret names (never values), provider variables, labels, recent runs and
 remote plugin version. Explain every failure and the next action. Inspect caller
 permissions: issues/pull-requests write, checks/actions read, contents write for
 fixes; repository/org policy may restrict these.
+For a public repository, remind the owner that `pull_request_target` needs an
+explicit Actions event policy (see setup step 6); doctor cannot read it.
 For an App, verify installation access with a freshly minted installation token
 (scoped to this repository and required permissions) in CC_REVIEW_APP_TOKEN, then
 run doctor again. Minting must request exactly the permissions the workflow uses;
