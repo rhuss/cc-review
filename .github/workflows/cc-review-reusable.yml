@@ -88,21 +88,38 @@ jobs:
         env:
           CC_REF: ${{ inputs.integration_ref }}
         run: '[[ "$CC_REF" =~ ^[a-f0-9]{40}$ ]]'
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: rhuss/cc-review
           ref: ${{ inputs.integration_ref }}
           path: _cc_review
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: _target
           persist-credentials: false
+      # Reactions on command comments come from the same App identity as all other output.
+      # Fork review events carry no secrets; selection then falls back to github.token and ignores them.
+      - name: Mint selection token
+        if: inputs.app_id != ''
+        continue-on-error: true
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          app-id: ${{ inputs.app_id }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
+          permission-issues: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-actions: read
       - name: Select enabled eligible requests
         id: select
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
         run: python3 _cc_review/review/core/scripts/ci.py select --config _target/.cc-review/ci.yml
   item:
     needs: select
@@ -117,20 +134,20 @@ jobs:
       group: cc-review-${{ github.repository }}-${{ matrix.number }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: rhuss/cc-review
           ref: ${{ inputs.integration_ref }}
           path: _cc_review
           persist-credentials: false
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.repository.default_branch }}
           path: _target
           persist-credentials: false
       # Writing guidance only (text read into the prompt, never executed). A failed
       # checkout falls back to the bundled maintainer voice.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         continue-on-error: true
         with:
           repository: rhuss/cc-prose
@@ -140,7 +157,7 @@ jobs:
       - name: Mint scoped installation token
         if: inputs.app_id != ''
         id: app
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           app-id: ${{ inputs.app_id }}
           private-key: ${{ secrets.app_private_key }}

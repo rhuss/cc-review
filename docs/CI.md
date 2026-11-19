@@ -13,9 +13,12 @@ commit containing the new CI files. The prepare/finalize helper is `ci/action.ym
 
 ## Events and commands
 
-Default events are PR opened/synchronized, issue opened, new item comments, a
-six-hour sweep and manual dispatch. Follow-up PR pushes select bot triage and
-review. `triggers` decides when automatic runs can start; `enabled: false` stops
+Default events are PR opened/synchronized, a submitted bot review, issue
+opened, new item comments, a six-hour sweep and manual dispatch. Follow-up PR
+pushes select bot triage and review. When a bot reviewer (CodeRabbit, Greptile
+and similar) submits a review on a same-repository PR, triage starts right away
+instead of waiting for the next push or sweep (`triggers.bot_reviews`).
+Automatic triage without open bot threads ends without a model run. `triggers` decides when automatic runs can start; `enabled: false` stops
 everything. A manual dispatch with no number runs a bounded sweep; a number plus
 operation targets one item. Fix is comment-only.
 
@@ -34,6 +37,9 @@ operation targets one item. Fix is comment-only.
 `on-demand` suits issue assessments when automatic replies might put off new
 reporters, and any operation whose token cost should be spent deliberately:
 only users allowed by `command_permissions` (writers by default) can request it.
+When `review` is `on-demand`, opening a PR adds a status row saying a review
+is available with `/cc-review review`. This shows the integration is active
+without spending a model run. `off` posts nothing.
 `fix` and `help` are always on-demand. The default is `auto` for review, triage
 and assess. Older configurations with boolean `commands` still load: `true`
 keeps the default mode and `false` means `off`.
@@ -42,22 +48,39 @@ Supported whole-comment commands:
 
 | Command | Target | Effect |
 |---|---|---|
-| `/cc-review review` | PR | COMMENT review at the observed head |
+| `/cc-review review` | PR | Review summary in the sticky status, anchored by a COMMENT review at the observed head |
 | `/cc-review triage` | PR | Reply to bot threads and resolve verified addressed concerns |
 | `/cc-review assess` | Issue | Assessment reply and mapped triage labels |
-| `/cc-review fix` | Same-repository PR | Propose file changes and push a child commit after policy checks |
+| `/cc-review fix` | Same-repository PR | Propose file changes and push a child commit after policy checks. Replied inside a review thread, it fixes only that thread's concern |
 | `/cc-review help` | Either | Show command help in the sticky status |
 
 Current repository write, maintain or admin permission is required by default.
 `command_permissions` may additionally allow read or triage permission for other
 commands; fix always requires a writer. The runtime rechecks permission and the
-original comment before publication. Commands are acknowledged with an eyes
-reaction. Shell suffixes, quoted examples and multi-command comments do not run.
+original comment before publication. Shell suffixes, quoted examples and
+multi-command comments do not run.
+
+Commands work as top-level PR comments and as replies inside a review thread.
+A thread reply needs the `pull_request_review_comment` trigger in the caller;
+`cc-review:ci update` adds it to older callers. Thread replies on fork PRs are
+ignored, because GitHub gives those runs no secrets. Only `fix` is scoped to
+its thread; the other commands act on the whole PR wherever they are posted.
+
+The bot reacts on the command comment:
+
+| Reaction | Meaning |
+|---|---|
+| 👀 | Command picked up |
+| 🚀 | Completed |
+| 👍 | Already current or skipped; nothing to do |
+| 😕 | Needs attention; the status comment has the reason |
 
 ## Unattended policy
 
 Reviews use COMMENT, never approval or request changes. Pending or failed checks
-withhold review/fix publication. Triage touches bot reviewer threads only; human
+withhold review/fix publication. A reply or resolve that GitHub refuses on one
+thread does not stop the others; the status names the failed threads, and the
+run log has GitHub's message. Triage touches bot reviewer threads only; human
 threads appear under needs attention. Assessment never closes or assigns issues.
 Fixes require a writer's explicit comment, an unchanged same-repository head and
 successful existing checks. Changes are committed through the GitHub data API,
@@ -67,6 +90,15 @@ content. Code tests are **not** executed by this entry point: reviewers must not
 claim otherwise. A pushed fix runs the repository's ordinary CI; inspect those
 checks before merging and request another fix or apply a manual change if they
 fail. There is no automatic rollback or repeated fix loop.
+
+A thread fix sees only its thread and that thread's file. After pushing, the bot
+replies in each fixed thread ("Fix pushed as ...") with a hidden marker and
+leaves it open: triage runs on the new head and resolves bot threads it can
+verify, while human threads stay with the maintainer. A PR-wide `/cc-review fix`
+skips resolved threads and threads that carry such a marker, works on the files
+those remaining threads point to (all changed files when there are none), and
+marks the threads its change addresses. File contents are bounded by
+`limits.fix_bytes` (default 200000), separately from `limits.diff_bytes`.
 
 Single-item core commands also accept `--unattended`: `review --pr 7
 --unattended`, `triage --pr 7 --unattended`, and `issue 42 --unattended`. Review
@@ -156,6 +188,15 @@ posted", "2 bot threads answered, 1 resolved", "Fix pushed as ..."); rows that
 need attention show the reason and remedy. The model's reasoning goes to the
 run's step summary only. A hidden marker in the same comment records
 per-operation state.
+
+The comment is posted as soon as an operation starts (a "Running" row) and is
+edited in place afterwards. A completed review replaces the placeholder: the
+review text sits at the top of the same comment, stamped with the reviewed
+commit, and the status table moves into a collapsed "Status" section. Later
+updates keep that text until the next review completes, with a "Running" line
+above it while an operation is in progress. The COMMENT review on the PR only
+links to this comment, so the Reviews tab still records which commit was
+reviewed.
 Only markers authored by the configured identity are trusted. Completion is
 keyed to the review head, triage head/thread activity, or issue body/conversation.
 Self-authored status/result updates do not invalidate their own evidence.
@@ -164,6 +205,34 @@ All entry points use the same per-item concurrency group. Active/current complet
 operations are skipped by sweeps; abandoned running markers expire after the
 configured timeout plus five minutes. GitHub Actions may coalesce pending jobs
 in a concurrency group; later sweeps recover unfinished operations.
+
+## Public repositories: allow `pull_request_target`
+
+PR events reach the workflow through `pull_request_target`, which runs the
+default-branch workflow with access to secrets. From 2026-12-02 GitHub blocks
+this trigger on public repositories unless an Actions event policy allows it.
+Until then, runs show a "Workflow execution policy warning (evaluate mode)"
+annotation. Private and internal repositories are not affected.
+
+To keep automatic PR reviews working, a repository admin (or organization owner)
+creates a policy under **Settings > Actions > Policies > New actions policy**.
+The workflow file itself does not change.
+
+- **Enforcement status:** Active.
+- **Target workflows:** Add target > path `cc-review.yml`, so other workflows
+  keep the default block.
+- **Restrict events:** checked. Allowed events is an allowlist for the targeted
+  workflow, so add every trigger in the caller's `on:` block, not only
+  `pull_request_target`. For the default caller that is `pull_request_target`,
+  `issues`, `issue_comment`, `pull_request_review`,
+  `pull_request_review_comment`, `schedule` and `workflow_dispatch`. A trigger
+  you leave out stops firing for cc-review.
+- **Restrict actors** and **Require lockfile:** unchecked.
+
+After saving, trigger a run (push to a PR or `gh workflow run cc-review.yml`).
+If the "Workflow execution policy" annotation is gone, the policy matches.
+
+See GitHub's [Securely using pull_request_target](https://docs.github.com/en/actions/reference/security/securely-using-pull_request_target).
 
 ## Identity
 
@@ -178,8 +247,9 @@ Setup generates a manifest with scoped permissions. GitHub's browser registratio
 and installation approvals remain user steps. The one-time manifest code is
 exchanged privately; only the App ID (repository variable CC_REVIEW_APP_ID) and
 private key (CC_REVIEW_APP_PRIVATE_KEY secret) are retained. Set bot_login to the
-App slug plus `[bot]`. The worker requests a repository-scoped installation token,
-with contents read except during an authorized fix. Doctor can verify installation
+App slug plus `[bot]`. The selection and worker jobs request repository-scoped
+installation tokens, with contents read except during an authorized fix, so
+reactions, status and replies all come from the App. Doctor can verify installation
 access with a freshly minted token in CC_REVIEW_APP_TOKEN; request the workflow's
 permissions during minting to verify the App grant. Never put keys/tokens in chat,
 source or command arguments.
