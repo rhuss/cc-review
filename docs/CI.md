@@ -13,9 +13,12 @@ commit containing the new CI files. The prepare/finalize helper is `ci/action.ym
 
 ## Events and commands
 
-Default events are PR opened/synchronized, issue opened, new item comments, a
-six-hour sweep and manual dispatch. Follow-up PR pushes select bot triage and
-review. `triggers` decides when automatic runs can start; `enabled: false` stops
+Default events are PR opened/synchronized, a submitted bot review, issue
+opened, new item comments, a six-hour sweep and manual dispatch. Follow-up PR
+pushes select bot triage and review. When a bot reviewer (CodeRabbit, Greptile
+and similar) submits a review on a same-repository PR, triage starts right away
+instead of waiting for the next push or sweep (`triggers.bot_reviews`).
+Automatic triage without open bot threads ends without a model run. `triggers` decides when automatic runs can start; `enabled: false` stops
 everything. A manual dispatch with no number runs a bounded sweep; a number plus
 operation targets one item. Fix is comment-only.
 
@@ -75,7 +78,9 @@ The bot reacts on the command comment:
 ## Unattended policy
 
 Reviews use COMMENT, never approval or request changes. Pending or failed checks
-withhold review/fix publication. Triage touches bot reviewer threads only; human
+withhold review/fix publication. A reply or resolve that GitHub refuses on one
+thread does not stop the others; the status names the failed threads, and the
+run log has GitHub's message. Triage touches bot reviewer threads only; human
 threads appear under needs attention. Assessment never closes or assigns issues.
 Fixes require a writer's explicit comment, an unchanged same-repository head and
 successful existing checks. Changes are committed through the GitHub data API,

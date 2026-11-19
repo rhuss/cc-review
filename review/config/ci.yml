@@ -10,6 +10,7 @@
   "triggers": {
     "pr_opened": true,
     "pr_synchronize": true,
+    "bot_reviews": true,
     "issue_opened": true,
     "comments": true,
     "sweep": true,

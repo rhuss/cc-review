@@ -22,7 +22,7 @@ CORE = Path(__file__).resolve().parents[1]
 DEFAULTS = {
     'schema_version': 1, 'enabled': True, 'model': 'sonnet', 'provider': 'anthropic', 'prose': True,
     'identity': {'bot_login': 'github-actions[bot]'},
-    'triggers': dict.fromkeys(('pr_opened', 'pr_synchronize', 'issue_opened', 'comments', 'sweep', 'dispatch'), True),
+    'triggers': dict.fromkeys(('pr_opened', 'pr_synchronize', 'bot_reviews', 'issue_opened', 'comments', 'sweep', 'dispatch'), True),
     'operations': {'review': 'auto', 'triage': 'auto', 'assess': 'auto', 'fix': 'on-demand', 'help': 'on-demand'},
     'command_permissions': ['write', 'maintain', 'admin'],
     'labels': {'pursue': 'cc-review:pursue', 'needs_evidence': 'cc-review:needs-evidence',
@@ -42,7 +42,9 @@ SUMMARY_START = '<!-- cc-review:summary:v1 -->'
 SUMMARY_END = '<!-- /cc-review:summary:v1 -->'
 REVIEW_HINT = 'Available on demand: comment `/cc-review review` to start a review.'
 FIXED_PREFIX = '<!-- cc-review:fixed:v1 '
-REVIEW_COMMENT_TRIGGER = '  pull_request_review_comment:\n    types: [created]\n'
+# Caller triggers added after v1.8; `update` inserts missing ones after issue_comment.
+CALLER_TRIGGERS = (('pull_request_review_comment', '  pull_request_review_comment:\n    types: [created]\n'),
+                   ('pull_request_review', '  pull_request_review:\n    types: [submitted]\n'))
 COMMAND = re.compile(r'/cc-review (review|triage|assess|fix|help)')
 # Reaction on the command comment once a run ends.
 OUTCOME_REACTIONS = {'completed': 'rocket', 'skipped': '+1', 'needs_attention': 'confused'}
@@ -157,6 +159,13 @@ def route(event_name, event, config, permission='none'):
             return [req(item['number'], 'review', state='needs_attention',
                         reason='Fork automatic review withheld. A writer can request `/cc-review review`.')] if 'review' in ops else []
         return [req(item['number'], op) for op in ops]
+    if event_name == 'pull_request_review' and action == 'submitted' and config['triggers']['bot_reviews']:
+        # A bot reviewer finished posting; answer its threads without waiting for the next push or sweep.
+        reviewer = (event.get('review') or {}).get('user') or {}
+        item = event['pull_request']
+        if reviewer.get('type') != 'Bot' and not str(reviewer.get('login', '')).endswith('[bot]'): return []
+        if head_repository(item) != repo or not automatic(config, 'triage'): return []
+        return [req(item['number'], 'triage')]
     if event_name == 'issues' and action == 'opened' and config['triggers']['issue_opened']:
         return [req(event['issue']['number'], 'assess')] if automatic(config, 'assess') else []
     if event_name in ('issue_comment', 'pull_request_review_comment') and action == 'created' and config['triggers']['comments']:
@@ -393,7 +402,10 @@ class GitHub:
                                   capture_output=True, text=True, timeout=90,
                                   env={**os.environ, **({'GH_TOKEN': self.token} if self.token else {})})
         except (OSError, subprocess.TimeoutExpired): raise CIError('GitHub API unavailable; check authentication/network and retry.')
-        if proc.returncode: raise CIError('GitHub API request failed for ' + path.split('?')[0] + '; check token permissions, rate limits and retry.')
+        if proc.returncode:
+            # GitHub's own message (e.g. a missing permission) goes to the run log, never into posted text.
+            print(f'gh api {method} {path.split("?")[0]}: {(proc.stderr or proc.stdout).strip()[:500]}', file=sys.stderr)
+            raise CIError('GitHub API request failed for ' + path.split('?')[0] + '; check token permissions, rate limits and retry.')
         try:
             value = json.loads(proc.stdout) if proc.stdout.strip() else {}
         except ValueError: raise CIError('Invalid GitHub response; retry after checking service status.')
@@ -474,6 +486,7 @@ class Coordinator:
         self.api, self.repo, self.config = api, repo, config
         self.run_id, self.run_url = str(run_id), run_url
         self.bot = config['identity']['bot_login']
+        self.warnings = []  # partial publication failures, reported as needs attention
 
     def status(self, snapshot, request, state, reason='', outcome='', summary=None):
         cid, entries = read_status(snapshot['comments'], self.bot)
@@ -566,6 +579,9 @@ class Coordinator:
             _, entries = read_status(snapshot['comments'], self.bot)
             if not eligible(entries.get(request['operation']), request, time.time(), self.config['limits']['timeout_minutes'] * 60):
                 return None
+            if (request['operation'] == 'triage' and request['source'] in AUTOMATIC_SOURCES
+                    and not any(bot_thread(t) and not t.get('isResolved') for t in snapshot['threads'])):
+                return None  # nothing for an automatic triage to answer; spend no model run
             if not snapshot['complete']: raise CIError('Evidence or diff exceeds limits; inspect manually or raise limits.diff_bytes.')
             if request['operation'] == 'fix': self.fix_evidence(snapshot, request)
             self.status(snapshot, request, 'running', 'Processing unattended.')
@@ -601,11 +617,16 @@ class Coordinator:
                     # Save the text before the PR review links to it, so a later failure cannot lose it.
                     self.status(latest, request, 'running', 'Publishing review.', summary=review_summary)
                 outcome = self.publish(request, latest, proposal)
+                if self.warnings:
+                    reason = (outcome + '; ' + '; '.join(self.warnings[:10]) +
+                              '. GitHub refused these calls; the run log has its message. Act on them manually or retry.')
+                    state = 'needs_attention'
                 if request['operation'] == 'triage':
                     humans = [t for t in latest['threads'] if not bot_thread(t) and not t.get('isResolved')]
                     if humans:
                         detail = '; '.join(str(t['id']) + ' ' + str(t.get('path', '')) + ':' + str(t.get('line', '')) for t in humans[:20])
-                        reason = ('Human threads left untouched (' + str(len(humans)) + '): ' + detail)[:1850] + '. Review these threads manually.'
+                        prior = reason + ' ' if state == 'needs_attention' else ''
+                        reason = (prior + 'Human threads left untouched (' + str(len(humans)) + '): ' + detail)[:1850] + '. Review these threads manually.'
                         state = 'needs_attention'
             entry = self.status(latest, request, state, reason, outcome=outcome if state == 'completed' else '', summary=review_summary)
             return dict(entry, reason=reason)
@@ -638,17 +659,27 @@ class Coordinator:
             return 'Assessment posted' + (', labeled ' + ', '.join(f'`{label}`' for label in labels) if labels else '')
         elif op == 'triage':
             threads = {t['id']: t for t in snapshot['threads']}
+            answered = resolved = 0
             for reply in proposal.get('replies', []):
                 tid = reply['thread_id']; thread_marker = marker + '<!-- ' + digest(tid) + ' -->'
-                posted = any(thread_marker in c.get('body', '') and same_login((c.get('author') or {}).get('login'), self.bot)
-                             for c in threads[tid]['comments']['nodes'])
-                if not posted:
-                    self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}',
-                        'variables': {'id': tid, 'body': reply['body'] + '\n\n' + thread_marker}})
+                where = f"{threads[tid].get('path') or 'thread'}:{threads[tid].get('line') or ''}".rstrip(':')
+                # One failing thread must not cost the others their replies.
+                try:
+                    posted = any(thread_marker in c.get('body', '') and same_login((c.get('author') or {}).get('login'), self.bot)
+                                 for c in threads[tid]['comments']['nodes'])
+                    if not posted:
+                        self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}',
+                            'variables': {'id': tid, 'body': reply['body'] + '\n\n' + thread_marker}})
+                    answered += 1
+                except CIError:
+                    self.warnings.append(f'reply failed on {where}'); continue
                 if reply['resolve'] and not threads[tid].get('isResolved'):
-                    self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}', 'variables': {'id': tid}})
-            replies = proposal.get('replies', [])
-            return f"{len(replies)} bot thread{'' if len(replies) == 1 else 's'} answered, {sum(1 for r in replies if r['resolve'])} resolved"
+                    try:
+                        self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{id}}}', 'variables': {'id': tid}})
+                        resolved += 1
+                    except CIError: self.warnings.append(f'resolve failed on {where}')
+                elif reply['resolve']: resolved += 1
+            return f"{answered} bot thread{'' if answered == 1 else 's'} answered, {resolved} resolved"
         elif op == 'fix':
             sha = self.push_fix(request, snapshot, proposal)
             failed = 0
@@ -890,9 +921,10 @@ def install(root, ref, update=False):
         text, uses_count = re.subn(r'(\.github/workflows/)cc-review(?:-reusable)?\.yml@[a-f0-9]{40}', lambda m: m[1] + REUSABLE + '@' + ref, text)
         text, ref_count = re.subn(r'(integration_ref: )[a-f0-9]{40}', lambda m: m[1] + ref, text)
         if uses_count != 1 or ref_count != 1: raise CIError('Managed caller has unsupported pins; migrate it manually before update.')
-        if 'pull_request_review_comment:' not in text:
-            # Commands replied inside review threads arrive as this event (added in v1.9).
-            text = re.sub(r'(?m)^(  issue_comment:\n    types: \[created\]\n)', r'\1' + REVIEW_COMMENT_TRIGGER, text, count=1)
+        for name, block in reversed(CALLER_TRIGGERS):
+            # Thread commands and bot reviews arrive as these events (added in v1.9).
+            if f'  {name}:\n' not in text:
+                text = re.sub(r'(?m)^(  issue_comment:\n    types: \[created\]\n)', lambda m: m[1] + block, text, count=1)
     else:
         text = (CORE / 'templates/ci-workflow.yml').read_text().replace('__CC_REVIEW_REF__', ref)
     workflow.write_text(text)

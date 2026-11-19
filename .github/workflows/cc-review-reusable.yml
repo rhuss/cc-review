@@ -100,8 +100,10 @@ jobs:
           path: _target
           persist-credentials: false
       # Reactions on command comments come from the same App identity as all other output.
+      # Fork review events carry no secrets; selection then falls back to github.token and ignores them.
       - name: Mint selection token
         if: inputs.app_id != ''
+        continue-on-error: true
         id: app
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:

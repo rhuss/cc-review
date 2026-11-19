@@ -50,6 +50,14 @@ def thread_comment(command, fork=False, cid=500):
             'comment': {'id': cid, 'body': command, 'user': {'login': 'alice'}, 'in_reply_to_id': 400}}
 
 
+def bot_review(login='coderabbitai[bot]', kind='Bot', fork=False):
+    return {'action': 'submitted', 'sender': {'login': login},
+            'repository': {'full_name': 'acme/widget'},
+            'review': {'id': 3, 'user': {'login': login, 'type': kind}},
+            'pull_request': {'number': 7, 'head': {'sha': 'a'*40,
+                'repo': {'full_name': 'other/widget' if fork else 'acme/widget'}}}}
+
+
 def review_threads():
     return [{'id': 'T1', 'isResolved': False, 'path': 'src/app.py', 'line': 3, 'comments': {'nodes': [
                 {'databaseId': 400, 'author': {'login': 'greptile-apps', '__typename': 'Bot'}, 'body': 'P1: summary lost'},
@@ -118,6 +126,16 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual([], self.ci.route('pull_request_review_comment', thread_comment('/cc-review fix', fork=True), self.config, 'write'))
         self.assertEqual([], self.ci.route('pull_request_review_comment', thread_comment('please /cc-review fix'), self.config, 'write'))
         self.assertEqual('issue', self.ci.route('issue_comment', comment('/cc-review fix'), self.config, 'write')[0]['comment_kind'])
+
+    def test_bot_review_submission_starts_triage(self):
+        self.assertEqual([('triage', 'event')], [(r['operation'], r['source']) for r in self.ci.route('pull_request_review', bot_review(), self.config)])
+        self.assertEqual([], self.ci.route('pull_request_review', bot_review('alice', 'User'), self.config))
+        self.assertEqual([], self.ci.route('pull_request_review', bot_review(fork=True), self.config))
+        self.assertEqual([], self.ci.route('pull_request_review', bot_review('github-actions[bot]'), self.config))  # our own reviews
+        self.config['operations']['triage'] = 'on-demand'
+        self.assertEqual([], self.ci.route('pull_request_review', bot_review(), self.config))
+        self.config['operations']['triage'] = 'auto'; self.config['triggers']['bot_reviews'] = False
+        self.assertEqual([], self.ci.route('pull_request_review', bot_review(), self.config))
 
     def test_thread_command_acknowledged_on_review_comment(self):
         calls = []
@@ -529,6 +547,30 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(summary, self.ci.read_summary(body))
         self.assertIn('**Running:** triage', body)
 
+    def test_automatic_triage_skips_without_open_bot_threads(self):
+        self.assertIsNone(self.worker.prepare(self.request('triage')))
+        self.assertEqual([], self.api.evidence['comments'])  # no status row, no model run
+        self.api.evidence['threads'] = review_threads()
+        self.assertNotIn('terminal', self.worker.prepare(self.request('triage')))
+
+    def test_triage_thread_failures_do_not_stop_other_threads(self):
+        self.api.evidence['threads'] = review_threads()[:2]
+        context = self.worker.prepare(self.request('triage'))
+        old_call = self.api.call
+        def call(method, path, payload=None):
+            if path == 'graphql' and 'resolveReviewThread' in payload['query'] and payload['variables']['id'] == 'T1':
+                self.api.calls.append((method, path, payload)); raise self.ci.CIError('GitHub API request failed for graphql')
+            return old_call(method, path, payload)
+        self.api.call = call
+        replies = [{'thread_id': t, 'body': 'Addressed.', 'resolve': True, 'evidence': 'line 3'} for t in ('T1', 'T2')]
+        result = self.worker.finish(context, {'status': 'completed', 'reason': '', 'replies': replies})
+        posted = [p['variables']['id'] for m, u, p in self.api.calls if u == 'graphql' and 'addPullRequestReviewThreadReply' in p['query']]
+        resolves = [p['variables']['id'] for m, u, p in self.api.calls if u == 'graphql' and 'resolveReviewThread' in p['query']]
+        self.assertEqual(['T1', 'T2'], posted); self.assertEqual(['T1', 'T2'], resolves)
+        self.assertEqual('needs_attention', result['state'])
+        self.assertIn('2 bot threads answered, 1 resolved', result['reason'])
+        self.assertIn('resolve failed on src/app.py:3', result['reason'])
+
     def test_review_summary_saved_before_pr_review_is_posted(self):
         context = self.worker.prepare(self.request())
         def broken(*args): raise self.ci.CIError('GitHub API request failed for reviews.')
@@ -804,12 +846,15 @@ class SetupTests(unittest.TestCase):
             self.assertIn('# custom caller option', caller.read_text())
             self.assertEqual('opus', self.ci.load_config(config)['model'])
             self.assertIn('b'*40, (root / '.github/workflows/cc-review.yml').read_text())
-            self.assertEqual(1, caller.read_text().count('pull_request_review_comment:'))
-            # Callers from before thread commands gain the trigger once on update.
-            caller.write_text(caller.read_text().replace('  pull_request_review_comment:\n    types: [created]\n', ''))
+            triggers = ('  issue_comment:\n    types: [created]\n  pull_request_review_comment:\n    types: [created]\n'
+                        '  pull_request_review:\n    types: [submitted]\n')
+            self.assertEqual(1, caller.read_text().count(triggers))
+            # Callers from before thread commands and bot reviews gain the triggers once on update.
+            caller.write_text(caller.read_text().replace('  pull_request_review_comment:\n    types: [created]\n', '')
+                              .replace('  pull_request_review:\n    types: [submitted]\n', ''))
             self.ci.install(root, 'b'*40, update=True)
             self.ci.install(root, 'b'*40, update=True)
-            self.assertEqual(1, caller.read_text().count('  issue_comment:\n    types: [created]\n  pull_request_review_comment:\n    types: [created]\n'))
+            self.assertEqual(1, caller.read_text().count(triggers))
             # A caller from before the rename moves to the new reusable workflow name on update.
             caller.write_text(caller.read_text().replace('cc-review-reusable.yml@', 'cc-review.yml@'))
             self.ci.install(root, 'c'*40, update=True)
