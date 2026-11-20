@@ -3,13 +3,15 @@
 <!-- Sources:
 cc-review:README.md:198-229
 cc-review:README.md:245-249
-cc-review:README.md:269-270
+cc-review:README.md:251-255
+cc-review:README.md:261-270
 cc-review:review/core/commands/triage.md:9-16
 cc-review:review/core/commands/triage.md:34-46
 cc-review:review/core/commands/triage.md:48-56
 cc-review:review/core/commands/triage.md:58-75
 cc-review:review/core/commands/triage.md:76-82
 cc-review:review/core/commands/triage.md:204-236
+cc-review:review/core/commands/triage.md:214-219
 cc-review:review/core/commands/triage.md:237-243
 cc-review:review/core/commands/triage.md:456-473
 cc-review:review/core/commands/triage.md:475-503
@@ -18,7 +20,7 @@ cc-review:review/core/commands/triage.md:519-552
 cc-review:review/core/commands/triage.md:906-935
 cc-review:review/core/commands/triage.md:936-970
 cc-review:review/core/commands/triage.md:971-989
-cc-review:review/core/commands/triage.md:1075-1120
+cc-review:review/core/commands/triage.md:1075-1134
 cc-review:review/core/commands/unattended.md:9-24
 cc-review:review/core/commands/unattended.md:26-34
 -->
@@ -35,7 +37,7 @@ Start here when a pull request has gathered review comments you want to work thr
    /cc-review:triage
    ```
 
-   With no arguments, triage uses the open pull request for your current branch. When your branch has no PR but you have exactly one open PR in the repository, triage uses that one and tells you which. When several are open, it shows the list and asks which one to triage.
+   With no arguments, triage uses the open pull request for your current branch. When your branch has no PR but you have exactly one open PR of yours, triage uses that one and tells you which. When you have several open PRs, it shows the list and asks which one to triage.
 
 2. To target a specific pull request by number, pass `--pr`:
 
@@ -43,7 +45,7 @@ Start here when a pull request has gathered review comments you want to work thr
    /cc-review:triage --pr 42
    ```
 
-   Triage includes draft PRs, so you can work through comments before the PR is marked ready for review.
+   Triage includes draft PRs.
 
 Check: triage recorded its state for the PR.
 
@@ -101,7 +103,7 @@ Coverage remediation runs when a Codecov check fails or when a file's patch cove
 
 ## Read the triage summary
 
-Every pass ends with a summary, even when every thread was already handled. In author triage it groups bot comments by author with accepted, rejected, deferred, skipped, and already handled counts, then counts the human decisions: approved, edited, skipped, and pending. When Codecov data is present, it adds a per-file coverage table and marks files below the patch threshold. Reviewer triage instead reports confirmed fixes, still-present findings, accepted explanations, deferred and unclear outcomes, and names every thread left open by its ID and path.
+Every pass ends with a summary, even when every thread was already handled. In author triage it groups bot comments by author with accepted, rejected, deferred, skipped, and already handled counts, then counts the human decisions: approved, edited, skipped, and pending. When Codecov data is present, it adds a per-file coverage table and appends a warning line naming how many files fall below the patch coverage threshold. Reviewer triage instead reports confirmed fixes, still-present findings, accepted explanations, deferred and unclear outcomes, and names every thread left open by its ID and path.
 
 ## Triage several PRs in one pass
 
@@ -121,7 +123,7 @@ Name the PRs yourself when you already know which ones to triage:
 /cc-review:triage --bulk --prs 41,42
 ```
 
-`--prs` takes a comma-separated list and cannot be combined with `--pr`, `--all-open`, or `--search`. It also needs `--bulk`; so do the other bulk selectors, `--search <query>` and `--limit <n>`. `--spec` is not supported with `--bulk`.
+`--prs` takes a comma-separated list and cannot be combined with `--pr`, `--all-open`, or `--search`. It also needs `--bulk` (or `--resume`); so do the other bulk selectors, `--search <query>` and `--limit <n>`. `--spec` is not supported with `--bulk`.
 
 ## Run a triage without questions
 
