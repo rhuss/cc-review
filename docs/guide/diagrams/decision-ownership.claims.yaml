@@ -25,7 +25,7 @@ claims:
     kind: label
     elements: [box_post_t]
     text: "On a PR you did not author, cc-review offers only to post the review."
-    sources: ["cc-review:review/core/commands/review.md:992", "cc-review:review/core/commands/review.md:1565-1611"]
+    sources: ["cc-review:review/core/commands/review.md:992", "cc-review:review/core/commands/review.md:1565-1616"]
 
   # --- arrows ---
   - id: a_panel_critics
@@ -47,7 +47,7 @@ claims:
     kind: connects
     elements: [a_dp, lbl_dp]
     text: "Any PR: cc-review posts the review as comments."
-    sources: ["cc-review:review/core/commands/review.md:992", "cc-review:review/core/commands/review.md:1565-1611"]
+    sources: ["cc-review:review/core/commands/review.md:992", "cc-review:review/core/commands/review.md:1565-1616"]
 
   # --- legend (no source) ---
   - id: legend
