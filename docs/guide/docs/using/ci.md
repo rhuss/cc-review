@@ -42,7 +42,7 @@ Two steps stay with you in the browser:
 
 ## Set up the automation
 
-Run setup once per repository. The command is interactive, while item execution in CI is always headless. It uses any preferences and authorization you already supplied.
+Run setup in the repository you want to automate. The command is interactive, while item execution in CI is always headless. It uses any preferences and authorization you already supplied.
 
 1. From a matching local checkout of the target repository, run:
 
@@ -64,23 +64,23 @@ Run setup once per repository. The command is interactive, while item execution 
 
 4. Choose the bot identity. With `GITHUB_TOKEN`, keep `identity.bot_login: github-actions[bot]`. With a GitHub App, complete the browser registration and installation, set the App ID as the `CC_REVIEW_APP_ID` repository variable, store the private key as the `CC_REVIEW_APP_PRIVATE_KEY` secret, and set `bot_login` to the App slug plus `[bot]`.
 
-5. Review the generated files, commit them, and push within the authorized setup scope. Then dispatch the smoke test:
+5. Review the generated files, commit them, and push them within the authorized setup scope. Dispatch the smoke test after the workflow is on the default branch, or add an explicit `--ref` for a test branch. Find the exact dispatched run and watch it by ID:
 
    ```bash
    gh workflow run cc-review.yml --repo owner/name
-   gh run watch --exit-status
+   gh run watch <run-id> --exit-status
    ```
 
    A successful empty sweep proves the wiring only. Dispatch an agreed item number with `help` to verify status publication, and use a disposable PR or issue for a paid model smoke test when authorized.
 
-Check: setup generated the configuration file in the repository.
+Check: setup generated the configuration file in your checkout.
 
 ```bash
 test -f .cc-review/ci.yml
 ```
 <!-- expect: exit 0 -->
 
-> [!WARNING]
+> [!CAUTION]
 > Never put keys or tokens in chat, source, commits, or command arguments. Supply secrets through stdin or a private local file.
 
 ## Events and operations
@@ -101,7 +101,7 @@ The default events are PR opened and synchronized, a submitted bot review, issue
 
 ## Command comments
 
-Maintainers request an operation with a whole-comment command. Commands work as top-level PR comments and as replies inside a review thread.
+Users allowed by `command_permissions` (writers by default) request an operation with a whole-comment command. Commands work as top-level PR comments and as replies inside a review thread.
 
 | Command | Target | Effect |
 |---|---|---|
