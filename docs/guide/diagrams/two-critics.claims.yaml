@@ -20,7 +20,7 @@ claims:
     kind: label
     elements: [box_verdict_t]
     text: "The two critics' results are merged into one outcome per finding; when the Skeptic confirms but the Calibrator downgrades, the more conservative verdict wins."
-    sources: ["cc-review:review/core/commands/review.md:870-877", "cc-review:review/core/commands/review.md:882-884"]
+    sources: ["cc-review:review/core/commands/review.md:890-899", "cc-review:review/core/commands/review.md:906"]
 
   # --- arrows (connects) ---
   - id: in-skeptic
@@ -37,12 +37,12 @@ claims:
     kind: connects
     elements: [a_sk_vr]
     text: "The Skeptic's verdicts drive the merged outcome: false positives are removed and the remaining findings keep their verdict."
-    sources: ["cc-review:review/core/commands/review.md:870-877"]
+    sources: ["cc-review:review/core/commands/review.md:890-899"]
   - id: calibrator-verdict
     kind: connects
     elements: [a_ca_vr]
     text: "The Calibrator's calibrated severities are applied to the surviving findings when forming the verdict."
-    sources: ["cc-review:review/core/commands/review.md:879-888"]
+    sources: ["cc-review:review/core/commands/review.md:901-910"]
 
   # --- legend (no source) ---
   - id: legend
