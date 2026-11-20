@@ -1,7 +1,7 @@
 # Trust and configuration
 
 <!-- Sources:
-cc-review:docs/reviewer-plugins.md:19-31
+cc-review:docs/extras/reviewer-plugins.md:19-31
 cc-review:review/core/scripts/discover-reviewers.sh:124-173
 cc-review:review/core/scripts/discover-reviewers.sh:175-203
 cc-review:review/core/scripts/discover-reviewers.sh:516-539
@@ -89,4 +89,4 @@ grep 'Enable or disable any discovered reviewer' review/config/config-template.y
 <!-- expect: contains "reviewers" -->
 
 > [!NOTE]
-> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
