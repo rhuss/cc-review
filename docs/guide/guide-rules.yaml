@@ -59,8 +59,10 @@ rules:
     require:
       - '/cc-review:triage'
       - '--pr'
+      - '--prs'
       - 'bot'
       - '(?m)^Check:'
+      - '(?i)preview|overview'
       - 'review\.md#fixes-and-pr-ownership'
     forbid:
       - '\u2014'
