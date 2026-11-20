@@ -5,6 +5,7 @@ cc-review:README.md:78-108
 cc-review:README.md:109-126
 cc-review:README.md:261-270
 cc-review:review/core/commands/inbox.md:18-42
+cc-review:review/core/commands/inbox.md:89-113
 cc-review:review/core/commands/inbox.md:119-172
 cc-review:review/core/commands/inbox.md:173-226
 cc-review:review/core/commands/issue.md:8-18
@@ -18,7 +19,7 @@ cc-review:docs/CI.md:132-174
 
 A repository collects pull requests, issues, and Discussions from many people, and not every one of them is yours to act on. Two commands help you decide where your attention goes before you start reviewing or writing code. `/cc-review:inbox` surveys one repository and groups the open items by who needs to act next. `/cc-review:issue` assesses a single issue, separates its concrete need, its fit with the project, and whether the work is justified, and drafts a reply.
 
-The inbox report and the guided tour are read-only, and interactive assessment never posts a comment. Acting on what you find is a separate, explicit step: you hand chosen items to other commands yourself, and explicit unattended assessment is the one form that publishes on its own.
+The inbox report and the guided tour are read-only, and interactive assessment never posts a comment. Acting on what you find is a separate, explicit step: you hand chosen items to other commands yourself, and explicit unattended assessment is the one form of assessment on this page that publishes on its own.
 
 Both commands need Python 3.9 or newer, `jq`, and an authenticated `gh` for the repository you work with.
 
@@ -102,7 +103,7 @@ Assessment works on GitHub.com issues only, the target must be an issue (pull re
 
    You can also pass a full issue URL, or add `--repo owner/name` to assess an issue in a repository you are not checked out in.
 
-2. Read the rendered comment. It has three layers: a friendly reply visible to everyone, a collapsed maintainer block, and the full assessment as hidden JSON for later agent runs. The title of the collapsed block carries the verdict, the kind, and the impact. Inside are a short summary, a small table for the use case, why it matters, and fit, the alternatives, the recommendation with its label, and a nested Evidence and limits block. The recommendation is one of **Pursue**, **Need more evidence**, **Clarify project direction**, or **Do not pursue**.
+2. Read the rendered comment. It has three layers: a friendly reply visible to everyone, a collapsed maintainer block, and the full assessment as hidden JSON for later agent runs. The renderer prints the reply first, then an `### Assessment` section that holds the collapsed block. The title of the collapsed block carries the verdict, the kind, and the impact. Inside are a short summary, a small table for the use case, why it matters, and fit, the alternatives, the recommendation with its label, and a nested Evidence and limits block. The recommendation is one of **Pursue**, **Need more evidence**, **Clarify project direction**, or **Do not pursue**.
 
 3. Read the private part. The rendered reply is your draft, and the command never posts it. For you, the result also covers the coverage of the assessment (collected history and text limits, warnings, uninspected evidence, unavailable project context or an uncertain local revision, and the scope that was assessed), material uncertainties, and any pending maintainer question.
 
