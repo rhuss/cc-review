@@ -81,6 +81,12 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/SUMMARY.md
+    require:
+      - 'using/ci\.md'
+    forbid:
+      - '\u2014'
+      - '\u2013'
   - glob: docs/using/index.md
     require:
       - '\]\(install\.md\)'
