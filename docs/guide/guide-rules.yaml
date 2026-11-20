@@ -124,6 +124,7 @@ rules:
       - '[Mm]eta-review'
       - '[Gg]ate'
       - '[Rr]eport'
+      - '(?i)draft'
     forbid:
       - '\u2014'
       - '\u2013'
