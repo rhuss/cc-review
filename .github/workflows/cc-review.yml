@@ -32,9 +32,9 @@ permissions:
   actions: read
 jobs:
   cc-review:
-    uses: rhuss/cc-review/.github/workflows/cc-review-reusable.yml@a19305ca44cec924462ebc6be1419a3b5135d0a5
+    uses: rhuss/cc-review/.github/workflows/cc-review-reusable.yml@2c380ea6e5fa149ab962ea82c86208cb03b74e99
     with:
-      integration_ref: a19305ca44cec924462ebc6be1419a3b5135d0a5
+      integration_ref: 2c380ea6e5fa149ab962ea82c86208cb03b74e99
       app_id: ${{ vars.CC_REVIEW_APP_ID }}
       anthropic_base_url: ${{ vars.CC_REVIEW_ANTHROPIC_BASE_URL }}
     secrets:
