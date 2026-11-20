@@ -21,14 +21,15 @@ source is flagged under open questions.
 
 | Slot | Content | Source |
 |---|---|---|
-| Problem | Running a single AI reviewer over a change tends to produce many low-signal comments, and running several review tools by hand is tedious; there is no one filtered verdict, with the obvious issues already fixed, before you push or open a PR, and none of it runs while you are away. | `cc-review:README.md:3` |
+| Problem | A single AI reviewer gives one opinion and is often noisy, and running several review tools by hand means reconciling their separate outputs yourself; nothing gives you one filtered verdict before you push, and none of it runs while you are away. | `cc-review:docs/extras/presentation/slides/04-panel-argues.md:24`, `cc-review:docs/extras/presentation/brainstorm.md:129`, `cc-review:README.md:3` |
 | Outcome | The reader can run a panel of focused review agents plus external tools over a change, have their findings merged and de-duplicated, filtered by a skeptic and a calibrator, and the Critical and Important issues fixed and re-reviewed, arriving at one report; or let the same reviews run unattended in GitHub Actions. | `cc-review:README.md:3` |
 | Components: cc-review | cc-review is a plugin that dispatches a set of specialized code-review agents against your changes, merges and de-duplicates their findings together with external tools, then runs an autonomous fix loop before you see the report; the same reviews can run unattended in GitHub Actions. | `cc-review:README.md:3` |
 | Components: Claude Code / Codex / OpenCode | The three AI coding agents ("harnesses") cc-review plugs into; each reads its own plugin manifest and ignores the others. | `cc-review:README.md:3,24-74,347-368` (own source not pinned, see open questions) |
+| Components: GitHub Actions | GitHub's CI and automation service that runs workflows inside a repository; cc-review runs its reviews, triage and issue assessment there, unattended or on request. | `url:https://docs.github.com/en/actions`, `cc-review:README.md:12` |
 | Components: CodeRabbit / GitHub Copilot / Codex CLI / Greptile | External code-review command-line tools cc-review can run as "command reviewers" and fold into the same report. | `cc-review:README.md:15,397-401` (own source not pinned) |
 | Fit | cc-review ships one harness-agnostic core with a thin manifest and shim per harness; the core holds no reviewer list and discovers reviewers from three layers (project, user, bundled), a higher layer replacing a lower one by name. | `cc-review:README.md:347-380`, `cc-review:review/core/scripts/discover-reviewers.sh:717-766` |
-| Why this combination | Running several focused reviewers and external tools locally, before you push, and filtering them down to one verdict gives higher signal than a single bot and catches problems across vendors; running the same policy in CI covers the changes you never review locally. | `cc-review:README.md:3,12` |
-| Status and limits | cc-review is at version v1.9.0; the CI automation runs on your own model account and needs its setup (`cc-review:ci setup`); the external CLIs are optional and Greptile spends credits each run; the meta-review skeptic currently rarely removes a finding outright. | baseline attr `cc-review-commit-short` / v1.9.0, `cc-review:README.md:12,261-270`, `cc-review:review/core/reviewers/greptile/reviewer.md:43-53`, `cc-review:review/core/agents/meta-skeptic.md:17-26` |
+| Why this combination | Running several focused reviewers and external tools from different vendors, filtered to one verdict, gives higher signal than a single bot because reviewers from different vendors miss different things; running the same policy in CI covers the changes you never review locally. | `cc-review:docs/extras/presentation/slides/04-panel-argues.md:24,30`, `cc-review:docs/extras/presentation/brainstorm.md:129,135`, `cc-review:README.md:3,12` |
+| Status and limits | cc-review is at version v1.9.0; the CI automation runs on your own model account and needs its setup (`cc-review:ci setup`); the external CLIs are optional and Greptile spends credits each run; the Skeptic removes a finding only when it can cite code that disproves it. | baseline attr `cc-review-commit-short` / v1.9.0, `cc-review:README.md:12,261-270`, `cc-review:review/core/reviewers/greptile/reviewer.md:43-53`, `cc-review:review/core/agents/meta-skeptic.md:17-26` |
 
 Component definitions pass the four tests of `overview-contract.md`: each says what the thing does
 for the reader, avoids self-reference, uses known words, and cites the product's own source. The
@@ -67,8 +68,10 @@ steps-then-`Check:` shape; the start page and section overviews follow `overview
 1. **`docs/README.md` (start page).** The Why card as prose: outcome first, then what cc-review is,
    then one-sentence definitions of the harnesses and the external tools, then how the parts fit
    (core plus per-harness manifests plus the three discovery layers) with the core-and-layers
-   diagram, why run them together, status and limits, and where to go next per persona plus the
-   baseline note. Sources as in the Why card.
+   diagram, why run them together, ways to run it (interactive runs and GitHub Actions, one or two
+   sentences each with a link), status and limits, and where to go next per persona plus the
+   baseline note. The section order follows `overview-contract.md` (Fit and Why together before
+   Ways). Sources as in the Why card.
 
 ### Using cc-review (technical, Developer)
 
