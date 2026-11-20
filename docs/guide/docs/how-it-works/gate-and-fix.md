@@ -1,6 +1,7 @@
 # Gate and fix
 
 <!-- Sources:
+cc-review:review/core/commands/review.md:815-936
 cc-review:review/core/commands/review.md:938-947
 cc-review:review/core/commands/review.md:992
 cc-review:review/core/commands/review.md:1020-1023
@@ -10,21 +11,23 @@ cc-review:review/core/commands/review.md:1070-1072
 cc-review:review/core/commands/review.md:1168
 cc-review:review/core/commands/review.md:1447-1460
 cc-review:review/core/commands/review.md:1565-1611
+cc-review:review/config/profiles/thorough.yml:17-20
+cc-review:review/config/profiles/quick.yml:18-20
 cc-review:README.md:142-144
 cc-review:README.md:404-408
 -->
 
 By the time the findings reach this stage, meta-review has filtered them into one list (see [Meta-review](meta-review.md)). cc-review now has to turn that list into a decision: is the change ready, or does something still need fixing first? Two mechanisms do that. The gate reads the list and returns a verdict, and the fix loop tries to clear the findings that fail the gate so the verdict can flip to a pass.
 
-What happens to those findings, and whether cc-review changes any code, depends on whose code is under review. On your own code it can apply the fixes. On a pull request you did not author it only offers to post the review, never edits the code, and shows you the draft as a preview you approve before anything reaches the PR.
+What happens to those findings, and whether cc-review changes any code, depends on whose code is under review. On your own code it can apply the fixes. On a pull request you did not author it only offers to post the review, never edits the code, and, in an interactive run, shows you the draft as a preview you approve before anything reaches the PR.
 
 [![cc-review decision after review: a panel of reviewers, then two critics, then you decide, the fix loop for your own code or posting the review for any pull request](../assets/diagrams/decision-ownership.svg)](../assets/diagrams/decision-ownership.svg)
 
 ## The gate
 
-The gate is a count, not a judgment. cc-review counts the findings whose severity is one that blocks a merge. Which severities those are comes from a configuration setting, `REQUEST_CHANGES_SEVERITIES`, which holds Critical and Important by default. If the count is zero, the review is a **gate pass**. If the count is above zero, the review is a **gate fail**, and it stays failed unless the fix loop clears those findings within its round limit.
+The gate is a count, not a judgment. cc-review counts the findings whose severity is one that fails the gate. Which severities those are comes from a configuration setting, `REQUEST_CHANGES_SEVERITIES`, which holds Critical and Important by default. If the count is zero, the review is a **gate pass**. If the count is above zero, the review is a **gate fail**, and it stays failed unless the fix loop clears those findings within its round limit.
 
-The gate counts only the severities in that set. Minor and Notable findings sit outside it, so neither one blocks a pass on its own. Notable findings are informational and excluded from the gate check outright. A change can therefore carry a long tail of small suggestions and still pass, as long as nothing Critical or Important remains.
+Under the default severities, Minor and Notable findings sit outside the set, so neither one blocks a pass on its own. The set is configurable, though: the `thorough` profile adds Minor to it, and the `quick` profile blocks only Critical. One rule holds regardless of the profile: Notable findings are informational and excluded from the gate check. A change can therefore carry a long tail of small suggestions and still pass, as long as nothing in the configured set remains.
 
 On a follow-up review the gate also accounts for concerns carried over from earlier rounds. A material concern that an earlier review raised and that is still open keeps the gate from a clean pass, even when the new changes add no findings of their own. An unanswered substantive question from a previous round stays visible as unfinished work rather than as something the new diff quietly settled.
 
@@ -34,7 +37,7 @@ When the gate fails and the run is set to fix, cc-review enters an autonomous fi
 
 Each round has the same shape. cc-review collects the findings it will act on, sorted by file. The Critical and Important findings are always in scope; when the run asked for all fixes rather than only the blocking ones, every Minor and Notable finding that carries a concrete suggested fix joins them. Inside each file, cc-review applies the fixes from the bottom of the file upward, sorting the findings by line number in descending order. Editing the lower lines first would shift the line numbers of the findings still waiting above them, so starting from the bottom keeps every remaining line reference accurate.
 
-Once the edits are staged, cc-review runs the project's test suite if it could detect one. A passing suite lets the round proceed. A failing test does not: cc-review turns each failure into a new Critical finding with the category `regression`. A fix that breaks the build cannot pass itself off as a clean result, because it returns as a fresh blocking finding in the same loop. Right after each round's test run, cc-review records the outcome as a run fact. The attribution statement in the posted review names only the test commands this run actually executed, each with its recorded outcome.
+Once the edits are staged, cc-review runs the project's test suite if it could detect one. A passing suite lets the round proceed. A failing test does not: cc-review turns each failure into a new Critical finding with the category `regression`. A fix that breaks the build cannot pass itself off as a clean result, because it returns as a fresh blocking finding in the same loop. Right after each round's test run, or when no test command was detected, cc-review records the outcome as a run fact. The attribution statement in the posted review names only the test commands this run actually executed, each with its recorded outcome.
 
 cc-review then re-reviews only the files the round changed. It re-dispatches the same reviewers that ran the first time, restricted to the modified files, and reuses the earlier decisions about which reviewers were enabled rather than running discovery again. The new findings are merged with the Minor findings still on the list, and the gate runs once more. If Critical and Important are both at zero, the loop passes and stops early.
 
