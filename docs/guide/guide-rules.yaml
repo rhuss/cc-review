@@ -48,6 +48,9 @@ rules:
       - '(?m)^Check:'
       - '(?m)^## Fixes and PR ownership'
       - 'push to'
+      - '(?i)preview'
+      - '--unattended'
+      - '--prs'
     forbid:
       - '\u2014'
       - '\u2013'
