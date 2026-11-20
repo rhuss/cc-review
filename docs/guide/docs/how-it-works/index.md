@@ -6,9 +6,10 @@ cc-review:README.md:11
 cc-review:README.md:14
 cc-review:README.md:347-408
 cc-review:review/core/commands/review.md:815-931
+cc-review:review/core/commands/review.md:992,1020-1023,1092-1103
 -->
 
-cc-review is a multi-agent code review plugin for Claude Code, Codex, and OpenCode. Each reviewer reads your changes in its own fresh context. Two critics then filter the merged findings, and a fix loop resolves the blocking ones and re-reviews until the gate is clear. What reaches you at the end is one report of fewer, higher-confidence issues, with the Critical and Important ones resolved before you see it, rather than the raw output of every reviewer and tool. The pages below take that run apart one layer at a time.
+cc-review is a multi-agent code review plugin for the AI coding agents Claude Code, Codex, and OpenCode. Each prompt reviewer reads your changes in its own fresh context. When the run has enough findings, two critics filter the merged findings, and a fix loop resolves the blocking ones and re-reviews, up to the round limit. What reaches you at the end is one report of fewer, higher-confidence issues, with the blocking findings resolved where the loop could fix them, rather than the raw output of every reviewer and tool. The pages below take that run apart one layer at a time.
 
 The pages, in reading order:
 
