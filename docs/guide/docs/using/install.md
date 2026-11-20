@@ -87,4 +87,4 @@ The spec-kit adapter then passes spec paths, constitution hints, and output loca
 If a harness lists each cc-review command twice, you most likely have more than one copy of the plugin installed. List the installed plugins (`claude plugin list` in Claude Code), uninstall every copy except the current one, then reinstall from your local clone.
 
 > [!NOTE]
-> These steps were verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> These steps were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.

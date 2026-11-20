@@ -110,4 +110,4 @@ When you review the same PR again, cc-review runs a follow-up: it reviews only t
 > This page covers the commands you run. For how the reviewers, the two critics, and the fix loop produce the report, read [How it works](../how-it-works/index.md). For the full flag list, see the [Reference](../reference/index.md).
 
 > [!NOTE]
-> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.

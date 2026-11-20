@@ -60,7 +60,7 @@ Several focused reviewers and external tools from more than one vendor all read 
 
 ## Status and limits
 
-cc-review is at version <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->. The external review tools are optional: cc-review runs each one only when its command-line tool is installed and enabled, and it ships with GitHub Copilot and Greptile turned off. Greptile also needs the repository connected to a Greptile organization, and it spends credits on every run (a base review costs one), which is why it stays off until you enable it. The Skeptic, one of the two meta-review critics, re-reads each finding against the code and rules it a false positive only when it can cite code that disproves it. When it cannot evaluate a finding, it keeps the finding, so it rarely drops one outright.
+cc-review is at version <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->. The external review tools are optional: cc-review runs each one only when its command-line tool is installed and enabled, and it ships with GitHub Copilot and Greptile turned off. Greptile also needs the repository connected to a Greptile organization, and it spends credits on every run (a base review costs one), which is why it stays off until you enable it. The Skeptic, one of the two meta-review critics, re-reads each finding against the code and rules it a false positive only when it can cite code that disproves it. When it cannot evaluate a finding, it keeps the finding, so it rarely drops one outright.
 
 ## Where to go next
 
@@ -70,4 +70,4 @@ cc-review is at version <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:at
 - For commands, configuration, and the finding schema, see the [Reference](reference/index.md).
 
 > [!NOTE]
-> This guide was verified against cc-review <!-- guide:attr cc-review-commit-short -->37efe88<!-- /guide:attr --> (version <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->), captured <!-- guide:attr baseline-date -->2026-11-05<!-- /guide:attr -->.
+> This guide was verified against cc-review <!-- guide:attr cc-review-commit-short -->2c380ea<!-- /guide:attr --> (version <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->), captured <!-- guide:attr baseline-date -->2026-11-20<!-- /guide:attr -->.

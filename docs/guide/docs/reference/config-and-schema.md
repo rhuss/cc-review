@@ -173,4 +173,4 @@ A reviewer plugin declares its metadata in frontmatter validated against `review
 `severity_map` is an object: each key is a native severity string, and each value is one of `Critical`, `Important`, `Minor`, or `Notable`. A native value not listed in the map passes through unchanged when it is already a cc-review severity; otherwise the finding is dropped with a warning.
 
 > [!NOTE]
-> These configuration keys and schema fields were verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> These configuration keys and schema fields were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.

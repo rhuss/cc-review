@@ -86,4 +86,4 @@ Neither command changes anything on GitHub or in your checkout.
 > This page covers the commands you run. For how the inbox weighs responsibility and how assessment judges need and fit, read [How it works](../how-it-works/index.md). For the full flag list, see the [Reference](../reference/index.md).
 
 > [!NOTE]
-> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
