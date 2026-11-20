@@ -73,6 +73,8 @@ rules:
       - '/cc-review:issue'
       - 'read-only'
       - '(?m)^Check:'
+      - '--prs'
+      - '(?i)assessment'
     forbid:
       - '\u2014'
       - '\u2013'
