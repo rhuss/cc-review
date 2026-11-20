@@ -16,5 +16,5 @@ The pages, in reading order:
 - [The review pipeline](pipeline.md) walks the stages a single run moves through, from discovering the reviewers to writing the final report.
 - [Reviewers](reviewers.md) describes the panel itself: the six built-in lanes, the external tools, the opt-in Gator reviewer, a principal-engineer persona, and the rules every reviewer follows.
 - [Meta-review](meta-review.md) covers the two critics, the Skeptic and the Calibrator, that judge the merged findings before anything is acted on.
-- [Gate and fix](gate-and-fix.md) explains the pass-or-fix gate and the autonomous loop that clears the blocking findings so the gate can pass.
+- [Gate and fix](gate-and-fix.md) explains the pass-or-fix gate and the autonomous loop that tries to clear the blocking findings so the gate can pass.
 - [Measured results](results.md) reports how cc-review has performed in practice, as dated measurements from recorded runs on public and local code.
