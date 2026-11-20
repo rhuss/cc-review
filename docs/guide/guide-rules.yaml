@@ -68,6 +68,17 @@ rules:
     forbid:
       - '\u2014'
       - '\u2013'
+  - glob: docs/using/ci.md
+    require:
+      - 'cc-review:ci setup'
+      - '\bstatus\b'
+      - '\bdoctor\b'
+      - '\bdisable\b'
+      - '--unattended'
+      - '(?m)^Check:'
+    forbid:
+      - '\u2014'
+      - '\u2013'
   - glob: docs/using/index.md
     require:
       - '\]\(install\.md\)'
