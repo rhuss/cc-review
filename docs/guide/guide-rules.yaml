@@ -12,8 +12,10 @@ rules:
       - '\]\(using/index\.md\)'
       - '\]\(extending/index\.md\)'
       - '\]\(how-it-works/index\.md\)'
+      - '\]\(using/ci\.md\)'
       - 'assets/diagrams/core-and-layers\.svg'
       - 'guide:attr cc-review-commit-short'
+      - 'GitHub Actions'
     forbid:
       - '\u2014'
       - '\u2013'
