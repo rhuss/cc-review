@@ -1,13 +1,14 @@
 # Install cc-review
 
 <!-- Sources:
-cc-review:README.md:23
-cc-review:README.md:29-38
-cc-review:README.md:44-50
-cc-review:README.md:56-61
-cc-review:README.md:65-71
-cc-review:README.md:102
-cc-review:README.md:121
+cc-review:README.md:26
+cc-review:README.md:32-41
+cc-review:README.md:47-53
+cc-review:README.md:59-64
+cc-review:README.md:68-74
+cc-review:README.md:105
+cc-review:README.md:124
+cc-review:README.md:261-270
 cc-review:review/core/scripts/discover-reviewers.sh:666-680
 cc-review:review/.claude-plugin/plugin.json:1-20
 -->
@@ -81,6 +82,10 @@ specify extension add /path/to/cc-review/speckit
 ```
 
 The spec-kit adapter then passes spec paths, constitution hints, and output locations during the ship pipeline.
+
+## Automate it in CI
+
+Installing the plugin does not run cc-review in GitHub Actions. `cc-review:ci setup` installs the automation in a target repository; follow [Automate cc-review in GitHub Actions](ci.md) to set it up.
 
 ## Duplicate command entries
 

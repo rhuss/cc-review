@@ -27,6 +27,7 @@ rules:
       - '\bgh\b'
       - 'Python'
       - 'install\.sh'
+      - '\]\(ci\.md\)'
       - '(?m)^Check:'
     require_order:
       - 'marketplace add'
