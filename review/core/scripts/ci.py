@@ -803,6 +803,10 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
 
 
 
+OPERATION_FIELDS = {'review': ('body',), 'triage': ('replies',), 'assess': ('body', 'assessment', 'labels'),
+                    'fix': ('files', 'fixed_threads'), 'help': ()}
+
+
 def proposal_schema(config, operation=None):
     """The fixed schema, with labels limited to the configured classification keys.
 
@@ -810,9 +814,14 @@ def proposal_schema(config, operation=None):
     models otherwise omit optional keys (GLM-5.3 dropped body in 2 of 3 live runs).
     """
     schema = copy.deepcopy(PROPOSAL_SCHEMA)
+    if operation in OPERATION_FIELDS:
+        # Offer only the fields this operation may publish; a fix once returned triage replies and was rejected.
+        keep = {'status', 'reason', *OPERATION_FIELDS[operation]}
+        schema['properties'] = {k: v for k, v in schema['properties'].items() if k in keep}
     if operation == 'assess': schema['required'] = schema['required'] + ['body', 'assessment']
-    schema['properties']['labels']['items']['enum'] = sorted(config['labels'])
-    schema['properties']['assessment']['properties']['recommendation']['enum'] = sorted(config['labels'])
+    if 'labels' in schema['properties']: schema['properties']['labels']['items']['enum'] = sorted(config['labels'])
+    if 'assessment' in schema['properties']:
+        schema['properties']['assessment']['properties']['recommendation']['enum'] = sorted(config['labels'])
     return schema
 
 
