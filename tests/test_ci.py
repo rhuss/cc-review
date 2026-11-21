@@ -688,6 +688,9 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual([{'labels': ['cc-review:pursue']}], self.label_posts())
 
     def test_assess_schema_requires_reply_and_assessment(self):
+        for op, fields in (('fix', {'files', 'fixed_threads'}), ('triage', {'replies'}), ('review', {'body'}),
+                           ('assess', {'body', 'assessment', 'labels'})):
+            self.assertEqual({'status', 'reason'} | fields, set(self.ci.proposal_schema(self.config, op)['properties']))
         assess = self.ci.proposal_schema(self.config, 'assess')
         self.assertTrue({'status', 'reason', 'body', 'assessment'} <= set(assess['required']))
         for op in ('review', 'triage', 'fix'):

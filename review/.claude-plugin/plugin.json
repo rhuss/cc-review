@@ -1,6 +1,6 @@
 {
   "name": "cc-review",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Multi-agent code review with autonomous fix loop for AI coding agents",
   "author": {
     "name": "Roland Huss",
