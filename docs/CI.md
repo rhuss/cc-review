@@ -89,11 +89,14 @@ Fix proposals are limited to existing regular, non-hidden files and bounded
 content. Code tests are **not** executed by this entry point: reviewers must not
 claim otherwise. A pushed fix runs the repository's ordinary CI; inspect those
 checks before merging and request another fix or apply a manual change if they
-fail. There is no automatic rollback or repeated fix loop.
+fail. There is no automatic rollback or repeated fix loop. When the current
+files already address the request (for example a repeated command on a fixed
+thread), the fix ends as skipped with a reason and a +1 reaction, and nothing is
+pushed.
 
 A thread fix sees only its thread and that thread's file. After pushing, the bot
-replies in each fixed thread ("Fix pushed as ...") with a hidden marker and
-leaves it open: triage runs on the new head and resolves bot threads it can
+replies in each fixed thread with a link to the new commit, a one or two
+sentence summary of the change and a hidden marker, and leaves the thread open: triage runs on the new head and resolves bot threads it can
 verify, while human threads stay with the maintainer. A PR-wide `/cc-review fix`
 skips resolved threads and threads that carry such a marker, works on the files
 those remaining threads point to (all changed files when there are none), and
@@ -184,7 +187,7 @@ triage and fixes are refused. Events authored by the configured bot are ignored.
 A single updated bot status comment (heading `### cc-review CI`) shows a table
 with one row per action: its result, when it was updated, and the run log.
 Completed rows show a fixed outcome ("Assessment posted, labeled ...", "Review
-posted", "2 bot threads answered, 1 resolved", "Fix pushed as ..."); rows that
+posted", "2 bot threads answered, 1 resolved", "Fix pushed as ..." with a link to the commit); rows that
 need attention show the reason and remedy. The model's reasoning goes to the
 run's step summary only. A hidden marker in the same comment records
 per-operation state.
