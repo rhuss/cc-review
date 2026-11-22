@@ -6,23 +6,30 @@ findings:
   locations:
   - ref: review/VERSION:1
     quote: 1.2.0
-  summary: review/VERSION is stale at 1.2.0 while the project ships 1.4.0
+  summary: review/VERSION is stale at 1.2.0 while the project ships 1.9.2
   evidence: review/VERSION:1 reads 1.2.0, but the top-level VERSION, review/.claude-plugin/plugin.json
-    version, and the release tag v1.4.0 all say 1.4.0 at commit 37efe88
-  status: collected
+    version, and the release tag v1.9.2 all say 1.9.2 at commit 104da1d; review/VERSION
+    was last changed in 3e722c3
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/40
 - id: UF-2
   source: cc-review
   kind: bug
   locations:
-  - ref: review/opencode/install.sh:19-20
+  - ref: review/opencode/install.sh:19-25
     quote: .opencode/plugins/cc-review
   summary: OpenCode installer copies commands to a path stock OpenCode does not scan,
     so the commands never register
-  evidence: install.sh:19-20 writes command markdown to .opencode/plugins/cc-review/command/,
-    but OpenCode (v2.1.4) discovers commands only from .opencode/command/ (project)
-    or ~/.config/opencode/commands/ (global) per opencode.ai/docs/commands; so /review
-    and the other commands do not register under stock OpenCode
-  status: collected
+  evidence: install.sh:19-25 copies command markdown to .opencode/plugins/cc-review/command/,
+    but OpenCode discovers project commands only from .opencode/commands/ (and the
+    legacy .opencode/command/) and global commands from ~/.config/opencode/commands/
+    per opencode.ai/docs/commands (checked 2026-11-22), which names no plugin directory
+    as a command source; so /review and the other commands do not register under stock
+    OpenCode
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/41
 - id: UF-3
   source: cc-review
   kind: bug
