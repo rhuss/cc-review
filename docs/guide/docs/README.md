@@ -87,7 +87,7 @@ In GitHub Actions, reviews, triage, and issue assessment run in your repository,
 
 ## Status and limits
 
-cc-review is at version <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->. The GitHub Actions automation runs on your own model account and is set up in a target repository with `cc-review:ci setup`.
+cc-review is at version <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->. The GitHub Actions automation runs on your own model account and is set up in a target repository with `cc-review:ci setup`.
 
 The external review tools are optional: cc-review runs each one only when its command-line tool is installed and enabled, and it ships with GitHub Copilot and Greptile turned off. Greptile also needs the repository connected to a Greptile organization, and it spends credits on every run (a base review costs one), which is why it stays off until you enable it. The Skeptic, one of the two meta-review critics, re-reads each finding against the code. The Skeptic removes a finding only when it can cite code that disproves it, and when it cannot evaluate a finding, it keeps it.
 
@@ -100,4 +100,4 @@ The external review tools are optional: cc-review runs each one only when its co
 - The cc-review repository keeps its own documentation index: its README points to a full guide at `docs/GUIDE.md` and to a map of its `docs/` directory at `docs/README.md`.
 
 > [!NOTE]
-> This guide was verified against cc-review <!-- guide:attr cc-review-commit-short -->2c380ea<!-- /guide:attr --> (version <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->), captured <!-- guide:attr baseline-date -->2026-11-20<!-- /guide:attr -->.
+> This guide was verified against cc-review <!-- guide:attr cc-review-commit-short -->8e882b6<!-- /guide:attr --> (version <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->), captured <!-- guide:attr baseline-date -->2026-11-22<!-- /guide:attr -->.

@@ -94,4 +94,4 @@ Installing the plugin does not run cc-review in GitHub Actions. `cc-review:ci se
 If a harness lists each cc-review command twice, more than one copy of the plugin may be installed. The repository's `install` target checks `claude plugin list`; when it finds `cc-review@cc-review-plugin-development`, it removes that copy with `claude plugin rm` and reinstalls the plugin. Running `make install` from your local clone applies the same sequence.
 
 > [!NOTE]
-> These steps were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> These steps were verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.

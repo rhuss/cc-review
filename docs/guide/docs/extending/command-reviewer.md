@@ -90,4 +90,4 @@ printf '%s' '{"comments":[{"path":"src/app.js","startLine":10,"endLine":12,"seve
 <!-- expect: contains "src/app.js" -->
 
 > [!NOTE]
-> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.

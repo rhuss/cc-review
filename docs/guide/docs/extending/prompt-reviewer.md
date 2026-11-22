@@ -79,4 +79,4 @@ ls .cc-review/reviewers/accessibility.md
 Project prompt reviewers run without any trust step. A reviewer that wraps an external command-line tool uses `kind: command` instead of `kind: prompt`.
 
 > [!NOTE]
-> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.
