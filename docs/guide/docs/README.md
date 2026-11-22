@@ -26,7 +26,7 @@ url:https://www.coderabbit.ai/cli
 url:https://docs.github.com/en/copilot/how-tos/copilot-cli
 url:https://developers.openai.com/codex/cli
 url:https://www.greptile.com/cli
-cc-review:docs/CI.md:200-201
+cc-review:docs/CI.md:203-204
 -->
 
 cc-review runs a panel of focused code-review agents, together with external review tools, over a set of changes. It merges their findings, removes the duplicates, filters what is left through two meta-review critics, fixes the Critical and Important issues and re-reviews them, and hands you one report. The same reviews can also run unattended in GitHub Actions.
