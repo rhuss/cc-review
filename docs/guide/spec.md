@@ -1,7 +1,6 @@
 # cc-review Guide: specification
 
-Status: draft for the author's approval (plan approval gate). Source id `cc-review`, pinned at
-`rhuss/cc-review@v1.9.0` (commit 2c380ea) since the 2026-11-19 evolve run. Format gfm, rigor
+Status: draft for the author's approval (plan approval gate). Source id `cc-review`, pinned at the commit recorded in `baseline.yaml` (v1.9.2, `8e882b6`, since the 2026-11-22 evolve run). Format gfm, rigor
 standard, cc-prose present. No internal part. Every factual sentence on a page must trace to a pinned-source location; this spec
 lists the source hints the plan will turn into page tasks.
 
@@ -29,7 +28,7 @@ source is flagged under open questions.
 | Components: CodeRabbit / GitHub Copilot / Codex CLI / Greptile | External code-review command-line tools cc-review can run as "command reviewers" and fold into the same report. | `cc-review:README.md:15,397-401` (own source not pinned) |
 | Fit | cc-review ships one harness-agnostic core with a thin manifest and shim per harness; the core holds no reviewer list and discovers reviewers from three layers (project, user, bundled), a higher layer replacing a lower one by name. | `cc-review:README.md:347-380`, `cc-review:review/core/scripts/discover-reviewers.sh:717-766` |
 | Why this combination | Running several focused reviewers and external tools from different vendors, filtered to one verdict, gives higher signal than a single bot because reviewers from different vendors miss different things; running the same policy in CI covers the changes you never review locally. | `cc-review:docs/extras/presentation/slides/04-panel-argues.md:24,30`, `cc-review:docs/extras/presentation/brainstorm.md:129,135`, `cc-review:README.md:3,12` |
-| Status and limits | cc-review is at version v1.9.0; the CI automation runs on your own model account and needs its setup (`cc-review:ci setup`); the external CLIs are optional and Greptile spends credits each run; the Skeptic removes a finding only when it can cite code that disproves it. | baseline attr `cc-review-commit-short` / v1.9.0, `cc-review:README.md:12,261-270`, `cc-review:review/core/reviewers/greptile/reviewer.md:43-53`, `cc-review:review/core/agents/meta-skeptic.md:17-26` |
+| Status and limits | cc-review is at the version pinned in `baseline.yaml`, which the start page shows through its generated version region; the CI automation runs on your own model account and needs its setup (`cc-review:ci setup`); the external CLIs are optional and Greptile spends credits each run; the Skeptic removes a finding only when it can cite code that disproves it. | baseline attrs `cc-review-version` / `cc-review-commit-short`, `cc-review:README.md:12,261-270`, `cc-review:review/core/reviewers/greptile/reviewer.md:43-53`, `cc-review:review/core/agents/meta-skeptic.md:17-26` |
 
 Component definitions pass the four tests of `overview-contract.md`: each says what the thing does
 for the reader, avoids self-reference, uses known words, and cites the product's own source. The
