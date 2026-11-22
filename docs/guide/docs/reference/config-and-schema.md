@@ -7,7 +7,7 @@ cc-review:review/config/profiles/quick.yml:1
 cc-review:review/config/profiles/thorough.yml:1
 cc-review:review/config/profiles/ci.yml:1,12
 cc-review:review/core/scripts/resolve-config.sh:43-76,132-165,190-222,237-253,256-332
-cc-review:review/core/commands/review.md:4,80-88,113-122,145-151,376-385,799-804,820-837,942-946,980,1012-1013,1023,1528,1772-1778
+cc-review:review/core/commands/review.md:4,80-88,113-122,145-151,376-385,799-804,820-837,942-946,980,809,1012-1013,1023,1032,1525-1528,1772-1778
 cc-review:review/core/commands/bulk.md:112
 cc-review:review/core/commands/triage.md:449,492,980-981
 cc-review:review/core/reviewers/correctness.md:2-4
@@ -22,7 +22,8 @@ cc-review:review/core/reviewers/codex.md:2-6
 cc-review:review/core/reviewers/greptile/reviewer.md:2-6
 cc-review:review/core/reviewers/gator/reviewer.md:2-6
 cc-review:review/core/schemas/finding.schema.json:40-50,95-122
-cc-review:review/core/schemas/reviewer.schema.json:29-33,40-48
+cc-review:review/core/agents/preamble.md:46-47
+cc-review:review/core/schemas/reviewer.schema.json:3-4,29-33,40-48
 -->
 
 This page lists the cc-review configuration keys, the order in which configuration layers resolve into one effective configuration, and the fields of a finding. For the command flags that can override these settings, see the [CLI reference](cli.md).
@@ -113,7 +114,7 @@ After the merge, cc-review checks the value types. An invalid `severity.auto_fix
 | `severity` | map | set | Confidence threshold, gate severities, and automatic fixing. |
 | `pr_posting` | map | set | How reviews and replies are posted to a pull request. |
 | `output` | map | set | Where the findings report is written and how much progress is shown. |
-| `test` | map | set | The test command and timeout the fix loop runs. |
+| `test` | map | set | The test command the fix loop runs, and `test.timeout_seconds`. |
 | `triage` | map | set | Bot handling and Codecov thresholds for triage. |
 | `meta_review` | map | set | Whether the meta-review runs and from how many findings. |
 | `interactive` | boolean | `true` | Whether cc-review asks before acting. |
@@ -216,7 +217,7 @@ cc-review merges several configuration layers into one effective configuration. 
 
 ## Finding schema
 
-Every reviewer reports findings in a common structure, validated against `finding.schema.json`. The gate and the meta-review act on a finding's `severity`, `confidence`, and `resolution`.
+Every reviewer reports findings in a common structure, validated against `finding.schema.json`. The gate counts findings by `severity`. Findings with a `confidence` below `severity.min_confidence` are dropped after each reviewer completes, before the merge.
 
 ### Severity
 
@@ -233,7 +234,7 @@ For how severity drives the pass or fix decision, see [Gate and fix](../how-it-w
 
 ### Confidence
 
-`confidence` is an integer from 0 to 100. The minimum to report a finding is 70, lowered to 50 for `Critical` findings.
+`confidence` is an integer from 0 to 100. The reviewer instructions ask for a confidence of at least 70, or at least 50 for `Critical` findings. After each reviewer completes, the review drops every finding below `severity.min_confidence` (70 in the template), with no exception for `Critical` findings.
 
 ### Resolution and round tracking
 
