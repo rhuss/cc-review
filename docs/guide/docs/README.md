@@ -27,7 +27,7 @@ url:https://docs.github.com/en/copilot/how-tos/copilot-cli
 url:https://developers.openai.com/codex/cli
 url:https://www.greptile.com/cli
 cc-review:docs/CI.md:203-204
-cc-review:docs/CI.md:80-81
+cc-review:docs/CI.md:80-83
 cc-review:docs/CI.md:294-295
 -->
 
@@ -51,7 +51,7 @@ A harness is an AI coding agent that runs in your terminal, editor, or desktop a
 
 ### GitHub Actions
 
-[GitHub Actions](https://docs.github.com/en/actions) is GitHub's CI and automation service that runs workflows inside a repository. cc-review runs its reviews, triage, and issue assessment there, unattended or on request with `/cc-review` comments.
+[GitHub Actions](https://docs.github.com/en/actions) is GitHub's CI and automation service that runs workflows inside a repository. cc-review runs its reviews, triage (answering bot review comments on a pull request), and issue assessment there, unattended or on request with `/cc-review` comments.
 
 ### The external review tools
 
@@ -85,7 +85,7 @@ Interactive runs keep you in control of what reaches a pull request. Nothing is 
 
 A bulk review previews one PR after another, and a bulk triage shows each PR's commit and every reply in full before anything is pushed or posted. To run a review yourself, see [Review your changes](using/review.md).
 
-In GitHub Actions, reviews, triage, and issue assessment run in your repository, either automatically or on request with `/cc-review` comments. `cc-review:ci setup` installs a pinned GitHub Actions caller with your model credentials and a bot identity. cc-review publishes no review or fix while the PR's checks are failing or still pending. A change to the item during a run means the run does not complete and has to be repeated against the current state. For a review that change is a new push, for triage a new push or a reply in a review thread, and for an assessment an edited issue or a new comment. To set this up, see [Automate cc-review in GitHub Actions](using/ci.md).
+In GitHub Actions, reviews, triage, and issue assessment run in your repository, either automatically or on request with `/cc-review` comments. There, cc-review publishes no review or fix while the PR's checks are failing or still pending. When the pull request or issue changes during a run in a way that affects that operation, such as a new push, the run does not complete and has to be repeated against the current state. To set this up, see [Automate cc-review in GitHub Actions](using/ci.md).
 
 ## Status and limits
 
