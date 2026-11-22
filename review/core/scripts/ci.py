@@ -315,7 +315,7 @@ def bot_thread(t):
 def validate_proposal(request, snapshot, proposal, config):
     if not isinstance(proposal, dict) or proposal.get('status') not in TERMINAL:
         raise CIError('Missing terminal model outcome (possibly attempted interaction); inspect the run and retry.')
-    allowed = {'status', 'reason', 'body', 'labels', 'replies', 'files', 'assessment', 'fixed_threads'}
+    allowed = {'status', 'reason', 'body', 'labels', 'replies', 'files', 'assessment', 'fixed_threads', 'summary'}
     if set(proposal) - allowed: raise CIError('Unexpected model fields or attempted interaction; inspect the run and retry.')
     if not isinstance(proposal.get('reason'), str) or len(proposal['reason']) > 2000: raise CIError('Outcome reason must be text of at most 2000 characters.')
     if proposal['status'] != 'completed':
@@ -331,8 +331,10 @@ def validate_proposal(request, snapshot, proposal, config):
         proposal['labels'] = [names.get(label, label) if isinstance(label, str) else label for label in proposal['labels']]
     if proposal.get('body') is not None and (not isinstance(proposal['body'], str) or len(proposal['body']) > 50000):
         raise CIError('Invalid or oversized result body.')
+    if proposal.get('summary') is not None and (not isinstance(proposal['summary'], str) or len(proposal['summary']) > 500):
+        raise CIError('Fix summary must be text of at most 500 characters.')
     for key, permitted in (('labels', op == 'assess'), ('assessment', op == 'assess'), ('replies', op == 'triage'),
-                           ('files', op == 'fix'), ('fixed_threads', op == 'fix')):
+                           ('files', op == 'fix'), ('fixed_threads', op == 'fix'), ('summary', op == 'fix')):
         if proposal.get(key) and not permitted: raise CIError('Mutation outside operation policy: ' + key)
     if op in {'review', 'fix'} and not checks_ok(snapshot):
         raise CIError('Checks failed or pending; wait for successful checks and retry.')
@@ -367,7 +369,11 @@ def validate_proposal(request, snapshot, proposal, config):
         if head_repository(item) != request['repository']:
             raise CIError('Fork fixes are prohibited; ask the author to apply the change.')
         seen = set(); total = 0
-        if not 1 <= len(proposal.get('files', [])) <= 20: raise CIError('Fix requires 1..20 file changes.')
+        if not proposal.get('files'):
+            # Nothing to change (for example a repeated command on a fixed thread) is not a failure.
+            reason = proposal['reason'].strip() or 'No change needed: the current files already address the request.'
+            return dict(proposal, status='skipped', reason=reason)
+        if len(proposal['files']) > 20: raise CIError('Fix requires 1..20 file changes.')
         for f in proposal['files']:
             if not isinstance(f, dict) or set(f) != {'path', 'content'}: raise CIError('Invalid fix file.')
             path = f['path']; content = f['content']
@@ -607,6 +613,8 @@ class Coordinator:
                 if request['operation'] == 'assess':
                     proposal['body'], proposal['assessment'], repaired = assessment.repair(proposal['body'], proposal['assessment'])
                 elif proposal.get('body'): proposal['body'], repaired = repair_dashes(proposal['body'])
+                if proposal.get('summary'):
+                    proposal['summary'], n = repair_dashes(proposal['summary']); repaired += n
                 for reply in proposal.get('replies', []):
                     reply['body'], n = repair_dashes(reply['body']); repaired += n
                 if repaired:
@@ -682,17 +690,20 @@ class Coordinator:
             return f"{answered} bot thread{'' if answered == 1 else 's'} answered, {resolved} resolved"
         elif op == 'fix':
             sha = self.push_fix(request, snapshot, proposal)
+            commit = f'[`{sha[:7]}`](https://github.com/{self.repo}/commit/{sha})'
+            summary = ' '.join((proposal.get('summary') or '').split()).replace('<!--', '&lt;!--').replace('-->', '--&gt;')
             failed = 0
             for tid in proposal.get('fixed_threads', []):
                 # The marker keeps later PR-wide fixes away from this thread; resolving stays with triage or a maintainer.
-                text = (f'Fix pushed as `{sha[:7]}`. Triage or a maintainer can resolve this thread once the change is verified.'
+                text = (f'Fix pushed as {commit}.' + (f' {summary}' if summary else '') +
+                        '\n\nTriage or a maintainer can resolve this thread once the change is verified.'
                         f'\n\n{FIXED_PREFIX}{digest(tid)} -->')
                 try:
                     self.api.call('POST', 'graphql', {'query': 'mutation($id:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$id,body:$body}){comment{id}}}',
                         'variables': {'id': tid, 'body': text}})
                 except CIError: failed += 1
             count = len(proposal.get('fixed_threads', []))
-            outcome = f"Fix pushed as `{sha[:7]}`"
+            outcome = f"Fix pushed as {commit}"
             if count: outcome += f", {count} thread{'' if count == 1 else 's'} marked fixed"
             if failed: outcome += f" ({failed} thread repl{'y' if failed == 1 else 'ies'} failed; reply manually)"
             return outcome
@@ -786,6 +797,7 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
         'files': {'type': 'array', 'items': {'type': 'object', 'additionalProperties': False,
             'required': ['path', 'content'], 'properties': {'path': {'type': 'string'}, 'content': {'type': 'string'}}}},
         'fixed_threads': {'type': 'array', 'items': {'type': 'string'}},
+        'summary': {'type': 'string', 'maxLength': 500},
         'assessment': {'type': 'object', 'additionalProperties': False, 'required': list(assessment.FIELDS), 'properties': {
             'kind': {'type': 'string', 'enum': list(assessment.KINDS)},
             'use_case': {'type': 'string', 'maxLength': assessment.LIMITS['use_case']},
@@ -804,7 +816,7 @@ PROPOSAL_SCHEMA = {'type': 'object', 'additionalProperties': False,
 
 
 OPERATION_FIELDS = {'review': ('body',), 'triage': ('replies',), 'assess': ('body', 'assessment', 'labels'),
-                    'fix': ('files', 'fixed_threads'), 'help': ()}
+                    'fix': ('files', 'fixed_threads', 'summary'), 'help': ()}
 
 
 def proposal_schema(config, operation=None):
@@ -819,6 +831,7 @@ def proposal_schema(config, operation=None):
         keep = {'status', 'reason', *OPERATION_FIELDS[operation]}
         schema['properties'] = {k: v for k, v in schema['properties'].items() if k in keep}
     if operation == 'assess': schema['required'] = schema['required'] + ['body', 'assessment']
+    if operation == 'fix': schema['required'] = schema['required'] + ['summary']
     if 'labels' in schema['properties']: schema['properties']['labels']['items']['enum'] = sorted(config['labels'])
     if 'assessment' in schema['properties']:
         schema['properties']['assessment']['properties']['recommendation']['enum'] = sorted(config['labels'])
@@ -885,6 +898,8 @@ def write_prompt(context, directory, prose_dir=None, code_dir=None):
         'For triage, reply only to exact bot reviewer threads; resolve only when supplied current code/diff proves the concern addressed. '
         'For assess, follow the issue assessment rules: write `body` for the reporter and the judgments in `assessment`; the recommendation is a key of config.labels (for example pursue), never the label name. '
         'For fix, propose complete contents of existing regular files only; no shell commands or new sensitive files. '
+        'If the current files already address the request, return status skipped with a short reason instead of files. '
+        'Also write `summary`: one or two plain sentences for the PR thread that say what the change does, for example which line or behavior changed. '
         + (f"This fix is scoped to review thread {context['request']['target_thread']}: fix only its concern and change nothing else; "
            'if it cannot be fixed safely, record needs_attention. ' if context['request'].get('target_thread') else
            ('List in fixed_threads the ids of the supplied review threads your change addresses. '
