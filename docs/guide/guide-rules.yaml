@@ -86,6 +86,7 @@ rules:
       - '\bdisable\b'
       - '--unattended'
       - '(?m)^Check:'
+      - 'link to the new commit'
     forbid:
       - '\u2014'
       - '\u2013'
