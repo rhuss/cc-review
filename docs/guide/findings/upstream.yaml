@@ -34,7 +34,9 @@ findings:
   evidence: agents/preamble.md:46-47 and finding.schema.json:49 allow Critical at
     >= 50; review.md:804 filters all findings below MIN_CONFIDENCE with no Critical
     exception, so a Critical at 60 never reaches the report (8e882b6)
-  status: collected
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/36
 - id: UF-4
   source: cc-review
   kind: bug
@@ -45,7 +47,9 @@ findings:
     loop applies no test timeout
   evidence: rg TEST_TIMEOUT in review/core finds only the assignment at review.md:380;
     the fix loop runs TEST_CMD at review.md:1032 without it (8e882b6)
-  status: collected
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/37
 - id: UF-5
   source: cc-review
   kind: stale-reference
@@ -56,7 +60,9 @@ findings:
   evidence: README.md:290-323 sets reviewers.<name> values and lists two bot profiles,
     while review/config/config-template.yml at 8e882b6 sets no reviewer keys, lists
     four bot profiles, and has severity, meta_review and interactive keys
-  status: collected
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/38
 - id: UF-6
   source: cc-review
   kind: doc-drift
@@ -69,4 +75,6 @@ findings:
   evidence: ignore_authors is read only by review.md, bulk.md:952,1007, post-review.sh
     and review_draft.py; triage.md uses reviewer_activity/reviewer_summary checks
     (triage.md:56,72) at 8e882b6
-  status: collected
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/39
