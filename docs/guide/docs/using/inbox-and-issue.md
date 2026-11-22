@@ -109,7 +109,7 @@ Assessment works on GitHub.com issues only, the target must be an issue (pull re
 
 Interactive assessment never posts comments, edits code, assigns, labels, or closes the issue, and it never launches a review. Posting the drafted reply is a separate step you take yourself.
 
-Explicit `issue N --unattended` is the exception. An unattended run asks no questions and posts the rendered reply and the configured triage labels under the unattended policy. That policy also governs unattended review and triage, including the CI workflows; read [CI setup and policy](ci.md) for how it is configured and what it publishes.
+Explicit `issue N --unattended` is the exception. An unattended run asks no questions and posts the rendered reply and the configured triage labels under the unattended policy. That policy also governs unattended review and triage, including the CI workflows; read [Automate cc-review in GitHub Actions](ci.md) for how it is configured and what it publishes.
 
 > [!IMPORTANT]
 > The inbox report, the guided tour itself, and interactive assessment are read-only. The tour's fan-out and `issue N --unattended` hand work to commands that act under their own confirmation and publication policy; the inbox adds no write authority of its own.
