@@ -5,9 +5,9 @@ cc-review:README.md:272-286,325
 cc-review:review/config/config-template.yml:1-89
 cc-review:review/config/profiles/quick.yml:1
 cc-review:review/config/profiles/thorough.yml:1
-cc-review:review/config/profiles/ci.yml:1,12
+cc-review:review/config/profiles/ci.yml:1
 cc-review:review/core/scripts/resolve-config.sh:43-76,132-165,190-222,237-253,256-332
-cc-review:review/core/commands/review.md:4,80-88,113-122,145-151,376-385,799-804,820-837,942-946,980,809,1012-1013,1023,1032,1525-1528,1772-1778
+cc-review:review/core/commands/review.md:4,80-93,113-122,145-151,376-385,635,799-804,809,820-837,940,942-946,980,1012-1013,1023,1032,1525-1528,1768-1771,1772-1778
 cc-review:review/core/commands/bulk.md:112
 cc-review:review/core/commands/triage.md:449,492,980-981
 cc-review:review/core/reviewers/correctness.md:2-4
@@ -24,6 +24,7 @@ cc-review:review/core/reviewers/gator/reviewer.md:2-6
 cc-review:review/core/schemas/finding.schema.json:40-50,95-122
 cc-review:review/core/agents/preamble.md:46-47
 cc-review:review/core/schemas/reviewer.schema.json:3-4,29-33,40-48
+cc-review:review/core/reviewers/gator/reviewer.md:7-10
 -->
 
 This page lists the cc-review configuration keys, the order in which configuration layers resolve into one effective configuration, and the fields of a finding. For the command flags that can override these settings, see the [CLI reference](cli.md).
@@ -152,7 +153,7 @@ The template sets no `allow_untrusted_checkout` key; its comments document the m
 | Key | Template value | Notes |
 |-----|----------------|-------|
 | `severity.min_confidence` | `70` | Findings with a lower confidence are excluded from the report. |
-| `severity.request_changes_severities` | `Critical`, `Important` | The severities the gate counts. The gate passes when no finding has one of them. |
+| `severity.request_changes_severities` | `Critical`, `Important` | The severities the gate counts. The gate passes when no finding has one of them; in a follow-up review, earlier material concerns that are still open also keep it from passing. |
 | `severity.auto_fix` | `true` | With `false`, the review does not fix without the user's explicit choice. |
 
 ### pr_posting
@@ -163,8 +164,8 @@ The template sets no `allow_untrusted_checkout` key; its comments document the m
 | `pr_posting.auto_detect_pr` | `false` | With `true` and no `--pr`, the review uses the pull request of the current branch. |
 | `pr_posting.max_inline_comments` | `50` | Limit for the number of accepted inline findings, checked before posting. |
 | `pr_posting.voice_profile` | `"reviewer"` | |
-| `pr_posting.recovery_dir` | `".cc-review"` | Directory for the recovery file written when posting fails. |
-| `pr_posting.ignore_authors` | `[]` (none) | A list of logins treated like bots by the posting check, for CI accounts that are regular GitHub users (the template comment gives `k8s-ci-robot` and `openshift-ci-robot` as examples). Before a review, thread reply, or resolution is posted, cc-review withholds it when someone other than you commented on the PR since the analysis; bots and these logins do not count. |
+| `pr_posting.recovery_dir` | `".cc-review"` | Directory for the recovery file written when posting fails (a bulk worker writes it to its PR's state directory instead). |
+| `pr_posting.ignore_authors` | `[]` (none) | A list of logins treated like bots by the posting check, for CI accounts that are regular GitHub users (the template comment gives `k8s-ci-robot` and `openshift-ci-robot` as examples). In local review runs, before a review, thread reply, or resolution is posted, cc-review checks whether someone other than you commented on the PR since the analysis. An interactive run shows the new comments and asks whether to post anyway, skip, or re-run later; a non-interactive or unattended run withholds the action. Bots and these logins do not count. The CI workflows use their own check (see [Automate cc-review in GitHub Actions](../using/ci.md#forks-and-configuration-trust)). |
 
 ### output
 
@@ -258,7 +259,7 @@ For how the two critics produce these, see [Meta-review](../how-it-works/meta-re
 
 ## severity_map translation at merge
 
-A reviewer plugin declares its metadata in frontmatter validated against `reviewer.schema.json`. When a command reviewer wraps an external tool whose severity vocabulary differs from cc-review's, the reviewer translates it with a `severity_map`.
+A reviewer plugin declares its metadata in frontmatter validated against `reviewer.schema.json`. A reviewer whose native severity names differ from cc-review's (a command reviewer for an external tool, or the prompt reviewer Gator) declares a `severity_map`. The merge step translates each finding's severity with it, exactly once per finding.
 
 `severity_map` is an object: each key is a native severity string, and each value is one of `Critical`, `Important`, `Minor`, or `Notable`. A native value not listed in the map passes through unchanged when it is already a cc-review severity; otherwise the finding is dropped with a warning.
 
