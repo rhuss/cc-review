@@ -2,7 +2,7 @@
 
 <!-- Sources:
 cc-review:README.md:3-7
-cc-review:README.md:9-15
+cc-review:README.md:9-17
 cc-review:README.md:24-74
 cc-review:README.md:148
 cc-review:README.md:186
@@ -83,7 +83,7 @@ You can run cc-review interactively from your harness, or let GitHub Actions run
 
 Interactive runs keep you in control of what reaches a pull request. Nothing is posted to a PR before you have seen it. cc-review writes the review as a local draft and previews the summary, every inline comment with its file and line, and any replies to earlier threads. It then posts only what you approve.
 
-A bulk review previews one PR after another, and a bulk triage shows each PR's commit and every reply in full before anything is pushed or posted. To run a review yourself, see [Review your changes](using/review.md).
+A bulk review previews one PR after another, and a bulk triage, which covers human reviewer feedback as well as bot review comments, shows each PR's commit and every reply in full before anything is pushed or posted. To run a review yourself, see [Review your changes](using/review.md).
 
 In GitHub Actions, reviews, triage, and issue assessment run in your repository, either automatically or on request with `/cc-review` comments. There, cc-review publishes no review or fix while the PR's checks are failing or still pending. When the pull request or issue changes during a run in a way that affects that operation, such as a new push, the run does not complete and has to be repeated against the current state. To set this up, see [Automate cc-review in GitHub Actions](using/ci.md).
 
