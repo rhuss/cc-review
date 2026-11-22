@@ -1,9 +1,10 @@
 # Pinned sources and change requests (the baseline). Written by tools/guide/fetch.py.
-captured: '2026-11-05'
+captured: '2026-11-20'
 sources:
 - id: cc-review
   repo: rhuss/cc-review
-  ref: v1.4.0
-  commit: 37efe889dec45f580b8f33307790701d71cab74a
+  ref: main
+  commit: 2c380ea6e5fa149ab962ea82c86208cb03b74e99
   attributes:
-    version: "1.4.0"
+    version: "1.9.0"
+  status: verified
