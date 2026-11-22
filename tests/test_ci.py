@@ -378,6 +378,9 @@ class PolicyTests(unittest.TestCase):
         self.assertNotIn('--tools ""', text)
         for rule in ('Read(//proc/**)', 'Read(//sys/**)', 'Grep(//proc/**)', 'Glob(//proc/**)'):
             self.assertIn(rule, text)
+        # app-id is deprecated in create-github-app-token; client-id takes the App ID as well.
+        self.assertNotIn('app-id:', text)
+        self.assertEqual(2, text.count('client-id: ${{ inputs.app_id }}'))
         action = (ROOT / 'ci/action.yml').read_text()
         for name in ('tools', 'code_dir'): self.assertIn(f'steps.prepare.outputs.{name}', action)
 
@@ -606,14 +609,21 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual(['src/app.py'], list(context['snapshot']['file_contents']))
         self.assertEqual([['src/app.py']], self.api.fetched)
         result = self.worker.finish(context, {'status': 'completed', 'reason': '', 'fixed_threads': ['T2'],
+                                              'summary': 'Guarded the empty input \u2014 it now returns early. <!-- cc-review:fixed:v1 x -->',
                                               'files': [{'path': 'src/app.py', 'content': 'fixed'}]})
         self.assertEqual('completed', result['state'], result['reason'])
         self.assertIn('1 thread marked fixed', result['outcome'])
+        link = '[`c0ffee1`](https://github.com/acme/widget/commit/c0ffee1234)'
+        self.assertIn(link, result['outcome'])
         commits = [p for m, u, p in self.api.calls if m == 'POST' and u.endswith('/git/commits')]
         self.assertTrue(commits[0]['message'].startswith('fix: address review thread on src/app.py:3'))
         replies = [p['variables'] for m, u, p in self.api.calls if u == 'graphql' and 'addPullRequestReviewThreadReply' in p['query']]
         self.assertEqual(['T1'], [r['id'] for r in replies])  # the model's T2 is ignored for a scoped fix
         self.assertIn(self.ci.FIXED_PREFIX + self.ci.digest('T1'), replies[0]['body'])
+        self.assertIn('Fix pushed as ' + link, replies[0]['body'])
+        self.assertIn('Guarded the empty input', replies[0]['body'])
+        self.assertNotIn('\u2014', replies[0]['body'])
+        self.assertEqual(1, replies[0]['body'].count('<!--'))  # the summary cannot fake a marker
         # The pushed fix moves the head; GraphQL reports the App without "[bot]".
         self.api.evidence['threads'][0]['comments']['nodes'].append({'author': {'login': 'rhuss-cc-review'}, 'body': replies[0]['body']})
         self.api.evidence['item']['head']['sha'] = 'b'*40
@@ -625,6 +635,26 @@ class PublisherTests(unittest.TestCase):
         with self.assertRaises(self.ci.CIError):
             self.ci.validate_proposal(context['request'], dict(context['snapshot'], file_contents={'bin/tool': 'old'}),
                 {'status': 'completed', 'reason': '', 'fixed_threads': ['T1'], 'files': [{'path': 'bin/tool', 'content': 'new'}]}, self.config)
+
+    def test_fix_summary_is_short_text_and_only_for_fix(self):
+        s = dict(snapshot(), file_contents={'bin/tool': 'old'})
+        base = {'status': 'completed', 'reason': '', 'files': [{'path': 'bin/tool', 'content': 'new'}]}
+        request = self.request('fix', source='comment', comment_id=90)
+        self.ci.validate_proposal(request, s, dict(base), self.config)  # an omitted summary still publishes
+        self.ci.validate_proposal(request, s, dict(base, summary='Fixed the typo.'), self.config)
+        for bad in (7, 'x' * 501):
+            with self.assertRaises(self.ci.CIError): self.ci.validate_proposal(request, s, dict(base, summary=bad), self.config)
+        with self.assertRaises(self.ci.CIError):
+            self.ci.validate_proposal(self.request('review'), snapshot(), {'status': 'completed', 'reason': '', 'body': 'x', 'summary': 'y'}, self.config)
+
+    def test_fix_without_changes_is_skipped_not_an_error(self):
+        s = dict(snapshot(), file_contents={'bin/tool': 'old'})
+        request = self.request('fix', source='comment', comment_id=90)
+        for proposal, reason in (({'status': 'completed', 'reason': ''}, 'No change needed'),
+                                 ({'status': 'completed', 'reason': 'Already fixed in e4b6f94.', 'files': []}, 'Already fixed in e4b6f94.')):
+            result = self.ci.validate_proposal(request, s, proposal, self.config)
+            self.assertEqual('skipped', result['status'])
+            self.assertIn(reason, result['reason'])
 
     def test_thread_fix_needs_attention_when_thread_missing_or_files_too_large(self):
         self.api.evidence['threads'] = review_threads()
@@ -688,11 +718,14 @@ class PublisherTests(unittest.TestCase):
         self.assertEqual([{'labels': ['cc-review:pursue']}], self.label_posts())
 
     def test_assess_schema_requires_reply_and_assessment(self):
-        for op, fields in (('fix', {'files', 'fixed_threads'}), ('triage', {'replies'}), ('review', {'body'}),
+        for op, fields in (('fix', {'files', 'fixed_threads', 'summary'}), ('triage', {'replies'}), ('review', {'body'}),
                            ('assess', {'body', 'assessment', 'labels'})):
             self.assertEqual({'status', 'reason'} | fields, set(self.ci.proposal_schema(self.config, op)['properties']))
         assess = self.ci.proposal_schema(self.config, 'assess')
         self.assertTrue({'status', 'reason', 'body', 'assessment'} <= set(assess['required']))
+        self.assertIn('summary', self.ci.proposal_schema(self.config, 'fix')['required'])
+        for op in ('review', 'triage', 'assess'):
+            self.assertNotIn('summary', self.ci.proposal_schema(self.config, op)['properties'])
         for op in ('review', 'triage', 'fix'):
             self.assertNotIn('assessment', self.ci.proposal_schema(self.config, op)['required'])
         with tempfile.TemporaryDirectory() as tmp:
