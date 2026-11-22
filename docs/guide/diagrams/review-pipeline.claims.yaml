@@ -24,7 +24,7 @@ claims:
   - id: gate
     kind: label
     elements: [box_gate_t]
-    text: "Step 5 gates on Critical plus Important findings; Step 6 is the autonomous fix loop."
+    text: "Step 5 gates on the configured blocking severities (severity.request_changes_severities, by default Critical and Important); Step 6 is the autonomous fix loop."
     sources: ["cc-review:review/core/commands/review.md:938-1080"]
   - id: report
     kind: label

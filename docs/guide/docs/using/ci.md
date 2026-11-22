@@ -169,7 +169,7 @@ Supply secrets with `gh secret set` using stdin or a private local file. Doctor 
 
 The workflow checks out only the default branch configuration and the pinned cc-review integration. It never checks out a PR head. Automatic fork events publish guidance to request review from a writer. An authorized `/cc-review review` reads fork diff data through the API and cannot execute fork code. Fork triage and fixes are refused, and events authored by the configured bot are ignored.
 
-Before a review, thread reply, or resolution is posted, cc-review withholds it when someone other than you commented on the PR since the analysis. Bots do not count. `pr_posting.ignore_authors` lists further logins treated like bots, for CI accounts that are regular GitHub users.
+Before publishing, a CI run compares the item with the state it analyzed and withholds the result when that state moved: a review or fix when the PR head changed, a triage reply or resolution when the head or a non-bot comment in the bot threads changed, and an assessment when the issue title, body, or conversation changed. A new PR comment that leaves the head unchanged does not stop a CI review. The posting check that also counts other people's PR comments, with `pr_posting.ignore_authors` for logins treated like bots, belongs to local review and triage runs.
 
 ## Public repositories: allow pull_request_target
 

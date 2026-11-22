@@ -15,17 +15,18 @@ cc-review:review/config/profiles/thorough.yml:17-20
 cc-review:review/config/profiles/quick.yml:18-20
 cc-review:README.md:142-144
 cc-review:README.md:404-408
+cc-review:review/config/config-template.yml:41-46
 -->
 
 By the time the findings reach this stage, meta-review has filtered them into one list (see [Meta-review](meta-review.md)). cc-review now has to turn that list into a decision: is the change ready, or does something still need fixing first? Two mechanisms do that. The gate reads the list and returns a verdict, and the fix loop tries to clear the findings that fail the gate so the verdict can flip to a pass.
 
-What happens to those findings, and whether cc-review changes any code, depends on whose code is under review. On your own code it can apply the fixes. On a pull request you did not author it only offers to post the review, never edits the code, and, in an interactive run, shows you the draft as a preview you approve before anything reaches the PR.
+What happens to those findings, and whether cc-review changes any code, depends on whose code is under review and where it is checked out. On your own code it can apply the fixes. When cc-review checks out someone else's pull request separately, it only offers to post the review and never edits that code. A pull request that is already your current branch keeps the fix options whoever authored it, and the fixes change your working tree. In an interactive run, cc-review shows you the draft as a preview you approve before anything reaches the PR.
 
 [![cc-review decision after review: a panel of reviewers, then two critics, then you decide, the fix loop for your own code or posting the review for any pull request](../assets/diagrams/decision-ownership.svg)](../assets/diagrams/decision-ownership.svg)
 
 ## The gate
 
-The gate is a count, not a judgment. cc-review counts the findings whose severity is one that fails the gate. Which severities those are comes from a configuration setting, `REQUEST_CHANGES_SEVERITIES`, which holds Critical and Important by default. If the count is zero, the review is a **gate pass**. If the count is above zero, the review is a **gate fail**, and it stays failed unless the fix loop clears those findings within its round limit.
+The gate is a count, not a judgment. cc-review counts the findings whose severity is one that fails the gate. Which severities those are comes from the configuration key `severity.request_changes_severities` (read into `REQUEST_CHANGES_SEVERITIES`), which holds Critical and Important by default. If the count is zero, the review is a **gate pass**. If the count is above zero, the review is a **gate fail**, and it stays failed unless the fix loop clears those findings within its round limit.
 
 Under the default severities, Minor and Notable findings sit outside the set, so neither one blocks a pass on its own. The set is configurable, though: the `thorough` profile adds Minor to it, and the `quick` profile blocks only Critical. One rule holds regardless of the profile: Notable findings are informational and excluded from the gate check. A change can therefore carry a long tail of small suggestions and still pass, as long as nothing in the configured set remains.
 

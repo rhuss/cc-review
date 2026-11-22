@@ -26,6 +26,7 @@ url:https://www.coderabbit.ai/cli
 url:https://docs.github.com/en/copilot/how-tos/copilot-cli
 url:https://developers.openai.com/codex/cli
 url:https://www.greptile.com/cli
+cc-review:docs/CI.md:200-201
 -->
 
 cc-review runs a panel of focused code-review agents, together with external review tools, over a set of changes. It merges their findings, removes the duplicates, filters what is left through two meta-review critics, fixes the Critical and Important issues and re-reviews them, and hands you one report. The same reviews can also run unattended in GitHub Actions.
@@ -82,7 +83,7 @@ Interactive runs keep you in control of what reaches a pull request. Nothing is 
 
 A bulk review previews one PR after another, and a bulk triage shows each PR's commit and every reply in full before anything is pushed or posted. To run a review yourself, see [Review your changes](using/review.md).
 
-In GitHub Actions, reviews, triage, and issue assessment run in your repository, either automatically or on request with `/cc-review` comments. `cc-review:ci setup` installs a pinned GitHub Actions caller with your model credentials and a bot identity. Unattended reviews go through the same draft and check: a draft that still fails the check, or a PR whose conversation changed since analysis, is not posted and is withheld for the next run. To set this up, see [Automate cc-review in GitHub Actions](using/ci.md).
+In GitHub Actions, reviews, triage, and issue assessment run in your repository, either automatically or on request with `/cc-review` comments. `cc-review:ci setup` installs a pinned GitHub Actions caller with your model credentials and a bot identity. Unattended reviews go through the same draft and check: a draft that still fails the check, or a PR whose head changed since analysis, is not posted and is withheld for the next run. To set this up, see [Automate cc-review in GitHub Actions](using/ci.md).
 
 ## Status and limits
 

@@ -8,9 +8,14 @@ cc-review:README.md:108-121
 cc-review:review/config/profiles/quick.yml:1-25
 cc-review:review/config/profiles/thorough.yml:1-26
 cc-review:review/config/profiles/ci.yml:1-30
+cc-review:review/skills/review/SKILL.md:46
+cc-review:review/skills/triage/SKILL.md:37
+cc-review:review/skills/issue/SKILL.md:4,21
+cc-review:review/core/commands/review.md:33-38
+cc-review:review/core/commands/triage.md:39-44
 -->
 
-Every flag for the four cc-review commands, and what each bundled profile sets. The tables reproduce the flag descriptions from the project README at the pinned version. For how to use these commands, see [Review your changes](../using/review.md), [Triage pull request comments](../using/triage.md), and [Inbox and issue assessment](../using/inbox-and-issue.md).
+Every flag for the four cc-review commands, and what each bundled profile sets. The tables follow the flag descriptions in the project README and the command definitions at the pinned version. For how to use these commands, see [Review your changes](../using/review.md), [Triage pull request comments](../using/triage.md), and [Inbox and issue assessment](../using/inbox-and-issue.md).
 
 ## review
 
@@ -36,8 +41,9 @@ Flags for the `/cc-review:review` command.
 | `--bulk` | Review several PRs in one run |
 | `--all-open` | Bulk: select every open PR |
 | `--search <query>` | Bulk: select the open PRs matching a GitHub search |
+| `--prs <n,...>` | Bulk: run exactly the listed PRs; cannot be combined with `--pr`, `--all-open`, or `--search` |
 | `--limit <n>` | Bulk: at most this many PRs (default: 10) |
-| `--unattended` | Bulk: no questions, apply the fixed policy |
+| `--unattended` | Single-item or bulk run without prompts, using the fixed policy |
 | `--resume [<run-id>]` | Bulk: continue an unfinished run |
 
 > [!NOTE]
@@ -53,7 +59,8 @@ Flags for the `/cc-review:triage` command.
 | `--spec <path>` | Specification file for context |
 | `--no-coverage-fix` | Skip automatic coverage remediation |
 | `--idea-inbox <path>` | File for capturing out-of-scope ideas |
-| `--bulk`, `--search`, `--limit`, `--unattended`, `--resume` | Triage several of your PRs in one run |
+| `--bulk`, `--search`, `--prs <n,...>`, `--limit`, `--resume` | Triage several of your PRs in one run; `--prs` names exactly the PRs to triage |
+| `--unattended` | Single-item or bulk run without prompts, using the fixed policy |
 
 ## inbox
 
@@ -78,6 +85,7 @@ Arguments and options for the `issue` command. The command takes an issue target
 | `<number>` | Issue number to assess (for example `issue 42`) |
 | `<url>` | Full issue URL to assess |
 | `--repo owner/name` | Assess the issue in an explicitly named repository |
+| `--unattended` | Post the assessment and the configured labels without prompts |
 | `--help` | Show the command options |
 
 > [!NOTE]

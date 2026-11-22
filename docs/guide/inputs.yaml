@@ -22,7 +22,7 @@ inputs:
     kind: document
     location: ../../README.md
     role: Project README; features, install, usage, configuration, architecture overview
-    sha256: "4a9a3c96660ff0fa8d623ce237dd051eab9f0021ac8d9df6c6cc09193e4acfac"
+    sha256: "e3730379be9f2512186934d22511df3239e817c48ce8ae2d900c0bb814ef37cf"
     confidential: false
     registered: "2026-11-19"
   - id: docs-reviewer-plugins
