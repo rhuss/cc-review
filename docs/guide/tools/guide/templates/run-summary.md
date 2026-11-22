@@ -38,6 +38,12 @@ Findings that the controller re-verified against the pinned source and rejected 
 
 {{REJECTED_FINDINGS}}
 
+## Dropped claims
+
+Statements from inputs (for an embedded guide, the repository's old documentation) that the pinned sources contradict; they are not in the guide.
+
+{{DROPPED_CLAIMS}}
+
 ## Deferred minor findings
 
 {{DEFERRED_MINORS}}
