@@ -104,7 +104,7 @@ Its comment block documents two more maps that it does not set, `reviewers` and 
 #     - openshift-ci-robot
 ```
 
-After the merge, cc-review checks the value types. An invalid `severity.auto_fix`, `pr_posting.enabled`, `pr_posting.auto_detect_pr`, `severity.min_confidence` (an integer from 0 to 100), `max_fix_rounds`, `pr_posting.max_inline_comments`, or `test.timeout_seconds` (each a positive integer) falls back to the template value with a warning. An invalid `output.verbosity` falls back to `normal`.
+After the merge, cc-review checks the value types. An invalid `severity.auto_fix`, `pr_posting.enabled`, `pr_posting.auto_detect_pr`, `severity.min_confidence` (an integer from 0 to 100), `max_fix_rounds`, `pr_posting.max_inline_comments`, or `test.timeout_seconds` (each a positive integer) falls back to the template value with a warning. An empty value skips this check. An invalid `output.verbosity` falls back to `normal`.
 
 ### Top-level keys
 
