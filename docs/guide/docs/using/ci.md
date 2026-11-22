@@ -24,6 +24,10 @@ cc-review:review/core/commands/ci.md:1-110
 cc-review:review/skills/ci/SKILL.md:1-16
 cc-review:review/core/commands/unattended.md:1-70
 cc-review:review/core/commands/review.md:9-16
+cc-review:review/core/scripts/ci.py:207-218
+cc-review:review/core/scripts/ci.py:455-459
+cc-review:review/core/scripts/ci.py:598-606
+cc-review:review/core/commands/review.md:635
 cc-review:review/config/config-template.yml:31-39,48-54
 -->
 
@@ -169,7 +173,7 @@ Supply secrets with `gh secret set` using stdin or a private local file. Doctor 
 
 The workflow checks out only the default branch configuration and the pinned cc-review integration. It never checks out a PR head. Automatic fork events publish guidance to request review from a writer. An authorized `/cc-review review` reads fork diff data through the API and cannot execute fork code. Fork triage and fixes are refused, and events authored by the configured bot are ignored.
 
-Before publishing, a CI run compares the item with the state it analyzed and withholds the result when that state moved: a review or fix when the PR head changed, a triage reply or resolution when the head or a non-bot comment in the bot threads changed, and an assessment when the issue title, body, or conversation changed. A new PR comment that leaves the head unchanged does not stop a CI review. The posting check that also counts other people's PR comments, with `pr_posting.ignore_authors` for logins treated like bots, belongs to local review and triage runs.
+Before publishing, a CI run compares the item with the state it analyzed and withholds the result when that state moved. A review or fix is withheld when the PR head changed. A triage reply or resolution is withheld when the head changed or when any review thread on the PR gained or changed a comment by anyone other than the configured bot identity; a human comment, another bot's comment, a new thread started by someone else, and an edited comment all count. An assessment is withheld when the issue title, body, or conversation changed. A new PR comment that leaves the head unchanged does not stop a CI review. The posting check that counts other people's PR comments, with [`pr_posting.ignore_authors`](../reference/config-and-schema.md#pr_posting) for logins treated like bots, belongs to local review runs.
 
 ## Public repositories: allow pull_request_target
 
