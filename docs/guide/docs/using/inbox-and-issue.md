@@ -14,7 +14,7 @@ cc-review:review/core/commands/issue.md:81-92
 cc-review:review/core/commands/issue.md:101-122
 cc-review:review/core/templates/issue-assessment.md:1-5
 cc-review:review/core/commands/unattended.md:9-21
-cc-review:docs/CI.md:132-174
+cc-review:docs/CI.md:135-177
 -->
 
 A repository collects pull requests, issues, and Discussions from many people, and not every one of them is yours to act on. Two commands help you decide where your attention goes before you start reviewing or writing code. `/cc-review:inbox` surveys one repository and groups the open items by who needs to act next. `/cc-review:issue` assesses a single issue, separates its concrete need, its fit with the project, and whether the work is justified, and drafts a reply.
