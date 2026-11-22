@@ -12,8 +12,10 @@ rules:
       - '\]\(using/index\.md\)'
       - '\]\(extending/index\.md\)'
       - '\]\(how-it-works/index\.md\)'
+      - '\]\(using/ci\.md\)'
       - 'assets/diagrams/core-and-layers\.svg'
       - 'guide:attr cc-review-commit-short'
+      - 'GitHub Actions'
     forbid:
       - '\u2014'
       - '\u2013'
@@ -25,6 +27,7 @@ rules:
       - '\bgh\b'
       - 'Python'
       - 'install\.sh'
+      - '\]\(ci\.md\)'
       - '(?m)^Check:'
     require_order:
       - 'marketplace add'
@@ -45,6 +48,9 @@ rules:
       - '(?m)^Check:'
       - '(?m)^## Fixes and PR ownership'
       - 'push to'
+      - '(?i)preview'
+      - '--unattended'
+      - '--prs'
     forbid:
       - '\u2014'
       - '\u2013'
@@ -53,8 +59,10 @@ rules:
     require:
       - '/cc-review:triage'
       - '--pr'
+      - '--prs'
       - 'bot'
       - '(?m)^Check:'
+      - '(?i)preview|overview'
       - 'review\.md#fixes-and-pr-ownership'
     forbid:
       - '\u2014'
@@ -65,6 +73,25 @@ rules:
       - '/cc-review:issue'
       - 'read-only'
       - '(?m)^Check:'
+      - '--prs'
+      - '(?i)assessment'
+    forbid:
+      - '\u2014'
+      - '\u2013'
+  - glob: docs/using/ci.md
+    require:
+      - 'cc-review:ci setup'
+      - '\bstatus\b'
+      - '\bdoctor\b'
+      - '\bdisable\b'
+      - '--unattended'
+      - '(?m)^Check:'
+    forbid:
+      - '\u2014'
+      - '\u2013'
+  - glob: docs/SUMMARY.md
+    require:
+      - 'using/ci\.md'
     forbid:
       - '\u2014'
       - '\u2013'
@@ -74,6 +101,7 @@ rules:
       - '\]\(review\.md\)'
       - '\]\(triage\.md\)'
       - '\]\(inbox-and-issue\.md\)'
+      - '\]\(ci\.md\)'
     forbid:
       - '\u2014'
       - '\u2013'
@@ -96,6 +124,7 @@ rules:
       - '[Mm]eta-review'
       - '[Gg]ate'
       - '[Rr]eport'
+      - '(?i)draft'
     forbid:
       - '\u2014'
       - '\u2013'

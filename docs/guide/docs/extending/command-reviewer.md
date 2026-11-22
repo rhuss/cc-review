@@ -6,10 +6,10 @@ cc-review:review/core/reviewers/greptile/reviewer.md:20-41
 cc-review:review/core/reviewers/greptile/reviewer.md:43-53
 cc-review:review/core/reviewers/greptile/parse.sh:1-10
 cc-review:review/core/reviewers/greptile/parse.sh:18-28
-cc-review:docs/reviewer-plugins.md:24
-cc-review:docs/reviewer-plugins.md:36-37
-cc-review:docs/reviewer-plugins.md:138-153
-cc-review:docs/reviewer-plugins.md:196
+cc-review:docs/extras/reviewer-plugins.md:24
+cc-review:docs/extras/reviewer-plugins.md:36-37
+cc-review:docs/extras/reviewer-plugins.md:138-153
+cc-review:docs/extras/reviewer-plugins.md:196
 cc-review:review/core/schemas/reviewer.schema.json:13-33
 cc-review:review/core/schemas/reviewer.schema.json:40-54
 cc-review:review/core/schemas/reviewer.schema.json:67-109
@@ -90,4 +90,4 @@ printf '%s' '{"comments":[{"path":"src/app.js","startLine":10,"endLine":12,"seve
 <!-- expect: contains "src/app.js" -->
 
 > [!NOTE]
-> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.

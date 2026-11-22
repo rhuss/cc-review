@@ -8,16 +8,20 @@ cc-review:review/core/agents/meta-calibrator.md:17-25
 cc-review:review/core/agents/meta-calibrator.md:34-49
 cc-review:review/core/agents/meta-calibrator.md:51-70
 cc-review:review/core/agents/meta-calibrator.md:72-89
-cc-review:review/core/commands/review.md:784-792
-cc-review:review/core/commands/review.md:795-819
-cc-review:review/core/commands/review.md:851-866
-cc-review:review/core/commands/review.md:868-895
-cc-review:review/core/commands/review.md:901-913
+cc-review:review/core/commands/review.md:806-813
+cc-review:review/core/commands/review.md:815-841
+cc-review:review/core/commands/review.md:843-864
+cc-review:review/core/commands/review.md:865-889
+cc-review:review/core/commands/review.md:890-900
+cc-review:review/core/commands/review.md:901-911
+cc-review:review/core/commands/review.md:912-918
+cc-review:review/core/commands/review.md:919-922
+cc-review:review/core/commands/review.md:923-937
 -->
 
 Once the panel's findings are merged into one list, two critics read that list before cc-review acts on any of it. The first decides whether each finding is real. The second decides whether its severity is right and whether the reviewers contradict one another. Both run at the same time over the same input, and cc-review combines their separate judgments into one outcome for every finding.
 
-![cc-review two critics: merged findings through the Skeptic and Calibrator into one verdict](../assets/diagrams/two-critics.svg)
+[![cc-review two critics: merged findings through the Skeptic and Calibrator into one verdict](../assets/diagrams/two-critics.svg)](../assets/diagrams/two-critics.svg)
 
 ## One de-duplicated list
 
@@ -27,7 +31,7 @@ The critics do not judge every raw finding. Before they run, cc-review merges th
 
 The Skeptic asks one question of every finding: is it real? It reads the code each finding points at and tries to refute it, looking for a guard the original reviewer missed, documented behavior that makes the finding moot, or a plain misreading of the code. Its stance is adversarial by design. It assumes a finding is wrong until the code proves it right.
 
-Each finding comes back with one of three verdicts. It is **confirmed** when the code clearly shows the issue and nothing refutes it, and **weak** when the problem is plausible but the evidence does not support the claimed severity. It is a **false positive** when the code does not have the described issue at all. The bar for a false positive is deliberately high. The Skeptic may call a finding a false positive only when it can cite the specific code that disproves it, and it is told not to mark findings false just to shrink the list. When it cannot evaluate a finding at all, it keeps the finding and marks it confirmed, erring on the side of caution. The effect of these rules is that the Skeptic removes few findings outright. Most of what it does is label, not delete.
+Each finding comes back with one of three verdicts. It is **confirmed** when the code clearly shows the issue and nothing refutes it, and **weak** when the problem is plausible but the evidence does not support the claimed severity. It is a **false positive** when the code does not have the described issue at all. The bar for a false positive is deliberately high. The Skeptic may call a finding a false positive only when it can cite the specific code that disproves it, and it is told not to mark findings false just to shrink the list. When it cannot evaluate a finding at all, it keeps the finding and marks it confirmed, erring on the side of caution. Under these rules the Skeptic removes a finding only when it can cite code that disproves it; most of what it does is label, not delete.
 
 The Skeptic does not touch severity, contradictions, or reviewer scores. Those belong to the Calibrator.
 

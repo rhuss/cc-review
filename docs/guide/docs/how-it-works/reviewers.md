@@ -15,7 +15,7 @@ cc-review:review/core/reviewers/codex.md:1-6
 cc-review:review/core/reviewers/copilot.md:1-6
 cc-review:review/core/reviewers/coderabbit/reviewer.md:1-6
 cc-review:review/core/reviewers/greptile/reviewer.md:1-6
-cc-review:README.md:366-380
+cc-review:README.md:382-398
 -->
 
 A reviewer is one voice in the panel. cc-review ships three kinds: six built-in prompt reviewers, each a review agent with a single job; a set of external command-line tools it can call and fold into the same report; and one opt-in principal-engineer persona. The [pipeline](pipeline.md) page covers how a run discovers and dispatches them. This page is about what each one is for and the rules they all follow.

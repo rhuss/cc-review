@@ -16,6 +16,7 @@
 - [Review your changes](using/review.md)
 - [Triage pull request comments](using/triage.md)
 - [Inbox and issue assessment](using/inbox-and-issue.md)
+- [Automate cc-review in GitHub Actions](using/ci.md)
 
 ## How it works
 

@@ -1,15 +1,18 @@
 # Install cc-review
 
 <!-- Sources:
-cc-review:README.md:23
-cc-review:README.md:29-38
-cc-review:README.md:44-50
-cc-review:README.md:56-61
-cc-review:README.md:65-71
-cc-review:README.md:102
-cc-review:README.md:121
+cc-review:README.md:26
+cc-review:README.md:28-41
+cc-review:README.md:43-53
+cc-review:README.md:55-64
+cc-review:README.md:68-74
+cc-review:README.md:105
+cc-review:README.md:124
+cc-review:README.md:261-270
+cc-review:Makefile:13-24
 cc-review:review/core/scripts/discover-reviewers.sh:666-680
 cc-review:review/.claude-plugin/plugin.json:1-20
+url:https://code.claude.com/docs/en/skills
 -->
 
 cc-review ships as one plugin directory (`review/`) that carries a native manifest for each supported harness: Claude Code, Codex, and OpenCode. Each harness reads only its own manifest and ignores the others, so installing the plugin once registers the cc-review commands with the harness you use. Install it in the harness you already run.
@@ -82,9 +85,13 @@ specify extension add /path/to/cc-review/speckit
 
 The spec-kit adapter then passes spec paths, constitution hints, and output locations during the ship pipeline.
 
+## Automate it in CI
+
+Installing the plugin does not run cc-review in GitHub Actions. `cc-review:ci setup` installs the automation in a target repository; follow [Automate cc-review in GitHub Actions](ci.md) to set it up.
+
 ## Duplicate command entries
 
-If a harness lists each cc-review command twice, you most likely have more than one copy of the plugin installed. List the installed plugins (`claude plugin list` in Claude Code), uninstall every copy except the current one, then reinstall from your local clone.
+If a harness lists each cc-review command twice, more than one copy of the plugin may be installed. The repository's `install` target checks `claude plugin list`; when it finds `cc-review@cc-review-plugin-development`, it removes that copy with `claude plugin rm` and reinstalls the plugin. Running `make install` from your local clone applies the same sequence.
 
 > [!NOTE]
-> These steps were verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> These steps were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.

@@ -64,6 +64,7 @@ output:
 | `triage` | map | Bot handling and Codecov thresholds for triage. |
 | `max_fix_rounds` | integer | Maximum fix loop rounds. |
 | `output` | map | Where reports are written. |
+| `pr_posting` | map | How reviews and replies are posted to a pull request. |
 
 ### reviewers
 
@@ -104,6 +105,17 @@ Each key under `reviewers` enables (`true`) or disables (`false`) one discovered
 |-----|----------------|-------|
 | `max_fix_rounds` | `3` | Maximum fix loop rounds. |
 | `output.dir` | `"."` | Directory reports are written to. |
+
+### pr_posting
+
+| Key | Template value | Notes |
+|-----|----------------|-------|
+| `pr_posting.enabled` | `true` | |
+| `pr_posting.auto_detect_pr` | `false` | |
+| `pr_posting.max_inline_comments` | `50` | |
+| `pr_posting.voice_profile` | `"reviewer"` | |
+| `pr_posting.recovery_dir` | `".cc-review"` | |
+| `pr_posting.ignore_authors` | `[]` (none) | A list of logins treated like bots by the posting check, for CI accounts that are regular GitHub users (for example `k8s-ci-robot`). Before a review, thread reply, or resolution is posted, cc-review withholds it when someone other than you commented on the PR since the analysis; bots and these logins do not count. |
 
 > [!NOTE]
 > The legacy keys `agents.<name>` and `external_tools.<name>` are deprecated. They keep working for the migrated reviewers (`agents.test_quality` maps to `reviewers.test-quality`) and print a one-line warning that points to the new key.
@@ -173,4 +185,4 @@ A reviewer plugin declares its metadata in frontmatter validated against `review
 `severity_map` is an object: each key is a native severity string, and each value is one of `Critical`, `Important`, `Minor`, or `Notable`. A native value not listed in the map passes through unchanged when it is already a cc-review severity; otherwise the finding is dropped with a warning.
 
 > [!NOTE]
-> These configuration keys and schema fields were verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> These configuration keys and schema fields were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.

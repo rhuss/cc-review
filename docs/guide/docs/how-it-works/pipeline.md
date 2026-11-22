@@ -1,17 +1,22 @@
 # The review pipeline
 
 <!-- Sources:
-cc-review:review/core/commands/review.md:226-353
-cc-review:review/core/commands/review.md:632-770
-cc-review:review/core/commands/review.md:784-792
-cc-review:review/core/commands/review.md:793-914
-cc-review:review/core/commands/review.md:916-1050
-cc-review:review/core/commands/review.md:1051-1138
+cc-review:review/core/commands/review.md:245-441
+cc-review:review/core/commands/review.md:654-804
+cc-review:review/core/commands/review.md:806-813
+cc-review:review/core/commands/review.md:815-936
+cc-review:review/core/commands/review.md:938-1080
+cc-review:review/core/commands/review.md:1082-1169
+cc-review:review/core/commands/review.md:1171-1196
+cc-review:review/core/commands/review.md:1447-1460
+cc-review:review/core/commands/review.md:1520
+cc-review:review/core/commands/review.md:1563-1611
+cc-review:review/core/commands/review.md:1616-1657
 -->
 
 One review run carries a set of changes through six stages: discover, dispatch, merge, meta-review, gate and fix, and report. Each stage has a single job and hands its output to the next. The diagram below shows that order. The fix loop that re-runs reviewers after applying fixes lives inside the gate-and-fix stage; see [Gate and fix](gate-and-fix.md).
 
-![cc-review review pipeline: discover, dispatch, merge, meta-review, gate and fix, report](../assets/diagrams/review-pipeline.svg)
+[![cc-review review pipeline: discover, dispatch, merge, meta-review, gate and fix, report](../assets/diagrams/review-pipeline.svg)](../assets/diagrams/review-pipeline.svg)
 
 ## Discover
 
@@ -47,7 +52,7 @@ The [meta-review page](meta-review.md) covers the two critics in detail.
 
 ## Gate and fix
 
-The gate is a single decision: how many findings are Critical or Important. Zero is a pass. A count above zero fails the gate, unless the fix loop clears it. Notable findings never count toward the gate.
+The gate is a single decision: how many findings are in the blocking set, Critical and Important by default. Zero is a pass. A count above zero fails the gate, unless the fix loop clears it. Notable findings never count toward the gate.
 
 The fix loop runs when you ask for fixes. In each round, cc-review applies the suggested fixes, runs the test suite when it finds one, and re-dispatches the same reviewers on only the files it changed, then checks the gate again. A failing test becomes a Critical finding of its own. The loop runs up to a configured number of rounds, three by default, or stops early once the gate passes.
 
@@ -55,4 +60,6 @@ The [gate and fix page](gate-and-fix.md) covers the loop and its options.
 
 ## Report
 
-Whatever the gate decides, the run ends by writing one findings report. It is written for someone who did not watch the run. The report opens with a summary of how many findings were found, fixed, and left per severity, then lists each finding: where it is, what is wrong, why it matters, and how it was resolved. When the meta-review ran, the report also carries its per-reviewer scores and the findings it removed.
+Whatever the gate decides, the run writes one findings report before any posting. It is written for someone who did not watch the run. The report opens with a metadata header: date, branch, rounds, gate outcome, and invocation. Next comes a summary of how many findings were found, fixed, and left per severity. Then comes each finding: where it is, what is wrong, why it matters, and how it was resolved. When the meta-review ran, the report also carries its per-reviewer scores and the findings it removed.
+
+When the run has PR context and the action you chose includes posting, it does not post straight to the PR. It first writes the review as a draft without writing anything to GitHub, checks the draft, shows you the full preview, and takes your approval; a non-interactive run approves a clean draft automatically. In a non-interactive run, a draft that still fails the check is withheld; in an interactive run, you see the remaining check findings next to the preview and may still approve. Only an approved draft reaches the posting step, and only after `post-review.sh` rechecks the PR head and the conversations the draft was based on. The summary that goes to the PR carries a `### Review Details` section whose first line is an attribution statement. It says whether you went through the findings one by one, and which test command each fix round ran and how it ended. When the posted findings describe failure scenarios, it also says those scenarios were derived from reading the code.

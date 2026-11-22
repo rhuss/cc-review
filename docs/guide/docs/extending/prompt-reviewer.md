@@ -2,12 +2,12 @@
 
 <!-- Sources:
 cc-review:README.md:309-323
-cc-review:docs/reviewer-plugins.md:3
-cc-review:docs/reviewer-plugins.md:5-15
-cc-review:docs/reviewer-plugins.md:31
-cc-review:docs/reviewer-plugins.md:41-66
-cc-review:docs/reviewer-plugins.md:68-82
-cc-review:docs/reviewer-plugins.md:84-114
+cc-review:docs/extras/reviewer-plugins.md:3
+cc-review:docs/extras/reviewer-plugins.md:5-15
+cc-review:docs/extras/reviewer-plugins.md:31
+cc-review:docs/extras/reviewer-plugins.md:41-66
+cc-review:docs/extras/reviewer-plugins.md:68-82
+cc-review:docs/extras/reviewer-plugins.md:84-114
 cc-review:review/core/schemas/reviewer.schema.json:6-28
 -->
 
@@ -79,4 +79,4 @@ ls .cc-review/reviewers/accessibility.md
 Project prompt reviewers run without any trust step. A reviewer that wraps an external command-line tool uses `kind: command` instead of `kind: prompt`.
 
 > [!NOTE]
-> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.4.0<!-- /guide:attr -->.
+> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
