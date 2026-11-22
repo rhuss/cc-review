@@ -89,4 +89,4 @@ grep 'Enable or disable any discovered reviewer' review/config/config-template.y
 <!-- expect: contains "reviewers" -->
 
 > [!NOTE]
-> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> This page was verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.

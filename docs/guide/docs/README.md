@@ -2,7 +2,7 @@
 
 <!-- Sources:
 cc-review:README.md:3-7
-cc-review:README.md:9-15
+cc-review:README.md:9-17
 cc-review:README.md:24-74
 cc-review:README.md:148
 cc-review:README.md:186
@@ -26,7 +26,9 @@ url:https://www.coderabbit.ai/cli
 url:https://docs.github.com/en/copilot/how-tos/copilot-cli
 url:https://developers.openai.com/codex/cli
 url:https://www.greptile.com/cli
-cc-review:docs/CI.md:200-201
+cc-review:docs/CI.md:203-204
+cc-review:docs/CI.md:80-83
+cc-review:docs/CI.md:294-295
 -->
 
 cc-review runs a panel of focused code-review agents, together with external review tools, over a set of changes. It merges their findings, removes the duplicates, filters what is left through two meta-review critics, fixes the Critical and Important issues and re-reviews them, and hands you one report. The same reviews can also run unattended in GitHub Actions.
@@ -49,7 +51,7 @@ A harness is an AI coding agent that runs in your terminal, editor, or desktop a
 
 ### GitHub Actions
 
-[GitHub Actions](https://docs.github.com/en/actions) is GitHub's CI and automation service that runs workflows inside a repository. cc-review runs its reviews, triage, and issue assessment there, unattended or on request with `/cc-review` comments.
+[GitHub Actions](https://docs.github.com/en/actions) is GitHub's CI and automation service that runs workflows inside a repository. cc-review runs its reviews, triage (answering bot review comments on a pull request), and issue assessment there, unattended or on request with `/cc-review` comments.
 
 ### The external review tools
 
@@ -81,13 +83,13 @@ You can run cc-review interactively from your harness, or let GitHub Actions run
 
 Interactive runs keep you in control of what reaches a pull request. Nothing is posted to a PR before you have seen it. cc-review writes the review as a local draft and previews the summary, every inline comment with its file and line, and any replies to earlier threads. It then posts only what you approve.
 
-A bulk review previews one PR after another, and a bulk triage shows each PR's commit and every reply in full before anything is pushed or posted. To run a review yourself, see [Review your changes](using/review.md).
+A bulk review previews one PR after another, and a bulk triage, which covers human reviewer feedback as well as bot review comments, shows each PR's commit and every reply in full before anything is pushed or posted. To run a review yourself, see [Review your changes](using/review.md).
 
-In GitHub Actions, reviews, triage, and issue assessment run in your repository, either automatically or on request with `/cc-review` comments. `cc-review:ci setup` installs a pinned GitHub Actions caller with your model credentials and a bot identity. Unattended reviews go through the same draft and check: a draft that still fails the check, or a PR whose head changed since analysis, is not posted and is withheld for the next run. To set this up, see [Automate cc-review in GitHub Actions](using/ci.md).
+In GitHub Actions, reviews, triage, and issue assessment run in your repository, either automatically or on request with `/cc-review` comments. There, cc-review publishes no review or fix while the PR's checks are failing or still pending. When the pull request or issue changes during a run in a way that affects that operation, such as a new push, the run does not complete and has to be repeated against the current state. To set this up, see [Automate cc-review in GitHub Actions](using/ci.md).
 
 ## Status and limits
 
-cc-review is at version <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->. The GitHub Actions automation runs on your own model account and is set up in a target repository with `cc-review:ci setup`.
+cc-review is at version <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->. The GitHub Actions automation runs on your own model account and is set up in a target repository with `cc-review:ci setup`.
 
 The external review tools are optional: cc-review runs each one only when its command-line tool is installed and enabled, and it ships with GitHub Copilot and Greptile turned off. Greptile also needs the repository connected to a Greptile organization, and it spends credits on every run (a base review costs one), which is why it stays off until you enable it. The Skeptic, one of the two meta-review critics, re-reads each finding against the code. The Skeptic removes a finding only when it can cite code that disproves it, and when it cannot evaluate a finding, it keeps it.
 
@@ -100,4 +102,4 @@ The external review tools are optional: cc-review runs each one only when its co
 - The cc-review repository keeps its own documentation index: its README points to a full guide at `docs/GUIDE.md` and to a map of its `docs/` directory at `docs/README.md`.
 
 > [!NOTE]
-> This guide was verified against cc-review <!-- guide:attr cc-review-commit-short -->2c380ea<!-- /guide:attr --> (version <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->), captured <!-- guide:attr baseline-date -->2026-11-20<!-- /guide:attr -->.
+> This guide was verified against cc-review <!-- guide:attr cc-review-commit-short -->8e882b6<!-- /guide:attr --> (version <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->), captured <!-- guide:attr baseline-date -->2026-11-22<!-- /guide:attr -->.

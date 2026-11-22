@@ -6,20 +6,82 @@ findings:
   locations:
   - ref: review/VERSION:1
     quote: 1.2.0
-  summary: review/VERSION is stale at 1.2.0 while the project ships 1.4.0
+  summary: review/VERSION is stale at 1.2.0 while the project ships 1.9.2
   evidence: review/VERSION:1 reads 1.2.0, but the top-level VERSION, review/.claude-plugin/plugin.json
-    version, and the release tag v1.4.0 all say 1.4.0 at commit 37efe88
-  status: collected
+    version, and the release tag v1.9.2 all say 1.9.2 at commit 104da1d; review/VERSION
+    was last changed in 3e722c3
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/40
 - id: UF-2
   source: cc-review
   kind: bug
   locations:
-  - ref: review/opencode/install.sh:19-20
+  - ref: review/opencode/install.sh:19-25
     quote: .opencode/plugins/cc-review
   summary: OpenCode installer copies commands to a path stock OpenCode does not scan,
     so the commands never register
-  evidence: install.sh:19-20 writes command markdown to .opencode/plugins/cc-review/command/,
-    but OpenCode (v2.1.4) discovers commands only from .opencode/command/ (project)
-    or ~/.config/opencode/commands/ (global) per opencode.ai/docs/commands; so /review
-    and the other commands do not register under stock OpenCode
-  status: collected
+  evidence: install.sh:19-25 copies command markdown to .opencode/plugins/cc-review/command/,
+    but OpenCode discovers project commands only from .opencode/commands/ (and the
+    legacy .opencode/command/) and global commands from ~/.config/opencode/commands/
+    per opencode.ai/docs/commands (checked 2026-11-22), which names no plugin directory
+    as a command source; so /review and the other commands do not register under stock
+    OpenCode
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/41
+- id: UF-3
+  source: cc-review
+  kind: bug
+  locations:
+  - ref: review/core/commands/review.md:804
+    quote: filter findings where `confidence < MIN_CONFIDENCE`
+  summary: Reviewers are told Critical findings may be reported at confidence 50,
+    but the review drops every finding below severity.min_confidence (default 70)
+  evidence: agents/preamble.md:46-47 and finding.schema.json:49 allow Critical at
+    >= 50; review.md:804 filters all findings below MIN_CONFIDENCE with no Critical
+    exception, so a Critical at 60 never reaches the report (8e882b6)
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/36
+- id: UF-4
+  source: cc-review
+  kind: bug
+  locations:
+  - ref: review/core/commands/review.md:380
+    quote: TEST_TIMEOUT=$(resolve_config "test.timeout_seconds" "300")
+  summary: test.timeout_seconds is read into TEST_TIMEOUT but never used, so the fix
+    loop applies no test timeout
+  evidence: rg TEST_TIMEOUT in review/core finds only the assignment at review.md:380;
+    the fix loop runs TEST_CMD at review.md:1032 without it (8e882b6)
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/37
+- id: UF-5
+  source: cc-review
+  kind: stale-reference
+  locations:
+  - ref: README.md:290-323
+    quote: 'reviewers:'
+  summary: The README configuration example shows an outdated template
+  evidence: README.md:290-323 sets reviewers.<name> values and lists two bot profiles,
+    while review/config/config-template.yml at 8e882b6 sets no reviewer keys, lists
+    four bot profiles, and has severity, meta_review and interactive keys
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/38
+- id: UF-6
+  source: cc-review
+  kind: doc-drift
+  locations:
+  - ref: review/config/config-template.yml:31-34
+    quote: Before a review, thread reply or resolution is posted, cc-review withholds
+      it
+  summary: The template comment on the posting conversation check does not say it
+    applies to review runs only; triage does not read pr_posting.ignore_authors
+  evidence: ignore_authors is read only by review.md, bulk.md:952,1007, post-review.sh
+    and review_draft.py; triage.md uses reviewer_activity/reviewer_summary checks
+    (triage.md:56,72) at 8e882b6
+  status: filed
+  reverified_commit: 104da1d4a08514a9096fc4fa2d9c446b7868a5e1
+  filed: https://github.com/rhuss/cc-review/issues/39

@@ -127,4 +127,4 @@ Three bundled profiles preset which reviewers run and how strict the gate is. Se
 | `interactive` | not set | not set | false |
 
 > [!NOTE]
-> These flags and profiles were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> These flags and profiles were verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.

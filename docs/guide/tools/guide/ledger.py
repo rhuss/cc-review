@@ -13,6 +13,7 @@ block at the top of the page (never inside a listing) whose references resolve.
 Ledger location (override with --ledger):
   antora          <internal_root>/modules/internal/pages/claim-ledger.adoc  (|=== table)
   mkdocs, gfm     <internal_root>/claim-ledger.md                           (pipe table)
+  embedded gfm    ledger/claims.md in the guide root (no internal part; not rendered)
 Columns: ID, Claim, Page, Source, Status. Page and Source take several values separated
 by `;`; Page is `-` when a claim belongs to no single page. Pages are named by their path
 without extension, relative to the page directory.
@@ -40,6 +41,8 @@ class LedgerError(ValueError):
 
 
 def default_ledger(root: Path, adapter: guidecfg.Adapter) -> Path:
+    if guidecfg.embedded_front_page(root) is not None:
+        return Path(root) / "ledger" / "claims.md"
     internal = Path(root) / adapter.internal_root
     if adapter.format == "antora":
         return internal / "modules" / "internal" / "pages" / "claim-ledger.adoc"

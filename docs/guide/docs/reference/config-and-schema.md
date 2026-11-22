@@ -1,11 +1,30 @@
 # Configuration and finding schema
 
 <!-- Sources:
-cc-review:README.md:254-307
-cc-review:review/config/config-template.yml:1-73
-cc-review:review/core/scripts/resolve-config.sh:117-222
-cc-review:review/core/schemas/finding.schema.json:40-127
-cc-review:review/core/schemas/reviewer.schema.json:40-54
+cc-review:README.md:272-286,325
+cc-review:review/config/config-template.yml:1-89
+cc-review:review/config/profiles/quick.yml:1
+cc-review:review/config/profiles/thorough.yml:1
+cc-review:review/config/profiles/ci.yml:1
+cc-review:review/core/scripts/resolve-config.sh:43-76,132-165,190-222,237-253,256-332
+cc-review:review/core/commands/review.md:4,80-93,113-122,145-151,376-385,635,799-804,809,820-837,940,942-946,980,1012-1013,1023,1032,1525-1528,1768-1771,1772-1778
+cc-review:review/core/commands/bulk.md:112
+cc-review:review/core/commands/triage.md:449,492,980-981
+cc-review:review/core/reviewers/correctness.md:2-4
+cc-review:review/core/reviewers/architecture.md:2-4
+cc-review:review/core/reviewers/security.md:2-4
+cc-review:review/core/reviewers/production.md:2-4
+cc-review:review/core/reviewers/test-quality.md:2-4
+cc-review:review/core/reviewers/goal-alignment.md:2-4
+cc-review:review/core/reviewers/coderabbit/reviewer.md:2-6
+cc-review:review/core/reviewers/copilot.md:2-6
+cc-review:review/core/reviewers/codex.md:2-6
+cc-review:review/core/reviewers/greptile/reviewer.md:2-6
+cc-review:review/core/reviewers/gator/reviewer.md:2-6
+cc-review:review/core/schemas/finding.schema.json:40-50,95-122
+cc-review:review/core/agents/preamble.md:46-47
+cc-review:review/core/schemas/reviewer.schema.json:3-4,29-33,40-48
+cc-review:review/core/reviewers/gator/reviewer.md:7-10
 -->
 
 This page lists the cc-review configuration keys, the order in which configuration layers resolve into one effective configuration, and the fields of a finding. For the command flags that can override these settings, see the [CLI reference](cli.md).
@@ -14,22 +33,31 @@ This page lists the cc-review configuration keys, the order in which configurati
 
 cc-review reads YAML configuration from a project file at `.cc-review/config.yml` (which takes precedence) or a user file at `~/.cc-review/config.yml`. Each is copied from `review/config/config-template.yml`, and that same template is the built-in defaults layer of the merge.
 
+The template sets these keys:
+
 ```yaml
-reviewers:                # one key per discovered reviewer; omit a key to use the reviewer's default
-  correctness: true
-  architecture: true
-  security: true
-  production: true
-  test-quality: true
-  goal-alignment: true
-  coderabbit: true        # command reviewer (CodeRabbit CLI)
-  copilot: false          # command reviewer (Copilot CLI)
-  codex: true             # command reviewer (Codex CLI)
-  greptile: false         # command reviewer (Greptile CLI, spends credits)
-  gator: false            # opt-in principal-engineer reviewer
+severity:
+  min_confidence: 70
+  request_changes_severities:
+    - Critical
+    - Important
+  auto_fix: true
+
+pr_posting:
+  enabled: true
+  auto_detect_pr: false
+  max_inline_comments: 50
+  voice_profile: "reviewer"
+  recovery_dir: ".cc-review"
+  ignore_authors: []
+
+output:
+  dir: "."
+  verbosity: "normal"
+  findings_filename: "review-findings.md"
 
 test:
-  command: ""             # Auto-detected from Makefile/go.mod/package.json/pyproject.toml
+  command: ""
   timeout_seconds: 300
 
 triage:
@@ -50,45 +78,108 @@ triage:
     patch_threshold: 80
     auto_remediate: true
 
+meta_review:
+  enabled: true
+  min_findings: 5
+
+interactive: true
+
 max_fix_rounds: 3
-output:
-  dir: "."
 ```
+
+Its comment block documents two more maps that it does not set, `reviewers` and `allow_untrusted_checkout`, and gives an example for `pr_posting.ignore_authors`. The examples, as they appear in the template's comments:
+
+```yaml
+# reviewers:
+#   test-quality: false
+#   gator: true
+#   accessibility: true     # a project or user reviewer
+#
+# allow_untrusted_checkout:
+#   codex: true
+#
+# pr_posting:
+#   ignore_authors:
+#     - k8s-ci-robot
+#     - openshift-ci-robot
+```
+
+After the merge, cc-review checks the value types. An invalid `severity.auto_fix`, `pr_posting.enabled`, `pr_posting.auto_detect_pr`, `severity.min_confidence` (an integer from 0 to 100), `max_fix_rounds`, `pr_posting.max_inline_comments`, or `test.timeout_seconds` (each a positive integer) falls back to the template value with a warning. An empty value skips this check. An invalid `output.verbosity` falls back to `normal`.
 
 ### Top-level keys
 
-| Key | Shape | Purpose |
-|-----|-------|---------|
-| `reviewers` | map of booleans | One key per discovered reviewer. Omit a key to use that reviewer's own default. |
-| `test` | map | The test command and timeout the fix loop runs. |
-| `triage` | map | Bot handling and Codecov thresholds for triage. |
-| `max_fix_rounds` | integer | Maximum fix loop rounds. |
-| `output` | map | Where reports are written. |
-| `pr_posting` | map | How reviews and replies are posted to a pull request. |
+| Key | Shape | In the template | Purpose |
+|-----|-------|-----------------|---------|
+| `reviewers` | map of booleans | not set; documented in its comments | One key per discovered reviewer. A reviewer without a key uses its own default. |
+| `allow_untrusted_checkout` | map of booleans | not set; documented in its comments | Lets a command reviewer run in the checkout of a pull request from a fork. |
+| `severity` | map | set | Confidence threshold, gate severities, and automatic fixing. |
+| `pr_posting` | map | set | How reviews and replies are posted to a pull request. |
+| `output` | map | set | Where the findings report is written and how much progress is shown. |
+| `test` | map | set | The test command the fix loop runs, and `test.timeout_seconds`. |
+| `triage` | map | set | Bot handling and Codecov thresholds for triage. |
+| `meta_review` | map | set | Whether the meta-review runs and from how many findings. |
+| `interactive` | boolean | `true` | Whether cc-review asks before acting. |
+| `max_fix_rounds` | integer | `3` | Maximum fix loop rounds. |
 
 ### reviewers
 
-Each key under `reviewers` enables (`true`) or disables (`false`) one discovered reviewer. The values below are those set in the config template.
+The template sets no `reviewers` key; its comments document the map. Reviewers are plugins discovered from `.cc-review/reviewers/` (project), `~/.cc-review/reviewers/` (user), and the bundled `core/reviewers/` directory. `reviewers.<name>: true` enables a discovered reviewer and `false` disables it. A reviewer without a key uses the `enabled` value from its own frontmatter, which defaults to `true` when the frontmatter omits it. A value that is not a boolean is removed with a warning, so the reviewer's default applies.
 
-| Reviewer key | Template value | Notes |
-|--------------|----------------|-------|
-| `correctness` | `true` | |
-| `architecture` | `true` | |
-| `security` | `true` | |
-| `production` | `true` | |
-| `test-quality` | `true` | |
-| `goal-alignment` | `true` | |
-| `coderabbit` | `true` | Command reviewer (CodeRabbit CLI) |
-| `copilot` | `false` | Command reviewer (Copilot CLI) |
-| `codex` | `true` | Command reviewer (Codex CLI) |
-| `greptile` | `false` | Command reviewer (Greptile CLI, spends credits) |
-| `gator` | `false` | Opt-in principal-engineer reviewer |
+The bundled defaults enable every reviewer except `copilot`, `gator`, and `greptile`:
+
+| Reviewer | Kind | Frontmatter default |
+|----------|------|---------------------|
+| `correctness` | prompt | `true` (not set) |
+| `architecture` | prompt | `true` (not set) |
+| `security` | prompt | `true` (not set) |
+| `production` | prompt | `true` (not set) |
+| `test-quality` | prompt | `true` (not set) |
+| `goal-alignment` | prompt | `true` (not set) |
+| `coderabbit` | command | `true` |
+| `copilot` | command | `false` |
+| `codex` | command | `true` |
+| `greptile` | command | `false` |
+| `gator` | prompt | `false` |
+
+> [!NOTE]
+> The legacy keys `agents.<name>` and `external_tools.<name>` are deprecated. They keep working for the migrated reviewers (`agents.test_quality` maps to `reviewers.test-quality`) and print a one-line warning that points to the new key.
+
+### allow_untrusted_checkout
+
+The template sets no `allow_untrusted_checkout` key; its comments document the map. Command reviewers do not run in the checkout of a pull request from a fork (bulk review, or `--pr` for a pull request that is not the current branch), because the tool could load the pull request's own agent instruction files. They are reported as `skipped (untrusted checkout)`. `allow_untrusted_checkout.<name>: true` opts one reviewer in; the default is `false`. Prompt reviewers always run. A value that is not a boolean is removed with a warning, so the reviewer does not run in an untrusted checkout.
+
+### severity
+
+| Key | Template value | Notes |
+|-----|----------------|-------|
+| `severity.min_confidence` | `70` | Findings with a lower confidence are excluded from the report. |
+| `severity.request_changes_severities` | `Critical`, `Important` | The severities the gate counts. The gate passes when no finding has one of them; in a follow-up review, earlier material concerns that are still open also keep it from passing. |
+| `severity.auto_fix` | `true` | With `false`, the review does not fix without the user's explicit choice. |
+
+### pr_posting
+
+| Key | Template value | Notes |
+|-----|----------------|-------|
+| `pr_posting.enabled` | `true` | |
+| `pr_posting.auto_detect_pr` | `false` | With `true` and no `--pr`, the review uses the pull request of the current branch. |
+| `pr_posting.max_inline_comments` | `50` | Limit for the number of accepted inline findings, checked before posting. |
+| `pr_posting.voice_profile` | `"reviewer"` | |
+| `pr_posting.recovery_dir` | `".cc-review"` | Directory for the recovery file written when posting fails (a bulk worker writes it to its PR's state directory instead). |
+| `pr_posting.ignore_authors` | `[]` (none) | A list of logins treated like bots by the posting check, for CI accounts that are regular GitHub users (the template comment gives `k8s-ci-robot` and `openshift-ci-robot` as examples). In local review runs, before a review, thread reply, or resolution is posted, cc-review checks whether someone other than you commented on the PR since the analysis. An interactive run shows the new comments and asks whether to post anyway, skip, or re-run later; a non-interactive or unattended run withholds the action. Bots and these logins do not count. The CI workflows use their own check (see [Automate cc-review in GitHub Actions](../using/ci.md#forks-and-configuration-trust)). |
+
+### output
+
+| Key | Template value | Notes |
+|-----|----------------|-------|
+| `output.dir` | `"."` | Directory the findings report is written to. |
+| `output.verbosity` | `"normal"` | One of `quiet` (final summary and errors), `normal` (reviewer completion status and finding counts), or `verbose` (reviewer progress, timing, intermediate results, discovery notes, and debug info). |
+| `output.findings_filename` | `"review-findings.md"` | File name of the findings report in `output.dir`. `--output <path>` replaces the whole path. |
 
 ### test
 
 | Key | Template value | Notes |
 |-----|----------------|-------|
-| `test.command` | `""` (empty) | Auto-detected from Makefile, go.mod, package.json, or pyproject.toml. |
+| `test.command` | `""` (empty) | When empty, the review detects the command: `make test` for a Makefile with a `test:` target, `go test ./...` for `go.mod`, `npm test` for a `package.json` with a test script, `pytest` for `pyproject.toml` or `setup.py`. |
 | `test.timeout_seconds` | `300` | |
 
 ### triage
@@ -99,26 +190,14 @@ Each key under `reviewers` enables (`true`) or disables (`false`) one discovered
 | `triage.codecov.patch_threshold` | `80` | |
 | `triage.codecov.auto_remediate` | `true` | |
 
-### max_fix_rounds and output
+### meta_review, interactive, and max_fix_rounds
 
 | Key | Template value | Notes |
 |-----|----------------|-------|
-| `max_fix_rounds` | `3` | Maximum fix loop rounds. |
-| `output.dir` | `"."` | Directory reports are written to. |
-
-### pr_posting
-
-| Key | Template value | Notes |
-|-----|----------------|-------|
-| `pr_posting.enabled` | `true` | |
-| `pr_posting.auto_detect_pr` | `false` | |
-| `pr_posting.max_inline_comments` | `50` | |
-| `pr_posting.voice_profile` | `"reviewer"` | |
-| `pr_posting.recovery_dir` | `".cc-review"` | |
-| `pr_posting.ignore_authors` | `[]` (none) | A list of logins treated like bots by the posting check, for CI accounts that are regular GitHub users (for example `k8s-ci-robot`). Before a review, thread reply, or resolution is posted, cc-review withholds it when someone other than you commented on the PR since the analysis; bots and these logins do not count. |
-
-> [!NOTE]
-> The legacy keys `agents.<name>` and `external_tools.<name>` are deprecated. They keep working for the migrated reviewers (`agents.test_quality` maps to `reviewers.test-quality`) and print a one-line warning that points to the new key.
+| `meta_review.enabled` | `true` | `--no-meta-review` sets it to `false`. |
+| `meta_review.min_findings` | `5` | With fewer findings, the meta-review is skipped. |
+| `interactive` | `true` | With `false`, the review shows no next-steps menu and applies its defaults, and a bulk run is unattended. |
+| `max_fix_rounds` | `3` | Maximum fix loop rounds. `--max-rounds` overrides it. |
 
 ## Resolution order
 
@@ -135,11 +214,11 @@ cc-review merges several configuration layers into one effective configuration. 
 | 7 (lowest) | Reviewer default | The reviewer's own `enabled` value. |
 
 > [!NOTE]
-> The five file layers (built-in defaults, user config, project config, profile, and `--config` file) are assembled in `resolve-config.sh` and deep-merged from lowest to highest priority, so the explicit `--config` file wins among the files.
+> The five file layers (built-in defaults, user config, project config, profile, and `--config` file) are assembled in `resolve-config.sh` and deep-merged from lowest to highest priority, so the explicit `--config` file wins among the files. Legacy `agents.*` and `external_tools.*` keys are migrated in each layer before the merge, so layer precedence applies to them as well.
 
 ## Finding schema
 
-Every reviewer reports findings in a common structure, validated against `finding.schema.json`. The gate and the meta-review act on a finding's `severity`, `confidence`, and `resolution`.
+Every reviewer reports findings in a common structure, validated against `finding.schema.json`. The gate counts findings by `severity`. Findings with a `confidence` below `severity.min_confidence` are dropped after each reviewer completes, before the merge.
 
 ### Severity
 
@@ -156,7 +235,7 @@ For how severity drives the pass or fix decision, see [Gate and fix](../how-it-w
 
 ### Confidence
 
-`confidence` is an integer from 0 to 100. The minimum to report a finding is 70, lowered to 50 for `Critical` findings.
+`confidence` is an integer from 0 to 100. The reviewer instructions ask for a confidence of at least 70, or at least 50 for `Critical` findings. After each reviewer completes, the review drops every finding below `severity.min_confidence` (70 in the template), with no exception for `Critical` findings.
 
 ### Resolution and round tracking
 
@@ -180,9 +259,9 @@ For how the two critics produce these, see [Meta-review](../how-it-works/meta-re
 
 ## severity_map translation at merge
 
-A reviewer plugin declares its metadata in frontmatter validated against `reviewer.schema.json`. When a command reviewer wraps an external tool whose severity vocabulary differs from cc-review's, the reviewer translates it with a `severity_map`.
+A reviewer plugin declares its metadata in frontmatter validated against `reviewer.schema.json`. A reviewer whose native severity names differ from cc-review's (a command reviewer for an external tool, or the prompt reviewer Gator) declares a `severity_map`. The merge step translates each finding's severity with it, exactly once per finding.
 
 `severity_map` is an object: each key is a native severity string, and each value is one of `Critical`, `Important`, `Minor`, or `Notable`. A native value not listed in the map passes through unchanged when it is already a cc-review severity; otherwise the finding is dropped with a warning.
 
 > [!NOTE]
-> These configuration keys and schema fields were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> These configuration keys and schema fields were verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.

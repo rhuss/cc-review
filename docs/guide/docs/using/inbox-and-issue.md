@@ -14,7 +14,7 @@ cc-review:review/core/commands/issue.md:81-92
 cc-review:review/core/commands/issue.md:101-122
 cc-review:review/core/templates/issue-assessment.md:1-5
 cc-review:review/core/commands/unattended.md:9-21
-cc-review:docs/CI.md:132-174
+cc-review:docs/CI.md:135-177
 -->
 
 A repository collects pull requests, issues, and Discussions from many people, and not every one of them is yours to act on. Two commands help you decide where your attention goes before you start reviewing or writing code. `/cc-review:inbox` surveys one repository and groups the open items by who needs to act next. `/cc-review:issue` assesses a single issue, separates its concrete need, its fit with the project, and whether the work is justified, and drafts a reply.
@@ -109,7 +109,7 @@ Assessment works on GitHub.com issues only, the target must be an issue (pull re
 
 Interactive assessment never posts comments, edits code, assigns, labels, or closes the issue, and it never launches a review. Posting the drafted reply is a separate step you take yourself.
 
-Explicit `issue N --unattended` is the exception. An unattended run asks no questions and posts the rendered reply and the configured triage labels under the unattended policy. That policy also governs unattended review and triage, including the CI workflows; read [CI setup and policy](ci.md) for how it is configured and what it publishes.
+Explicit `issue N --unattended` is the exception. An unattended run asks no questions and posts the rendered reply and the configured triage labels under the unattended policy. That policy also governs unattended review and triage, including the CI workflows; read [Automate cc-review in GitHub Actions](ci.md) for how it is configured and what it publishes.
 
 > [!IMPORTANT]
 > The inbox report, the guided tour itself, and interactive assessment are read-only. The tour's fan-out and `issue N --unattended` hand work to commands that act under their own confirmation and publication policy; the inbox adds no write authority of its own.
@@ -118,4 +118,4 @@ Explicit `issue N --unattended` is the exception. An unattended run asks no ques
 > This page covers the commands you run. For how the inbox weighs responsibility and how assessment judges need and fit, read [How it works](../how-it-works/index.md). For the full flag list, see the [Reference](../reference/index.md).
 
 > [!NOTE]
-> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.

@@ -8,6 +8,10 @@
 Per source <id>: <id>-repo, <id>-commit, <id>-commit-short, <id>-blob, <id>-tree,
 and <id>-<attribute> for every entry under `attributes`; plus baseline-date and
 baseline-sources (plain text such as "mini 7ca3fb3, saw c84103d").
+The `self` source of an embedded guide (specs/005-embedded-guide, research R6) links to
+its tracked branch, not the pinned commit (a squash merge removes that commit):
+self-repo, self-blob, and self-tree use the recorded `web` URL and `ref`, and are left
+out when the host has no GitHub `origin` (no `web`).
 
 Usage:
   uv run tools/guide/attrs.py export --format antora [--root DIR]
@@ -32,12 +36,24 @@ from pathlib import Path
 
 import branding
 import guidecfg
+import region
 
 
 def values(baseline: guidecfg.Baseline) -> dict[str, str]:
     """All baseline values by attribute name, in a stable order."""
     out: dict[str, str] = {}
     for src in baseline.sources:
+        if src.id == guidecfg.SELF_ID:
+            if src.web:
+                branch = src.ref or "main"
+                out[f"{src.id}-repo"] = src.web
+                out[f"{src.id}-blob"] = f"{src.web}/blob/{branch}"
+                out[f"{src.id}-tree"] = f"{src.web}/tree/{branch}"
+            out[f"{src.id}-commit"] = src.commit
+            out[f"{src.id}-commit-short"] = src.commit[:7]
+            for name, value in src.attributes.items():
+                out[f"{src.id}-{name}"] = value
+            continue
         url = src.web_url
         out[f"{src.id}-repo"] = url
         out[f"{src.id}-commit"] = src.commit
@@ -86,12 +102,21 @@ def regions(root: Path, baseline: guidecfg.Baseline, write: bool,
     """Stale generated regions in the Markdown pages under dirs; rewritten when write is true.
 
     Raises RegionError (and writes nothing) when a region names an unknown attribute.
-    Idempotent: a second call finds nothing to change.
+    Idempotent: a second call finds nothing to change. Without dirs, an embedded guide's
+    front page is included.
+
+    A file carrying the author-region markers (specs/006, research R7) is rewritten in
+    its region only: attr markers in author text are neither rewritten nor unknown-attribute
+    errors. A file with malformed markers is left alone (check.py reports the markers).
     """
     root = Path(root)
     vals = values(baseline)
     files: list[Path] = []
-    for d in dirs or REGION_DIRS:
+    targets = list(dirs or REGION_DIRS)
+    front = guidecfg.embedded_front_page(root)
+    if not dirs and front is not None and front.is_file():
+        targets.append(str(front.resolve()))
+    for d in targets:
         base = Path(d) if Path(d).is_absolute() else root / d
         if base.is_file():
             files.append(base)
@@ -102,9 +127,14 @@ def regions(root: Path, baseline: guidecfg.Baseline, write: bool,
     unknown: list[str] = []
     for path in files:
         text = path.read_text()
-        for m in REGION_RE.finditer(text):
+        try:
+            parsed = region.parse(text)
+        except region.RegionError:
+            continue
+        content = parsed.content
+        for m in REGION_RE.finditer(content):
             name, old = m.group(1), m.group(2)
-            line = text.count("\n", 0, m.start()) + 1
+            line = parsed.begin_line + content.count("\n", 0, m.start()) + 1
             if name not in vals:
                 unknown.append(f"{path}:{line}: unknown baseline attribute {name!r}")
                 continue
@@ -112,9 +142,9 @@ def regions(root: Path, baseline: guidecfg.Baseline, write: bool,
                 changes.append(Change(path, line, name, old, vals[name]))
         if write:
             new = REGION_RE.sub(lambda m: (f"<!-- guide:attr {m.group(1)} -->{vals[m.group(1)]}<!-- /guide:attr -->"
-                                           if m.group(1) in vals else m.group(0)), text)
-            if new != text:
-                updated[path] = new
+                                           if m.group(1) in vals else m.group(0)), content)
+            if new != content:
+                updated[path] = region.splice(text, new)
     if unknown:
         raise RegionError("\n".join(unknown))
     for path, text in updated.items():

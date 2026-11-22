@@ -81,6 +81,7 @@ class Ledger:
     rulings: list[Ruling] = field(default_factory=list)
     deferred: list[Deferred] = field(default_factory=list)
     rejected: list[str] = field(default_factory=list)
+    dropped: list[str] = field(default_factory=list)   # `claim dropped:` lines (embedded consolidation)
 
     @property
     def review_dispatches(self) -> int:
@@ -115,6 +116,8 @@ def parse_ledger(path: Path) -> Ledger:
             continue
         if re.search(r"rejected[- ]by[- ]source", line, re.I):
             led.rejected.append(line)
+        if re.search(r"\bclaim dropped\b", line, re.I):
+            led.dropped.append(line)
         m = RULING_RE.match(line)
         if m:
             qualifier = m.group(2).strip()
@@ -254,6 +257,34 @@ def _validation_text(root: Path, run_id: str) -> str:
         f" (details in `.guide/runs/{run_id}/validation.md`, local only)"
 
 
+def _local_locations(root: Path) -> dict[str, str]:
+    """Real locations of `local:<id>` inputs (embedded guides) -> `local:<id>`.
+
+    Run summaries and findings are committed; they name confidential inputs by id only
+    (specs/005-embedded-guide FR-006). Each location is listed as written, expanded, and
+    resolved, so every spelling is masked.
+    """
+    if guidecfg.embedded_front_page(root) is None:
+        return {}
+    try:
+        locations = guidecfg._local_inputs(root)
+    except guidecfg.ConfigError:
+        return {}
+    out: dict[str, str] = {}
+    for input_id, location in locations.items():
+        for form in {location, str(Path(location).expanduser()), str(Path(location).expanduser().resolve())}:
+            if form:
+                out[form] = f"local:{input_id}"
+    return out
+
+
+def mask_local(root: Path, text: str) -> str:
+    """Replace every real location of a `local:` input in text with `local:<id>`."""
+    for location, label in sorted(_local_locations(root).items(), key=lambda kv: len(kv[0]), reverse=True):
+        text = text.replace(location, label)
+    return text
+
+
 def summary(root: Path, plan_workspace: Path, run_id: str, **meta) -> Path:
     """Write runs/<run-id>.md from the ledger in plan_workspace."""
     root = Path(root)
@@ -277,6 +308,7 @@ def summary(root: Path, plan_workspace: Path, run_id: str, **meta) -> Path:
                         for r in led.rulings) or "None."
     rejected = "\n".join(f"- {line}" for line in led.rejected) or "None."
     deferred = "\n".join(f"- Task {d.task}: {d.text}" for d in led.deferred) or "None."
+    dropped = "\n".join(f"- {line}" for line in led.dropped) or "None."
     collected = [f for f in guidecfg.load_findings(root) if f.get("status") == "collected"]
     upstream = "\n".join(
         f"- {f.get('id')} ({f.get('source')}, {f.get('kind')}): {f.get('summary')}" for f in collected
@@ -298,12 +330,14 @@ def summary(root: Path, plan_workspace: Path, run_id: str, **meta) -> Path:
         "RULINGS": rulings,
         "REJECTED_FINDINGS": rejected,
         "DEFERRED_MINORS": deferred,
+        "DROPPED_CLAIMS": dropped,
         "UPSTREAM_FINDINGS": upstream,
         "VALIDATION": _validation_text(root, run_id),
     }
     text = _template().read_text()
     for key, value in values.items():
         text = text.replace("{{" + key + "}}", value)
+    text = mask_local(root, text)
     out = root / "runs" / f"{run_id}.md"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text)
@@ -329,7 +363,7 @@ def next_run_id(root: Path, command: str, date: str | None = None) -> str:
 def findings_add(root: Path, finding: dict) -> str:
     """Validate and append one upstream finding; return its new UF-<n> id."""
     root = Path(root)
-    entry = dict(finding)
+    entry = _mask_strings(root, dict(finding))
     entry.setdefault("status", "collected")
     existing = guidecfg.load_findings(root)
     numbers = [int(m.group(1)) for f in existing if (m := re.match(r"^UF-(\d+)$", str(f.get("id", ""))))]
@@ -350,6 +384,17 @@ def findings_add(root: Path, finding: dict) -> str:
     path.write_text("# Upstream findings collected by cc-guide runs; file them with /guide:upstream.\n"
                     + yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
     return entry["id"]
+
+
+def _mask_strings(root: Path, value):
+    """mask_local applied to every string inside a finding."""
+    if isinstance(value, str):
+        return mask_local(root, value)
+    if isinstance(value, list):
+        return [_mask_strings(root, v) for v in value]
+    if isinstance(value, dict):
+        return {k: _mask_strings(root, v) for k, v in value.items()}
+    return value
 
 
 # --- CLI ---------------------------------------------------------------------------

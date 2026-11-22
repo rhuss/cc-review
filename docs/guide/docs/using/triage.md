@@ -141,4 +141,4 @@ A bulk run also accepts `--unattended` together with `--resume`, which continues
 > This page covers the commands you run. For how triage verifies threads and classifies bots, read [How it works](../how-it-works/index.md). For the full flag list, see the [Reference](../reference/index.md).
 
 > [!NOTE]
-> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.9.0<!-- /guide:attr -->.
+> These commands were verified against cc-review <!-- guide:attr cc-review-version -->1.9.2<!-- /guide:attr -->.

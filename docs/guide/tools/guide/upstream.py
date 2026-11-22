@@ -135,6 +135,12 @@ def _git(*args: str) -> subprocess.CompletedProcess:
 
 
 def _bare(root: Path, source: guidecfg.Source, git_fetch: bool) -> Path:
+    if source.id == guidecfg.SELF_ID:
+        # an embedded guide's own host repository, read in place (never cloned into the cache)
+        top = guidecfg.host_toplevel(root)
+        if top is None:
+            raise UpstreamError("the host repository of the 'self' source was not found")
+        return top
     bare = Path(root) / ".guide" / "cache" / f"{source.id}.git"
     if git_fetch:
         try:
@@ -191,7 +197,12 @@ def reverify(root: Path, finding_id: str, git_fetch: bool = True) -> str:
         return finding["status"]
     source = _source(root, finding)
     bare = _bare(root, source, git_fetch)
-    head = _default_head(bare, fetch.clone_url(source.repo, root), git_fetch)
+    if source.id == guidecfg.SELF_ID:
+        head = fetch.self_head(bare, source.ref)
+        if head is None:
+            raise UpstreamError("cannot determine the head of the host repository")
+    else:
+        head = _default_head(bare, fetch.clone_url(source.repo, root), git_fetch)
 
     problems = []
     locations = finding.get("locations") or []
@@ -260,7 +271,8 @@ def draft(root: Path, finding_id: str, run_id: str | None = None) -> Path:
                             "re-verify it on the default branch before drafting (FR-032)")
     source = _source(root, finding)
     commit = finding.get("reverified_commit") or source.commit
-    bare = Path(root) / ".guide" / "cache" / f"{source.id}.git"
+    bare = _bare(root, source, git_fetch=False) if source.id == guidecfg.SELF_ID else \
+        Path(root) / ".guide" / "cache" / f"{source.id}.git"
 
     proposal = (finding.get("proposal") or "").strip() or \
         "_Suggested improvement: to be written by the author before this report is approved._"
@@ -298,11 +310,15 @@ def _gh_private(slug: str) -> bool | None:
 
 
 def _own_remotes(guide: guidecfg.Guide) -> list[str]:
+    """Remotes of the guide's own repository: the guide root as a repository top level, or
+    for an embedded guide the host repository that contains it."""
     root = Path(guide.root).resolve()
     top = _git("-C", str(root), "rev-parse", "--show-toplevel")
-    if top.returncode != 0 or Path(top.stdout.strip()).resolve() != root:
+    if top.returncode != 0 or not top.stdout.strip():
         return []
-    proc = _git("-C", str(root), "remote", "-v")
+    if guide.embedded is None and Path(top.stdout.strip()).resolve() != root:
+        return []
+    proc = _git("-C", top.stdout.strip(), "remote", "-v")
     return sorted({line.split()[1] for line in proc.stdout.splitlines() if len(line.split()) >= 2})
 
 

@@ -17,6 +17,10 @@ requires:
 # Shareable pages live under docs/, the internal part under internal/ beside it.
 # docs/README.md is the table of contents (navigation order); docs/SUMMARY.md lists the
 # same pages in the same order for the print assembly.
+# Embedded guides (specs/005-embedded-guide, gfm only): the guide lives in a subdirectory
+# of the repository it documents and the host README is the front page and navigation;
+# docs/README.md is then a one-line pointer to it, has no internal part, and the Makefile
+# stages docs/ with the front page (tools/guide/embed.py stage) for the site and the PDF.
 content_root: docs
 internal_root: internal
 page_glob: "**/*.md"
@@ -42,6 +46,17 @@ experimental:
 # `uv run tools/guide/attrs.py regions --write docs internal` (make site runs it):
 #   <!-- guide:attr <name> -->VALUE<!-- /guide:attr -->
 attributes: generated-region
+
+# Author-owned README region (specs/006, gfm only): a guide.yaml block
+#   publish:
+#     page: docs/intro.md     # the page to render (inside docs/)
+#     target: ../README.md    # the author's file (outside the guide root)
+# publishes the rendered page (links rebased to the target's location) between the
+# author's markers, everything outside them staying the author's byte for byte:
+#   <!-- guide:region -->
+#   guide-owned content, written by `make publish`, compared by `make check-publish`
+#   <!-- /guide:region -->
+# A guide without the block ignores the publish targets (no-op, exit 0).
 
 preview_port: 8642
 

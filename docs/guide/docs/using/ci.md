@@ -8,22 +8,28 @@ cc-review:docs/CI.md:25-45
 cc-review:docs/CI.md:47-61
 cc-review:docs/CI.md:63-67
 cc-review:docs/CI.md:69-76
-cc-review:docs/CI.md:78-92
-cc-review:docs/CI.md:94-101
-cc-review:docs/CI.md:103-107
-cc-review:docs/CI.md:109-120
-cc-review:docs/CI.md:122-130
-cc-review:docs/CI.md:132-174
-cc-review:docs/CI.md:176-182
-cc-review:docs/CI.md:184-207
-cc-review:docs/CI.md:209-235
-cc-review:docs/CI.md:237-255
-cc-review:docs/CI.md:257-275
-cc-review:docs/CI.md:277-304
+cc-review:docs/CI.md:78-95
+cc-review:docs/CI.md:97-104
+cc-review:docs/CI.md:106-110
+cc-review:docs/CI.md:112-123
+cc-review:docs/CI.md:125-133
+cc-review:docs/CI.md:135-177
+cc-review:docs/CI.md:179-185
+cc-review:docs/CI.md:187-210
+cc-review:docs/CI.md:212-238
+cc-review:docs/CI.md:240-258
+cc-review:docs/CI.md:260-278
+cc-review:docs/CI.md:280-307
 cc-review:review/core/commands/ci.md:1-110
 cc-review:review/skills/ci/SKILL.md:1-16
 cc-review:review/core/commands/unattended.md:1-70
 cc-review:review/core/commands/review.md:9-16
+cc-review:review/core/scripts/ci.py:207-218
+cc-review:review/core/scripts/ci.py:248-255
+cc-review:review/core/scripts/ci.py:372-375
+cc-review:review/core/scripts/ci.py:455-459
+cc-review:review/core/scripts/ci.py:598-606
+cc-review:review/core/commands/review.md:635
 cc-review:review/config/config-template.yml:31-39,48-54
 -->
 
@@ -130,13 +136,13 @@ Every CI operation runs under a fixed unattended policy. Reviews use COMMENT, ne
 
 Triage touches bot reviewer threads only; human threads appear under needs attention. Assessment never closes or assigns issues. Fixes require a writer's explicit comment, an unchanged same-repository head, and successful existing checks. Changes are committed through the GitHub data API without executing project code, and a non-force ref update rejects competing pushes. Fix proposals are limited to existing regular, non-hidden files and bounded content. Code tests are not executed by this entry point, and a pushed fix runs the repository's ordinary CI. Inspect those checks before merging. There is no automatic rollback or repeated fix loop.
 
-A thread fix sees only its thread and that thread's file. A PR-wide `/cc-review fix` skips resolved threads and threads that carry a fix marker, works on the files those remaining threads point to (all changed files when there are none), and marks the threads its change addresses. File contents are bounded by `limits.fix_bytes`.
+A thread fix sees only its thread and that thread's file. After pushing, the bot replies in each fixed thread with a link to the new commit, a one or two sentence summary of the change, and a hidden marker. It leaves the thread open. When the model finds that the current files already address the request (for example a repeated command on a fixed thread) and proposes no change, the fix ends as skipped with a reason and a 👍 reaction, and nothing is pushed. The publisher does not check this on its own; a proposal with changed files is pushed. A PR-wide `/cc-review fix` skips resolved threads and threads that carry a fix marker, works on the files those remaining threads point to (all changed files when there are none), and marks the threads its change addresses. File contents are bounded by `limits.fix_bytes`.
 
 The CI analysis is proposal-only. It receives bounded diff and conversation evidence, the bundled review perspectives or need and fit guidance, bounded default-branch project guidance, and the unattended policy. It has no GitHub token, question tool, shell, network, or project execution. Issue assessments additionally get read-only `Read`, `Grep`, and `Glob`, confined to the default-branch checkout. Other operations run without tools, and the PR head is never checked out. A deterministic publisher checks the structured proposal before any mutation and requests maintainer attention when the supplied evidence is insufficient.
 
 Published text follows the [cc-prose](https://github.com/rhuss/cc-prose) humanizer; `prose: false` in `.cc-review/ci.yml` turns this off. Because guidance is not a guarantee, the publisher also replaces any remaining em or en dash outside code with plain punctuation before posting a review, assessment, or thread reply.
 
-A single updated bot status comment (heading `### cc-review CI`) shows a table with one row per action: its result, when it was updated, and the run log. The comment is posted as soon as an operation starts and edited in place. The model's reasoning goes to the run's step summary only. A hidden marker in the same comment records per-operation state, and only markers authored by the configured identity are trusted.
+A single updated bot status comment (heading `### cc-review CI`) shows a table with one row per action: its result, when it was updated, and the run log. The row of a completed fix links the pushed commit. The comment is posted as soon as an operation starts and edited in place. The model's full reasoning goes to the run's step summary. The status comment shows only each action's result, which for a skipped or needs-attention result includes the short reason. A hidden marker in the same comment records per-operation state, and only markers authored by the configured identity are trusted.
 
 Single-item core commands also accept `--unattended` outside CI: `review --pr 7 --unattended`, `triage --pr 7 --unattended`, and `issue 42 --unattended`. Review and triage reuse the bulk fixed policy on an explicit one-item selector. Issue assessment uses the guarded assessment publisher and your authenticated posting identity. Interactive invocations retain their draft and approval flows.
 
@@ -169,7 +175,7 @@ Supply secrets with `gh secret set` using stdin or a private local file. Doctor 
 
 The workflow checks out only the default branch configuration and the pinned cc-review integration. It never checks out a PR head. Automatic fork events publish guidance to request review from a writer. An authorized `/cc-review review` reads fork diff data through the API and cannot execute fork code. Fork triage and fixes are refused, and events authored by the configured bot are ignored.
 
-Before publishing, a CI run compares the item with the state it analyzed and withholds the result when that state moved: a review or fix when the PR head changed, a triage reply or resolution when the head or a non-bot comment in the bot threads changed, and an assessment when the issue title, body, or conversation changed. A new PR comment that leaves the head unchanged does not stop a CI review. The posting check that also counts other people's PR comments, with `pr_posting.ignore_authors` for logins treated like bots, belongs to local review and triage runs.
+Before publishing, a CI run compares the item with the state it analyzed and withholds the result when that state moved. A review or fix is withheld when the PR head changed. A triage reply or resolution is withheld when the head changed or when any review thread on the PR gained or changed a comment by anyone other than the configured bot identity; a human comment, another bot's comment, a new thread started by someone else, and an edited comment all count. An assessment is withheld when the issue title or body changed, or when a comment by anyone other than the configured bot identity was added or changed. A new PR comment that leaves the head unchanged does not stop a CI review. The posting check that counts other people's PR comments, with [`pr_posting.ignore_authors`](../reference/config-and-schema.md#pr_posting) for logins treated like bots, belongs to local review runs.
 
 ## Public repositories: allow pull_request_target
 

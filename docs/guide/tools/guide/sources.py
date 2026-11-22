@@ -37,6 +37,19 @@ INPUT_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 ADOC_ATTR_RE = re.compile(r"^:[!\w][\w-]*!?:")
 NO_SOURCES_ADOC = ":guide-no-sources:"
 NO_SOURCES_MD = re.compile(r"^<!--\s*guide:\s*no-sources\s*-->$")
+# The first line of an embedded guide's front page (the host README, specs/005-embedded-guide).
+FRONT_PAGE_MARK = "<!-- guide: front page."
+OWNERSHIP_COMMENT = ("<!-- guide: front page. This file is generated and maintained by cc-guide; "
+                     "change it with /guide:evolve. -->")
+# The first line of the region of a front page that carries the guide:region markers
+# (specs/006, FR-011): same prefix, so FRONT_PAGE_MARK recognizes both.
+OWNERSHIP_COMMENT_REGION = ("<!-- guide: front page. The text between the guide:region markers is "
+                            "generated and maintained by cc-guide; change it with /guide:evolve. "
+                            "Text outside the markers belongs to the author. -->")
+# Badge and logo lines a front page keeps between its title and its source block:
+# Markdown images (optionally linked) or HTML image, link, picture, and paragraph tags.
+_MD_IMAGE = r"\[?!\[[^\]]*\]\([^)]*\)(?:\]\([^)]*\))?"
+BADGE_LINE_RE = re.compile(rf"^(?:{_MD_IMAGE}\s*)+$|^</?(?:img|a|p|picture|source|br|div)\b.*$", re.I)
 
 
 # Links between pages, shared by check.py (internal and broken links) and drift.py
@@ -138,9 +151,20 @@ def find_block(text: str, style: Style) -> Block | None:
         i += 1
     while i < n and not lines[i].strip():
         i += 1
+    front_page = style == "html" and i < n and lines[i].strip().startswith(FRONT_PAGE_MARK)
+    if front_page:
+        while i < n and "-->" not in lines[i]:
+            i += 1
+        i += 1
+        while i < n and not lines[i].strip():
+            i += 1
     title = r"^=\s" if style == "line" else r"^#\s"
     if i < n and re.match(title, lines[i]):
         i += 1
+    if front_page:
+        # badges and a logo stay right after the title, before the source block
+        while i < n and (not lines[i].strip() or BADGE_LINE_RE.match(lines[i].strip())):
+            i += 1
     no_sources = False
     block: Block | None = None
     while i < n:
@@ -253,10 +277,67 @@ def _line_count(gitdir: str, commit: str, path: str) -> int | None:
 
 
 def _gitdir(cache_dir: Path, source_id: str) -> Path | None:
+    """Git directory of a cached source (the `self` source is resolved by _resolve_self)."""
     for candidate in (cache_dir / source_id, cache_dir / f"{source_id}.git"):
         if candidate.exists():
             return candidate
     return None
+
+
+def _git_ok(gitdir: str, *args: str) -> bool:
+    try:
+        return subprocess.run(["git", "-C", gitdir, *args], capture_output=True, timeout=60).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
+def _resolve_self(ref: Ref, source: guidecfg.Source, guide_root: Path) -> Resolution:
+    """Resolve a self:<path> citation in the host repository (specs/005-embedded-guide R5).
+
+    At the pinned commit when the host has it; otherwise from the fingerprint blob of the
+    path; when that blob is gone too, against the head of the tracked branch, with a
+    warning instead of an error (a fresh clone after a squash merge).
+    """
+    top = guidecfg.host_toplevel(guide_root)
+    if top is None:
+        return Resolution(False, "the host repository of the 'self' source was not found")
+    gitdir = str(top)
+    warning = ""
+    if _git_ok(gitdir, "cat-file", "-e", f"{source.commit}^{{commit}}"):
+        rev, path, at = source.commit, ref.path, source.commit[:7]
+        count = _line_count(gitdir, rev, path)
+    else:
+        blob = source.fingerprints.get(ref.path)
+        if blob and _git_ok(gitdir, "cat-file", "-e", f"{blob}^{{blob}}"):
+            at = f"fingerprint {blob[:7]}"
+            count = _blob_line_count(gitdir, blob)
+        else:
+            head = "HEAD"
+            for name in (f"refs/heads/{source.ref}", f"refs/remotes/origin/{source.ref}"):
+                if source.ref and _git_ok(gitdir, "rev-parse", "--verify", "--quiet", name):
+                    head = name
+                    break
+            at = head.rsplit("/", 1)[-1]
+            warning = (f"warning: pinned commit {source.commit[:7]} is not in the host repository; "
+                       f"{ref.path} resolved against {at} (run /guide:evolve)")
+            count = _line_count(gitdir, head, ref.path)
+    if count is None:
+        return Resolution(False, f"{ref.path} not found in self at {at}")
+    for first, last in ref.ranges:
+        if last > count:
+            return Resolution(False, f"lines {first}-{last} beyond the end of {ref.path} ({count} lines at {at})")
+    return Resolution(True, warning)
+
+
+def _blob_line_count(gitdir: str, blob: str) -> int | None:
+    try:
+        proc = subprocess.run(["git", "-C", gitdir, "cat-file", "blob", blob], capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return None
+    if proc.returncode != 0:
+        return None
+    data = proc.stdout
+    return 0 if not data else data.count(b"\n") + (0 if data.endswith(b"\n") else 1)
 
 
 def resolve(ref: Ref, baseline: guidecfg.Baseline, cache_dir: Path,
@@ -275,6 +356,8 @@ def resolve(ref: Ref, baseline: guidecfg.Baseline, cache_dir: Path,
         return Resolution(False, f"unknown source {ref.source_id!r} (not in baseline.yaml)")
     if source.status == "unverified":
         return Resolution(True, f"source {source.id!r} is unverified; reference not checked")
+    if source.id == guidecfg.SELF_ID:
+        return _resolve_self(ref, source, baseline.root)
     gitdir = _gitdir(Path(cache_dir), source.id)
     if gitdir is None:
         return Resolution(False, f"source {source.id!r} is not fetched (run make fetch-baseline)")
