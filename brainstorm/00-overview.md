@@ -1,6 +1,6 @@
 # Brainstorm Overview
 
-Last updated: 2026-11-11
+Last updated: 2026-11-23
 
 ## Sessions
 
@@ -22,6 +22,8 @@ Last updated: 2026-11-11
 | 14 | 2026-11-06 | inbox-tour-orchestration | active | - | - |
 | 15 | 2026-11-06 | review-metrics-log | active | - | - |
 | 16 | 2026-11-11 | ci-automation | active | - | [#16](https://github.com/rhuss/cc-review/issues/16) |
+| 17 | 2026-11-23 | bulk-issue-assessment | active | - | - |
+| 18 | 2026-11-23 | bulk-runner-scripts | idea | - | - |
 
 ## Open Threads
 
@@ -109,6 +111,18 @@ Last updated: 2026-11-11
 - `/cc-review fix`: push to the PR branch or open a follow-up PR, and what if CI on the pushed fix fails? (from #16)
 - End-to-end GitHub App manifest flow in the setup skill (browser step, private key as secret, installation). (from #16)
 - Does `.cc-review/bulk/` state matter on ephemeral runners, or do markers alone carry enough state for resume? (from #16)
+- Command surface: `issue --bulk --search '<query>'` mirroring review, or dedicated `--label` / `--keyword` flags translated into a query? (from #17)
+- Exact definition and default of the scan ceiling, and how reaching it is reported. (from #17)
+- How "small enough to fix" is judged reliably, and what the fix worker does when a fix turns out larger mid-way. (from #17)
+- Branch naming, PR title and body template for fix PRs, and behavior when the maintainer lacks push rights or the repository is a fork. (from #17)
+- Does run state need resume across sessions as in bulk review, and what happens to queued fixes when a run is interrupted after posting? (from #17)
+- Should `review --bulk` selection adopt the same paging rule (fill the batch past exclusions) for consistency? (from #17)
+- Which harnesses get the full flow, and how Codex/OpenCode degrade without subagents. (from #17)
+- Shared source of the skip rules for the later inbox pointer (approach C). (from #17)
+- Which inline blocks move first, and how is parity with current behavior tested? (from #18)
+- One runner with item kinds, or shared libraries used by per-kind scripts? (from #18)
+- How do existing run directories and resume ids migrate? (from #18)
+- How much of the prompt shrinks, and what remains as the contract between runner and model? (from #18)
 
 ## Parked Ideas
 
