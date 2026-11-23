@@ -22,7 +22,7 @@ Last updated: 2026-11-23
 | 14 | 2026-11-06 | inbox-tour-orchestration | active | - | - |
 | 15 | 2026-11-06 | review-metrics-log | active | - | - |
 | 16 | 2026-11-11 | ci-automation | active | - | [#16](https://github.com/rhuss/cc-review/issues/16) |
-| 17 | 2026-11-23 | bulk-issue-assessment | active | - | - |
+| 17 | 2026-11-23 | bulk-issue-assessment | spec-created | 014 | - |
 | 18 | 2026-11-23 | bulk-runner-scripts | idea | - | - |
 
 ## Open Threads

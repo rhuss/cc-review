@@ -1,7 +1,7 @@
 # Brainstorm: Bulk Issue Assessment with Optional Fixes
 
 **Date:** 2026-11-23
-**Status:** active
+**Status:** spec-created (specs/014-bulk-issue-assessment)
 
 ## Problem Framing
 
