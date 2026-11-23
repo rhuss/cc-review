@@ -14,14 +14,14 @@ Everything to set up before the session. The slides and presenter notes only cov
 
 ## Demo targets (updated 2026-11-06)
 
-| Block | Harness | Target | Mode | Posts? |
-|---|---|---|---|---|
-| Live kickoff (0-5, results at 35) | Claude Code | new sdk-go draft PR "honor Config.Timeout, RetryPolicy and Logger" | author, `--pr <n> --profile thorough` | approve on stage, own repo |
-| Fallback for the live run | Codex | same branch, local, no `--pr`, `--output` outside the repo | author, local | no |
-| Observability example | OpenCode | [NVIDIA/OpenShell#5243](https://github.com/NVIDIA/OpenShell/pull/5243) | reviewer | no (choose "post nothing") |
-| inbox | Claude Code | NVIDIA/OpenShell, from a local checkout | read-only, guided tour | no |
-| triage (from the inbox tour) | Claude Code | [NVIDIA/OpenShell#4697](https://github.com/NVIDIA/OpenShell/pull/4697) | reviewer role | drafts only |
-| issue | Claude Code | [NVIDIA/OpenShell#5282](https://github.com/NVIDIA/OpenShell/issues/5282) | assessment | drafts only |
+| Block                             | Harness     | Target                                                                   | Mode                                  | Posts?                     |
+| --------------------------------- | ----------- | ------------------------------------------------------------------------ | ------------------------------------- | -------------------------- |
+| Live kickoff (0-5, results at 35) | Claude Code | new sdk-go draft PR "honor Config.Timeout, RetryPolicy and Logger"       | author, `--pr <n> --profile thorough` | approve on stage, own repo |
+| Fallback for the live run         | Codex       | same branch, local, no `--pr`, `--output` outside the repo               | author, local                         | no                         |
+| Observability example             | OpenCode    | [NVIDIA/OpenShell#5243](https://github.com/NVIDIA/OpenShell/pull/5243)   | reviewer                              | no (choose "post nothing") |
+| inbox                             | Claude Code | NVIDIA/OpenShell, from a local checkout                                  | read-only, guided tour                | no                         |
+| triage (from the inbox tour)      | Claude Code | [NVIDIA/OpenShell#4697](https://github.com/NVIDIA/OpenShell/pull/4697)   | reviewer role                         | drafts only                |
+| issue                             | Claude Code | [NVIDIA/OpenShell#5282](https://github.com/NVIDIA/OpenShell/issues/5282) | assessment                            | drafts only                |
 
 Every pre-run happens in a different harness, so the terminal has a finished Claude Code, Codex and OpenCode run to fall back on, and the "three agents" claim is shown, not told.
 
