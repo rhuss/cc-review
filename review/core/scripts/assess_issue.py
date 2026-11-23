@@ -92,23 +92,29 @@ def local_context(repository):
 
 
 def collect(args):
+    return collect_issue(args.repo, args.number)
+
+
+def collect_issue(repository, number):
+    """Snapshot one issue; repository None means the invoking gh repository context."""
+    requested = repository
     github = GitHub()
     github.host = "github.com"
     repo_args = ["repo", "view"]
-    if args.repo:
-        repo_args.append("github.com/" + args.repo)
+    if requested:
+        repo_args.append("github.com/" + requested)
     repo_args.extend(["--json", "nameWithOwner,url"])
     metadata = github.call(repo_args)
     repository = metadata.get("nameWithOwner")
     if (not valid_repo(repository)
             or metadata.get("url") != "https://github.com/" + repository
-            or (args.repo and args.repo.lower() != repository.lower())):
+            or (requested and requested.lower() != repository.lower())):
         raise InboxError("Could not resolve the selected GitHub.com repository; check --repo or issue URL.")
     project = local_context(repository)
     owner, name = repository.split("/")
     response = github.call(["api", "--hostname", "github.com", "graphql",
                             "-f", "query=" + QUERY, "-f", "owner=" + owner,
-                            "-f", "name=" + name, "-F", "number=" + str(args.number)])
+                            "-f", "name=" + name, "-F", "number=" + str(number)])
     data = response.get("data")
     remote_repo = data.get("repository") if isinstance(data, dict) else None
     value = remote_repo.get("issueOrPullRequest") if isinstance(remote_repo, dict) else None
@@ -116,8 +122,8 @@ def collect(args):
         raise InboxError("This number identifies a pull request; use review or triage for PRs.")
     if not isinstance(value, dict) or value.get("__typename") != "Issue":
         raise InboxError("Issue not found or inaccessible; check repository, number, and gh authentication.")
-    issue_url = "https://github.com/" + repository + "/issues/" + str(args.number)
-    if (type(value.get("number")) is not int or value["number"] != args.number
+    issue_url = "https://github.com/" + repository + "/issues/" + str(number)
+    if (type(value.get("number")) is not int or value["number"] != number
             or value.get("url") != issue_url
             or value.get("state") not in ("OPEN", "CLOSED")
             or not all(isinstance(value.get(key), str)
@@ -143,7 +149,7 @@ def collect(args):
         warnings.append("An author identity was unavailable.")
         return None
 
-    selected = {"number": args.number, "url": issue_url,
+    selected = {"number": number, "url": issue_url,
                 "title": text(value["title"], 1000, "Issue title"),
                 "body": text(value["body"], ISSUE_BODY_CHARS, "Issue body"),
                 "state": value["state"], "author": author(value),

@@ -1,0 +1,357 @@
+{
+ "data": {
+  "search": {
+   "issueCount": 31,
+   "pageInfo": {
+    "hasNextPage": false,
+    "endCursor": "CURSOR2"
+   },
+   "nodes": [
+    {
+     "__typename": "Issue",
+     "number": 125,
+     "title": "Long timeline, complete",
+     "url": "https://github.com/acme/widgets/issues/125",
+     "state": "OPEN",
+     "createdAt": "2026-11-17T09:00:00Z",
+     "author": {
+      "login": "reporter125",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 300,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 120,
+     "title": "Untouched issue 120",
+     "url": "https://github.com/acme/widgets/issues/120",
+     "state": "OPEN",
+     "createdAt": "2026-11-16T08:00:00Z",
+     "author": {
+      "login": "reporter120",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 119,
+     "title": "Untouched issue 119",
+     "url": "https://github.com/acme/widgets/issues/119",
+     "state": "OPEN",
+     "createdAt": "2026-11-16T03:00:00Z",
+     "author": {
+      "login": "reporter119",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 118,
+     "title": "Answered by a member",
+     "url": "https://github.com/acme/widgets/issues/118",
+     "state": "OPEN",
+     "createdAt": "2026-11-15T22:00:00Z",
+     "author": {
+      "login": "reporter118",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "member2",
+         "__typename": "User"
+        },
+        "authorAssociation": "MEMBER",
+        "body": "Duplicate of #90?",
+        "url": "https://github.com/acme/widgets/issues/118#issuecomment-10181"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 117,
+     "title": "Untouched issue 117",
+     "url": "https://github.com/acme/widgets/issues/117",
+     "state": "OPEN",
+     "createdAt": "2026-11-15T17:00:00Z",
+     "author": {
+      "login": "reporter117",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 116,
+     "title": "Assessed earlier",
+     "url": "https://github.com/acme/widgets/issues/116",
+     "state": "OPEN",
+     "createdAt": "2026-11-15T12:00:00Z",
+     "author": {
+      "login": "reporter116",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "owner1",
+         "__typename": "User"
+        },
+        "authorAssociation": "OWNER",
+        "body": "Reply\n<!-- cc-review:assessment {\"kind\":\"bug\"} -->",
+        "url": "https://github.com/acme/widgets/issues/116#issuecomment-10161"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 115,
+     "title": "Untouched issue 115",
+     "url": "https://github.com/acme/widgets/issues/115",
+     "state": "OPEN",
+     "createdAt": "2026-11-15T07:00:00Z",
+     "author": {
+      "login": "reporter115",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 114,
+     "title": "Untouched issue 114",
+     "url": "https://github.com/acme/widgets/issues/114",
+     "state": "OPEN",
+     "createdAt": "2026-11-15T02:00:00Z",
+     "author": {
+      "login": "reporter114",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 113,
+     "title": "Untouched issue 113",
+     "url": "https://github.com/acme/widgets/issues/113",
+     "state": "OPEN",
+     "createdAt": "2026-11-14T21:00:00Z",
+     "author": {
+      "login": "reporter113",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 112,
+     "title": "Untouched issue 112",
+     "url": "https://github.com/acme/widgets/issues/112",
+     "state": "OPEN",
+     "createdAt": "2026-11-14T16:00:00Z",
+     "author": {
+      "login": "reporter112",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 111,
+     "title": "Untouched issue 111",
+     "url": "https://github.com/acme/widgets/issues/111",
+     "state": "OPEN",
+     "createdAt": "2026-11-14T11:00:00Z",
+     "author": {
+      "login": "reporter111",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 110,
+     "title": "Untouched issue 110",
+     "url": "https://github.com/acme/widgets/issues/110",
+     "state": "OPEN",
+     "createdAt": "2026-11-14T06:00:00Z",
+     "author": {
+      "login": "reporter110",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    }
+   ]
+  }
+ }
+}

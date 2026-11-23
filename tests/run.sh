@@ -5552,6 +5552,15 @@ test_issue_assessment() {
   fi
 }
 
+test_issue_bulk() {
+  local output
+  if output="$(python3 -B "$ROOT/tests/test_issue_bulk.py" 2>&1)"; then
+    _pass
+  else
+    _fail "bulk issue tests" "$output"
+  fi
+}
+
 reviewer_permission_fixture() {
   local sha run plan root thread activity identity out
   make_bulk_repo
@@ -5701,7 +5710,7 @@ test_reviewer_summary() {
 
 test_command_files_show_text_rule() {
   local f body
-  for f in review triage bulk issue inbox; do
+  for f in review triage bulk issue issue-bulk inbox; do
     body="$(cat "$ROOT/review/core/commands/$f.md")"
     assert_contains "$f.md defines how text is shown" "$body" "## Showing Text to the User"
     assert_contains "$f.md forbids tool output as presentation" "$body" "A tool result is not shown to the user"
@@ -5882,6 +5891,7 @@ main() {
   run_test test_inbox
   run_test test_inbox_report
   run_test test_issue_assessment
+  run_test test_issue_bulk
   run_test test_assessment_module
   run_test test_issue_command_renders_shared_assessment
   run_test test_ci

@@ -5,10 +5,23 @@ description: Assess an initial issue's concrete need, project fit, and whether t
 
 # Assess an Issue
 
+## Bulk Mode
+
+When `--bulk` or `--resume`, or one of the bulk-only flags `--search`,
+`--limit` or `--scan`, is among the arguments, read and execute
+`commands/issue-bulk.md` from the resolved core directory with all user
+arguments unchanged, and return (its validation names a bulk-only flag
+given without `--bulk`). This dispatch comes first, before the
+single-item unattended dispatch below: `issue-bulk.md` validates every
+argument before any service call and rejects `--unattended`, issue numbers
+and URLs in bulk mode. The rest of this file is the single-issue flow and
+does not apply to a bulk run.
+
 ## Single-Item Unattended Mode
 
-Before any interactive steps or bulk-only flag validation, if `--unattended`
-is present without `--bulk`/`--resume`, read and execute
+After the bulk dispatch above and before any interactive steps, if `--unattended`
+is present without `--bulk`/`--resume` (and without the bulk-only flags, which
+the bulk dispatch already handled), read and execute
 `commands/unattended.md` from the resolved core directory and return.
 Its fixed policy overrides preview, confirmation and no-publishing boundaries
 for this explicit unattended invocation. An explicit item target is required.

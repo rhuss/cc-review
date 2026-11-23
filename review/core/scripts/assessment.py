@@ -15,6 +15,9 @@ import re
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import run_state  # noqa: E402  (the bulk run id format has one definition)
+
 CORE = Path(__file__).resolve().parents[1]
 KINDS = ('bug', 'feature', 'question', 'other')
 CHECK_RESULTS = {'bug': ('confirmed', 'contradicted', 'unverified'),
@@ -39,6 +42,8 @@ VERDICTS = {'pursue': 'worth doing', 'needs_evidence': 'needs an example',
 RECOMMENDATIONS = {'pursue': 'Pursue', 'needs_evidence': 'Needs more evidence',
                    'direction': 'Needs a maintainer decision', 'decline': 'Not planned for now'}
 HIDDEN_PREFIX = '<!-- cc-review:assessment '
+RUN_MARKER = '<!-- cc-review:issue-bulk run={} -->'
+RUN_ID = re.compile(run_state.run_id_pattern('issue'))
 
 CODE_SPANS = re.compile(r'(```.*?```|`[^`\n]*`)', re.S)
 DASH_RULES = (
@@ -161,8 +166,13 @@ def _cell(text):
     return _flat(text).replace('|', '\\|')
 
 
-def render(body, assessment, labels):
-    """Three layers: the reply for everyone, a collapsed assessment for maintainers, hidden JSON for agents."""
+def render(body, assessment, labels, run_id=None):
+    """Three layers: the reply for everyone, a collapsed assessment for maintainers, hidden JSON for agents.
+
+    With run_id (a bulk issue run), a last line marks the comment as posted by that run.
+    """
+    if run_id is not None and not RUN_ID.fullmatch(str(run_id)):
+        raise AssessmentError('run_id must be a bulk issue run id.')
     a = assessment
     key = a['recommendation']
     title = [VERDICTS.get(key, key), KIND_LABELS[a['kind']]]
@@ -191,7 +201,8 @@ def render(body, assessment, labels):
     out += ['</details>', '']
     # Escape < and > so the JSON cannot close its own comment; JSON decoding restores them.
     data = json.dumps(a, separators=(',', ':')).replace('<', '\\u003c').replace('>', '\\u003e')
-    return '\n'.join(out) + '\n' + HIDDEN_PREFIX + data + ' -->\n'
+    text = '\n'.join(out) + '\n' + HIDDEN_PREFIX + data + ' -->\n'
+    return text + RUN_MARKER.format(run_id) + '\n' if run_id is not None else text
 
 
 def load_labels(config_path):

@@ -1,0 +1,1084 @@
+{
+ "data": {
+  "search": {
+   "issueCount": 31,
+   "pageInfo": {
+    "hasNextPage": true,
+    "endCursor": "CURSOR1"
+   },
+   "nodes": [
+    {
+     "__typename": "Issue",
+     "number": 140,
+     "title": "Crash with a long PR history",
+     "url": "https://github.com/acme/widgets/issues/140",
+     "state": "OPEN",
+     "createdAt": "2026-11-20T12:00:00Z",
+     "author": {
+      "login": "reporter140",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "CrossReferencedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 520,
+         "url": "https://github.com/acme/widgets/pull/520",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "newcomer",
+          "__typename": "User"
+         },
+         "authorAssociation": "CONTRIBUTOR",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 1,
+          "pageInfo": {
+           "hasPreviousPage": true
+          },
+          "nodes": [
+           {
+            "author": {
+             "login": "x",
+             "__typename": "User"
+            },
+            "authorAssociation": "NONE"
+           }
+          ]
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 139,
+     "title": "Already assessed by CI",
+     "url": "https://github.com/acme/widgets/issues/139",
+     "state": "OPEN",
+     "createdAt": "2026-11-20T07:00:00Z",
+     "author": {
+      "login": "reporter139",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "github-actions",
+         "__typename": "Bot"
+        },
+        "authorAssociation": "NONE",
+        "body": "Thanks!\n<!-- cc-review:assessment {\"kind\":\"bug\"} -->",
+        "url": "https://github.com/acme/widgets/issues/139#issuecomment-10391"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 138,
+     "title": "Answered by a member",
+     "url": "https://github.com/acme/widgets/issues/138",
+     "state": "OPEN",
+     "createdAt": "2026-11-20T02:00:00Z",
+     "author": {
+      "login": "reporter138",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 2,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "reporter138",
+         "__typename": "User"
+        },
+        "authorAssociation": "NONE",
+        "body": "More detail",
+        "url": "https://github.com/acme/widgets/issues/138#issuecomment-10381"
+       },
+       {
+        "author": {
+         "login": "member1",
+         "__typename": "User"
+        },
+        "authorAssociation": "MEMBER",
+        "body": "Could you share the log?",
+        "url": "https://github.com/acme/widgets/issues/138#issuecomment-10382"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 137,
+     "title": "Owner notes a follow-up",
+     "url": "https://github.com/acme/widgets/issues/137",
+     "state": "OPEN",
+     "createdAt": "2026-11-19T21:00:00Z",
+     "author": {
+      "login": "owner1",
+      "__typename": "User"
+     },
+     "authorAssociation": "OWNER",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "owner1",
+         "__typename": "User"
+        },
+        "authorAssociation": "OWNER",
+        "body": "Note to self: also check docs.",
+        "url": "https://github.com/acme/widgets/issues/137#issuecomment-10371"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 136,
+     "title": "Bot with member association replied",
+     "url": "https://github.com/acme/widgets/issues/136",
+     "state": "OPEN",
+     "createdAt": "2026-11-19T16:00:00Z",
+     "author": {
+      "login": "reporter136",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "renovate[bot]",
+         "__typename": "Bot"
+        },
+        "authorAssociation": "MEMBER",
+        "body": "Dependency note",
+        "url": "https://github.com/acme/widgets/issues/136#issuecomment-10361"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 135,
+     "title": "Maintainer opened this without replies",
+     "url": "https://github.com/acme/widgets/issues/135",
+     "state": "OPEN",
+     "createdAt": "2026-11-19T11:00:00Z",
+     "author": {
+      "login": "member2",
+      "__typename": "User"
+     },
+     "authorAssociation": "MEMBER",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 134,
+     "title": "Fixed in an open maintainer PR",
+     "url": "https://github.com/acme/widgets/issues/134",
+     "state": "OPEN",
+     "createdAt": "2026-11-19T06:00:00Z",
+     "author": {
+      "login": "reporter134",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "CrossReferencedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 501,
+         "url": "https://github.com/acme/widgets/pull/501",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "member1",
+          "__typename": "User"
+         },
+         "authorAssociation": "MEMBER",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 133,
+     "title": "Merged maintainer PR, issue side",
+     "url": "https://github.com/acme/widgets/issues/133",
+     "state": "OPEN",
+     "createdAt": "2026-11-19T01:00:00Z",
+     "author": {
+      "login": "reporter133",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "ConnectedEvent",
+        "source": {
+         "__typename": "Issue",
+         "number": 133,
+         "url": "https://github.com/acme/widgets/issues/133"
+        },
+        "subject": {
+         "__typename": "PullRequest",
+         "number": 502,
+         "url": "https://github.com/acme/widgets/pull/502",
+         "state": "MERGED",
+         "merged": true,
+         "author": {
+          "login": "owner1",
+          "__typename": "User"
+         },
+         "authorAssociation": "OWNER",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 132,
+     "title": "Maintainer PR closed unmerged",
+     "url": "https://github.com/acme/widgets/issues/132",
+     "state": "OPEN",
+     "createdAt": "2026-11-18T20:00:00Z",
+     "author": {
+      "login": "reporter132",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "CrossReferencedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 503,
+         "url": "https://github.com/acme/widgets/pull/503",
+         "state": "CLOSED",
+         "merged": false,
+         "author": {
+          "login": "member1",
+          "__typename": "User"
+         },
+         "authorAssociation": "MEMBER",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 131,
+     "title": "Newcomer PR reviewed by a maintainer",
+     "url": "https://github.com/acme/widgets/issues/131",
+     "state": "OPEN",
+     "createdAt": "2026-11-18T15:00:00Z",
+     "author": {
+      "login": "reporter131",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "CrossReferencedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 504,
+         "url": "https://github.com/acme/widgets/pull/504",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "newcomer",
+          "__typename": "User"
+         },
+         "authorAssociation": "CONTRIBUTOR",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 1,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": [
+           {
+            "author": {
+             "login": "member1",
+             "__typename": "User"
+            },
+            "authorAssociation": "MEMBER"
+           }
+          ]
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 130,
+     "title": "Newcomer PR without maintainer activity",
+     "url": "https://github.com/acme/widgets/issues/130",
+     "state": "OPEN",
+     "createdAt": "2026-11-18T10:00:00Z",
+     "author": {
+      "login": "reporter130",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "CrossReferencedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 505,
+         "url": "https://github.com/acme/widgets/pull/505",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "newcomer",
+          "__typename": "User"
+         },
+         "authorAssociation": "FIRST_TIME_CONTRIBUTOR",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 1,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": [
+           {
+            "author": {
+             "login": "friend",
+             "__typename": "User"
+            },
+            "authorAssociation": "NONE"
+           }
+          ]
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 129,
+     "title": "Closed newcomer PR with a maintainer comment",
+     "url": "https://github.com/acme/widgets/issues/129",
+     "state": "OPEN",
+     "createdAt": "2026-11-18T05:00:00Z",
+     "author": {
+      "login": "reporter129",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "CrossReferencedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 506,
+         "url": "https://github.com/acme/widgets/pull/506",
+         "state": "CLOSED",
+         "merged": false,
+         "author": {
+          "login": "newcomer",
+          "__typename": "User"
+         },
+         "authorAssociation": "NONE",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 1,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": [
+           {
+            "author": {
+             "login": "owner1",
+             "__typename": "User"
+            },
+            "authorAssociation": "OWNER"
+           }
+          ]
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 128,
+     "title": "Maintainer PR in a fork",
+     "url": "https://github.com/acme/widgets/issues/128",
+     "state": "OPEN",
+     "createdAt": "2026-11-18T00:00:00Z",
+     "author": {
+      "login": "reporter128",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "CrossReferencedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 507,
+         "url": "https://github.com/someone/widgets/pull/507",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "member1",
+          "__typename": "User"
+         },
+         "authorAssociation": "MEMBER",
+         "baseRepository": {
+          "nameWithOwner": "someone/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 127,
+     "title": "Connected then disconnected maintainer PR",
+     "url": "https://github.com/acme/widgets/issues/127",
+     "state": "OPEN",
+     "createdAt": "2026-11-17T19:00:00Z",
+     "author": {
+      "login": "reporter127",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 2,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "ConnectedEvent",
+        "source": {
+         "__typename": "Issue",
+         "number": 127,
+         "url": "https://github.com/acme/widgets/issues/127"
+        },
+        "subject": {
+         "__typename": "PullRequest",
+         "number": 508,
+         "url": "https://github.com/acme/widgets/pull/508",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "member1",
+          "__typename": "User"
+         },
+         "authorAssociation": "MEMBER",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       },
+       {
+        "__typename": "DisconnectedEvent",
+        "source": {
+         "__typename": "Issue",
+         "number": 127,
+         "url": "https://github.com/acme/widgets/issues/127"
+        },
+        "subject": {
+         "__typename": "PullRequest",
+         "number": 508,
+         "url": "https://github.com/acme/widgets/pull/508",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "member1",
+          "__typename": "User"
+         },
+         "authorAssociation": "MEMBER",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 126,
+     "title": "Very long conversation",
+     "url": "https://github.com/acme/widgets/issues/126",
+     "state": "OPEN",
+     "createdAt": "2026-11-17T14:00:00Z",
+     "author": {
+      "login": "reporter126",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": true
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "reporter126",
+         "__typename": "User"
+        },
+        "authorAssociation": "NONE",
+        "body": "bump",
+        "url": "https://github.com/acme/widgets/issues/126#issuecomment-10261"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 125,
+     "title": "Long timeline, complete",
+     "url": "https://github.com/acme/widgets/issues/125",
+     "state": "OPEN",
+     "createdAt": "2026-11-17T09:00:00Z",
+     "author": {
+      "login": "reporter125",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 300,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 124,
+     "title": "Maintainer PR linked from the PR side",
+     "url": "https://github.com/acme/widgets/issues/124",
+     "state": "OPEN",
+     "createdAt": "2026-11-17T04:00:00Z",
+     "author": {
+      "login": "reporter124",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "ConnectedEvent",
+        "source": {
+         "__typename": "PullRequest",
+         "number": 509,
+         "url": "https://github.com/acme/widgets/pull/509",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "collab1",
+          "__typename": "User"
+         },
+         "authorAssociation": "COLLABORATOR",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        },
+        "subject": {
+         "__typename": "Issue",
+         "number": 124,
+         "url": "https://github.com/acme/widgets/issues/124"
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 123,
+     "title": "Maintainer PR linked from the issue side",
+     "url": "https://github.com/acme/widgets/issues/123",
+     "state": "OPEN",
+     "createdAt": "2026-11-16T23:00:00Z",
+     "author": {
+      "login": "reporter123",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     },
+     "timelineItems": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "__typename": "ConnectedEvent",
+        "source": {
+         "__typename": "Issue",
+         "number": 123,
+         "url": "https://github.com/acme/widgets/issues/123"
+        },
+        "subject": {
+         "__typename": "PullRequest",
+         "number": 510,
+         "url": "https://github.com/acme/widgets/pull/510",
+         "state": "OPEN",
+         "merged": false,
+         "author": {
+          "login": "owner1",
+          "__typename": "User"
+         },
+         "authorAssociation": "OWNER",
+         "baseRepository": {
+          "nameWithOwner": "acme/widgets"
+         },
+         "reviews": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         },
+         "comments": {
+          "totalCount": 0,
+          "pageInfo": {
+           "hasPreviousPage": false
+          },
+          "nodes": []
+         }
+        }
+       }
+      ]
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 122,
+     "title": "Answered by a collaborator",
+     "url": "https://github.com/acme/widgets/issues/122",
+     "state": "OPEN",
+     "createdAt": "2026-11-16T18:00:00Z",
+     "author": {
+      "login": "reporter122",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "collab1",
+         "__typename": "User"
+        },
+        "authorAssociation": "COLLABORATOR",
+        "body": "Fixed on main?",
+        "url": "https://github.com/acme/widgets/issues/122#issuecomment-10221"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    },
+    {
+     "__typename": "Issue",
+     "number": 121,
+     "title": "Answered by the owner",
+     "url": "https://github.com/acme/widgets/issues/121",
+     "state": "OPEN",
+     "createdAt": "2026-11-16T13:00:00Z",
+     "author": {
+      "login": "reporter121",
+      "__typename": "User"
+     },
+     "authorAssociation": "NONE",
+     "comments": {
+      "totalCount": 1,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": [
+       {
+        "author": {
+         "login": "owner1",
+         "__typename": "User"
+        },
+        "authorAssociation": "OWNER",
+        "body": "Thanks, looking.",
+        "url": "https://github.com/acme/widgets/issues/121#issuecomment-10211"
+       }
+      ]
+     },
+     "timelineItems": {
+      "totalCount": 0,
+      "pageInfo": {
+       "hasPreviousPage": false
+      },
+      "nodes": []
+     }
+    }
+   ]
+  }
+ }
+}

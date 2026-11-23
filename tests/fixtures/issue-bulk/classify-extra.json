@@ -1,0 +1,249 @@
+{
+  "nodes": [
+    {
+      "__typename": "Issue",
+      "number": 201,
+      "title": "Stranger pasted the assessment marker",
+      "url": "https://github.com/acme/widgets/issues/201",
+      "state": "OPEN",
+      "createdAt": "2026-10-11T10:00:00Z",
+      "authorAssociation": "NONE",
+      "author": {
+        "login": "reporter201",
+        "__typename": "User"
+      },
+      "comments": {
+        "totalCount": 1,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": [
+          {
+            "url": "https://github.com/acme/widgets/issues/201#issuecomment-1",
+            "authorAssociation": "NONE",
+            "author": {
+              "login": "stranger",
+              "__typename": "User"
+            },
+            "body": "Copied from elsewhere: <!-- cc-review:assessment {} -->"
+          }
+        ]
+      },
+      "timelineItems": {
+        "totalCount": 0,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": []
+      }
+    },
+    {
+      "__typename": "Issue",
+      "number": 202,
+      "title": "Maintainer commented on a contributor PR",
+      "url": "https://github.com/acme/widgets/issues/202",
+      "state": "OPEN",
+      "createdAt": "2026-10-12T10:00:00Z",
+      "authorAssociation": "NONE",
+      "author": {
+        "login": "reporter202",
+        "__typename": "User"
+      },
+      "comments": {
+        "totalCount": 0,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": []
+      },
+      "timelineItems": {
+        "totalCount": 1,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": [
+          {
+            "__typename": "CrossReferencedEvent",
+            "source": {
+              "__typename": "PullRequest",
+              "number": 702,
+              "url": "https://github.com/acme/widgets/pull/702",
+              "state": "OPEN",
+              "merged": false,
+              "headRefName": "topic-702",
+              "authorAssociation": "CONTRIBUTOR",
+              "author": {
+                "login": "contrib",
+                "__typename": "User"
+              },
+              "baseRepository": {
+                "nameWithOwner": "acme/widgets"
+              },
+              "headRepository": {
+                "nameWithOwner": "contrib/widgets"
+              },
+              "reviews": {
+                "totalCount": 0,
+                "pageInfo": {
+                  "hasPreviousPage": false
+                },
+                "nodes": []
+              },
+              "comments": {
+                "totalCount": 1,
+                "pageInfo": {
+                  "hasPreviousPage": false
+                },
+                "nodes": [
+                  {
+                    "authorAssociation": "MEMBER",
+                    "author": {
+                      "login": "member1",
+                      "__typename": "User"
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "__typename": "Issue",
+      "number": 203,
+      "title": "Bot with member association authored and reviewed the PR",
+      "url": "https://github.com/acme/widgets/issues/203",
+      "state": "OPEN",
+      "createdAt": "2026-10-13T10:00:00Z",
+      "authorAssociation": "NONE",
+      "author": {
+        "login": "reporter203",
+        "__typename": "User"
+      },
+      "comments": {
+        "totalCount": 0,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": []
+      },
+      "timelineItems": {
+        "totalCount": 1,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": [
+          {
+            "__typename": "CrossReferencedEvent",
+            "source": {
+              "__typename": "PullRequest",
+              "number": 703,
+              "url": "https://github.com/acme/widgets/pull/703",
+              "state": "OPEN",
+              "merged": false,
+              "headRefName": "topic-703",
+              "authorAssociation": "MEMBER",
+              "author": {
+                "login": "renovate[bot]",
+                "__typename": "Bot"
+              },
+              "baseRepository": {
+                "nameWithOwner": "acme/widgets"
+              },
+              "headRepository": {
+                "nameWithOwner": "contrib/widgets"
+              },
+              "reviews": {
+                "totalCount": 1,
+                "pageInfo": {
+                  "hasPreviousPage": false
+                },
+                "nodes": [
+                  {
+                    "authorAssociation": "MEMBER",
+                    "author": {
+                      "login": "ci-bot",
+                      "__typename": "Bot"
+                    }
+                  }
+                ]
+              },
+              "comments": {
+                "totalCount": 0,
+                "pageInfo": {
+                  "hasPreviousPage": false
+                },
+                "nodes": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "__typename": "Issue",
+      "number": 204,
+      "title": "Merged contributor PR",
+      "url": "https://github.com/acme/widgets/issues/204",
+      "state": "OPEN",
+      "createdAt": "2026-10-14T10:00:00Z",
+      "authorAssociation": "NONE",
+      "author": {
+        "login": "reporter204",
+        "__typename": "User"
+      },
+      "comments": {
+        "totalCount": 0,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": []
+      },
+      "timelineItems": {
+        "totalCount": 1,
+        "pageInfo": {
+          "hasPreviousPage": false
+        },
+        "nodes": [
+          {
+            "__typename": "CrossReferencedEvent",
+            "source": {
+              "__typename": "PullRequest",
+              "number": 704,
+              "url": "https://github.com/acme/widgets/pull/704",
+              "state": "MERGED",
+              "merged": true,
+              "headRefName": "topic-704",
+              "authorAssociation": "CONTRIBUTOR",
+              "author": {
+                "login": "contrib",
+                "__typename": "User"
+              },
+              "baseRepository": {
+                "nameWithOwner": "acme/widgets"
+              },
+              "headRepository": {
+                "nameWithOwner": "contrib/widgets"
+              },
+              "reviews": {
+                "totalCount": 0,
+                "pageInfo": {
+                  "hasPreviousPage": false
+                },
+                "nodes": []
+              },
+              "comments": {
+                "totalCount": 0,
+                "pageInfo": {
+                  "hasPreviousPage": false
+                },
+                "nodes": []
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

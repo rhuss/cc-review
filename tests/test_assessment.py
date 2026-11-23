@@ -68,6 +68,17 @@ class AssessmentTests(unittest.TestCase):
             '- **Not inspected:** docs/CI.md, issue #16.\n', '</details>\n</details>', '<!-- cc-review:assessment {'])
         self.assertNotIn('###', text)
 
+    def test_render_run_marker_is_optional_last_line(self):
+        plain = self.a.render('Thanks for the report.', FEATURE, LABELS)
+        self.assertEqual(self.a.render('Thanks for the report.', FEATURE, LABELS, run_id=None), plain)
+        self.assertNotIn('cc-review:issue-bulk', plain)
+        self.assertTrue(plain.endswith(' -->\n'))
+        marked = self.a.render('Thanks for the report.', FEATURE, LABELS, run_id='20261123-091446-issue-2')
+        self.assertEqual(marked, plain + '<!-- cc-review:issue-bulk run=20261123-091446-issue-2 -->\n')
+        for bad in ('x', '20261123-091446-pr', '20261123-091446-issue -->', '../20261123-091446-issue'):
+            with self.assertRaises(self.a.AssessmentError):
+                self.a.render('Thanks.', FEATURE, LABELS, run_id=bad)
+
     def test_hidden_json_round_trips(self):
         value = variant(why='a --> b <!-- c')
         text = self.a.render('Thanks.', value, LABELS)

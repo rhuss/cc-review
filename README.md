@@ -123,6 +123,16 @@ You receive maintainer reasoning and a separate friendly reply draft. The prose 
 
 Requires Python 3.9+, jq, and authenticated gh. GitHub.com only; explicit issue target required; PRs are rejected. The opening body and latest 50 comments are bounded to 20,000 and 4,000 characters respectively, with omissions disclosed. A missing or unrelated checkout is reported as unavailable project context.
 
+#### Bulk issue assessment
+
+```
+issue --bulk
+issue --bulk --search 'label:bug crash' --limit 5 --scan 200
+issue --resume
+```
+
+Works through incoming issues that nobody has answered yet, including issues from people who never interacted with you. Selection takes open issues newest first (optionally narrowed by a GitHub search) and skips issues with a cc-review assessment, a maintainer reply, or a maintainer pull request, paging through older issues until the batch (default 10) is full or the scan ceiling (default 100) is reached. Each issue is assessed in its own fresh context, then you see each full reply and post, edit or skip it; an approved reply is posted right away with its recommendation label. For a small, confirmed issue you can also choose "fix it": after all approvals, each fix runs in its own worktree and opens a draft pull request with `Fixes #N`. Fixes never run tests, builds or git hooks on your machine; the pull request's checks do. An open pull request from a newcomer can be handed to `review --bulk --prs`. The report lists every outcome and every skipped issue with its reason. Run state and fix worktrees live in a per-user state directory (`~/.local/state/cc-review/issue-bulk/<owner>__<name>/<run-id>/`), never in your checkout, and `--resume` continues an interrupted run without posting twice or opening a second pull request; one session at a time works on a run. Bulk mode is interactive only.
+
 PR review applies the same need and fit criteria (`core/templates/need-and-fit.md`). The Goal Alignment reviewer reads the PR description and every linked issue (closing keywords and issues linked in the PR sidebar), with their comments, and reports a missing use case or a conflict with documented project scope as an Important finding.
 
 ### Code Review

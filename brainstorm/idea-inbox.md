@@ -137,3 +137,57 @@ Ideas captured from code reviews for future brainstorming.
 - **Summary**: FR-016 forbids an approval-time edit from changing paths, lines, the pinned commit or the run marker, but only the LLM instructions enforce it.
 
 > `review_draft.py assemble` could compare the locked fields per slot id against the previous payload of the same inputs key and refuse a change, so the restriction holds by construction like the labels do.
+
+### bulk-issue-api-cost
+
+- **Source**: deep-review
+- **Date**: 2026-11-23
+- **Reference**: 015-bulk-issue-assessment
+- **Summary**: A full `issue --bulk --scan 1000` selection can spend about 1000 of the 5000 hourly GraphQL points before the first assessment.
+
+> Each 20-issue search page asks for the last 100 comments, 50 timeline events, and 50 reviews plus 50 comments per linked PR. Smaller nested pages with a follow-up query only for issues that need it would cut the cost and the risk of server-side timeouts on heavy timelines.
+
+### bulk-run-dir-pruning
+
+- **Source**: deep-review
+- **Date**: 2026-11-23
+- **Reference**: 015-bulk-issue-assessment
+- **Summary**: Bulk issue run directories, request files and snapshots are never pruned.
+
+> An age-based sweep of finished and abandoned runs (like `inbox.sweep_stale_snapshots`) and deleting `comment-request.json`/`label-request.json` after the call would bound the growth.
+
+### run-state-vs-bulk-review-layout
+
+- **Source**: deep-review
+- **Date**: 2026-11-23
+- **Reference**: 015-bulk-issue-assessment
+- **Summary**: `run_state.py` uses a different directory and state layout than the bulk review (`bulk.md`, `bulk-state.sh`).
+
+> The shared-runner refactor (brainstorm #18) will need a migration or a compatibility reader for unfinished review runs.
+
+### fix-worktrees-outside-checkout
+
+- **Source**: deep-review
+- **Date**: 2026-11-23
+- **Reference**: 015-bulk-issue-assessment
+- **Summary**: Fix worktrees and run state live inside the maintainer checkout, one relative path away from its `.git` and ignored files.
+
+> Moving them to the per-user state directory and giving workers only their own item directory would shrink the surface a prompt-injected worker can reach; the helpers' detection cannot see writes to ignored paths.
+
+### report-finishes-as-side-effect
+
+- **Source**: deep-review
+- **Date**: 2026-11-23
+- **Reference**: 015-bulk-issue-assessment
+- **Summary**: `issue_bulk.py report RUN` changes the run status to finished, unlike `report --selection`, which is read-only.
+
+> A separate `finish` step, or a `--finish` flag, would make the report a pure query.
+
+### prompt-only-guarantees
+
+- **Source**: deep-review
+- **Date**: 2026-11-23
+- **Reference**: 015-bulk-issue-assessment
+- **Summary**: SC-001 (one decision prompt per issue), FR-015 (flag embedded instructions), FR-032 (inline fallback warning) and the fix worker's "run nothing" rule are enforced only by prompts.
+
+> A scripted harness eval (a fake model driving the command file) could cover them.
