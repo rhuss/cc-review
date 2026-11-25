@@ -156,7 +156,7 @@ Without a concrete, real-world example (for bugs: reproduction steps or a bug co
 
 `GITHUB_TOKEN` is the simplest setup. Keep `identity.bot_login: github-actions[bot]`. The caller requests contents, issues, and pull-requests write plus checks and actions read, so organization policy must permit these workflow permissions. GITHUB_TOKEN writes generally do not trigger new workflows; use a GitHub App if fix pushes must trigger ordinary CI.
 
-A named GitHub App is recommended for a reusable bot identity across repositories. The selection and worker jobs request repository-scoped installation tokens, with contents read except during an authorized fix, so reactions, status, and replies all come from the App. Doctor can verify installation access with a freshly minted token in `CC_REVIEW_APP_TOKEN`.
+A named GitHub App is recommended for a reusable bot identity across repositories. The manifest cannot set a logo, so setup points you to the bundled `cc-review-app.png` icon to upload under the App's "Display information" settings. The selection and worker jobs request repository-scoped installation tokens, with contents read except during an authorized fix, so reactions, status, and replies all come from the App. Doctor can verify installation access with a freshly minted token in `CC_REVIEW_APP_TOKEN`.
 
 ## Model providers
 

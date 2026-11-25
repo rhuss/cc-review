@@ -250,7 +250,9 @@ Setup generates a manifest with scoped permissions. GitHub's browser registratio
 and installation approvals remain user steps. The one-time manifest code is
 exchanged privately; only the App ID (repository variable CC_REVIEW_APP_ID) and
 private key (CC_REVIEW_APP_PRIVATE_KEY secret) are retained. Set bot_login to the
-App slug plus `[bot]`. The selection and worker jobs request repository-scoped
+App slug plus `[bot]`. The manifest cannot set a logo; setup points you to
+`review/core/assets/cc-review-app.png` to upload under the App's "Display
+information" settings. The selection and worker jobs request repository-scoped
 installation tokens, with contents read except during an authorized fix, so
 reactions, status and replies all come from the App. Doctor can verify installation
 access with a freshly minted token in CC_REVIEW_APP_TOKEN; request the workflow's

@@ -45,6 +45,12 @@ preferences and authorization already supplied by the user.
    CC_REVIEW_APP_ID, and set bot_login to `<slug>[bot]`. Delete private output
    immediately. Ask the user to complete GitHub's installation page and select
    the target repository, then continue setup. Never commit the private key.
+   Offer the App avatar: GitHub's manifest cannot set a logo, so show the
+   absolute path of `<core>/assets/cc-review-app.png` and the App's settings
+   page (`https://github.com/settings/apps/<slug>`, or
+   `https://github.com/organizations/<org>/settings/apps/<slug>` for an
+   organization App) and ask the user to upload it under "Display
+   information". This is optional; never claim the upload happened.
 5. Inspect existing labels. Preserve the repository's scheme using config label
    mappings. Create only missing configured labels via `gh label create` with
    neutral descriptions; never rename/delete unrelated labels.
