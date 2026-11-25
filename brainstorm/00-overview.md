@@ -24,6 +24,7 @@ Last updated: 2026-11-23
 | 16 | 2026-11-11 | ci-automation | active | - | [#16](https://github.com/rhuss/cc-review/issues/16) |
 | 17 | 2026-11-23 | bulk-issue-assessment | spec-created | 014 | - |
 | 18 | 2026-11-23 | bulk-runner-scripts | idea | - | - |
+| 19 | 2026-11-24 | external-finding-verification | idea | - | - |
 
 ## Open Threads
 
@@ -123,6 +124,11 @@ Last updated: 2026-11-23
 - One runner with item kinds, or shared libraries used by per-kind scripts? (from #18)
 - How do existing run directories and resume ids migrate? (from #18)
 - How much of the prompt shrinks, and what remains as the contract between runner and model? (from #18)
+- Remove a refuted external finding, or demote it to Notable with the refutation attached? (from #19)
+- Is a command plus its output enough evidence to remove an external finding, or is a second source needed? (from #19)
+- Does network access for Codex in trusted checkouts widen the attack surface beyond the trust model of #05? (from #19)
+- How is "the tool tried and failed to verify" detected across tools with different log formats? (from #19)
+- How is the cross-vendor value of external tools protected from a Skeptic that marks them weak on judgment alone? (from #19)
 
 ## Parked Ideas
 
